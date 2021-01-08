@@ -4,7 +4,7 @@ from torch_geometric.data import DataLoader, Data
 from rnaprot.RNNNets import RNNDataset, GRUModel
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from rnaprot import rnn_util
-from rnaprot import rbplib
+from rnaprot import rplib
 import numpy as np
 import statistics
 import argparse
@@ -198,46 +198,34 @@ def setup_argument_parser():
                    metavar='int',
                    default = 40,
                    help = "Number of epochs to wait for further improvement on validation set before stopping (default: 40)")
-
     p_tra.add_argument("--nr-hidden-dim",
-                   dest="fc_hidden_dim",
+                   dest="list_nr_hidden_dim",
                    type = int,
                    metavar='int',
-                   default = 128,
-                   help = "Number of dimensions for fully connected layer. (default: 128)")
-    p_tra.add_argument("--list-lr",
+                   nargs='+',
+                   default=[32],
+                   help = "Number of hidden layer dimensions. Can also be provided as list for hyperparameter optimzation (e.g. --nr-hidden-dim 32 64) (default: 32)")
+    p_tra.add_argument("--lr",
                    dest="list_lr",
                    type=float,
                    metavar='float',
                    nargs='+',
-                   default=[0.0001],
-                   help="List of learning rates for hyperparameter optimization (default: 0.0001)")
-    p_tra.add_argument("--list-hidden-dim",
-                   dest="list_node_hidden_dim",
-                   type=int,
-                   metavar='int',
-                   nargs='+',
-                   default=[128],
-                   help="List of node feature dimensions in hidden layers for hyperparameter optimization (default: 128)")
-    p_tra.add_argument("--incr-hidden-dim",
-                   dest = "incr_hidden_dim",
-                   default = False,
-                   action = "store_true",
-                   help = "Increase node feature dimensions in subsequent hidden layers successively by a factor of 2 (default: False)")
-    p_tra.add_argument("--list-weight-decay",
+                   default=[0.001],
+                   help="Learning rate of optimizer. Can also be provided as list for hyperparameter optimzation (e.g. --lr 0.01 0.001 0.0001) (default: 0.001)")
+    p_tra.add_argument("--weight-decay",
                    dest="list_weight_decay",
                    type=float,
                    metavar='float',
                    nargs='+',
-                   default=[0.001],
-                   help="List of weight decays for hyperparameter optimization (default: 0.001)")
-    p_tra.add_argument("--list-dr",
+                   default=[0.0005],
+                   help="Weight decay of optimizer. Can also be provided as list for hyperparameter optimzation (e.g. --weight-decay 0.0 0.0005) (default: 0.001)")
+    p_tra.add_argument("--dr",
                    dest="list_dr",
                    type=float,
                    metavar='float',
                    nargs='+',
-                   default=[0.2],
-                   help="List of dropout rates for hyperparameter optimization (default: 0.2 (for --undirected 0.3))")
+                   default=[0.5],
+                   help="Dropout rate for GRU model. Can also be provided as list for hyperparameter optimzation (e.g. --dr 0.3 0.5) (default: 0.5)")
 
     """
     Model evaluation mode.
@@ -253,12 +241,12 @@ def setup_argument_parser():
                    dest="in_train_folder",
                    type=str,
                    required = True,
-                   help = "Input model training folder (output of graphprot2 train)")
+                   help = "Input model training folder (output of rnaprot train)")
     p_evm.add_argument("--gt-in",
                    dest="in_gt_folder",
                    type=str,
                    required = True,
-                   help = "Input training data folder (output of graphprot2 gt)")
+                   help = "Input training data folder (output of rnaprot gt)")
     p_evm.add_argument("--out",
                    dest="out_folder",
                    type=str,
@@ -322,7 +310,7 @@ def setup_argument_parser():
                    type=str,
                    metavar='str',
                    default = False,
-                   help = "Second model training folder (output of graphprot2 train) for plotting prediction scores of both models on --gt-in positive dataset. Note that if dataset features of the two models are not identical, comparison might be less informative")
+                   help = "Second model training folder (output of rnaprot train) for plotting prediction scores of both models on --gt-in positive dataset. Note that if dataset features of the two models are not identical, comparison might be less informative")
     p_ev.add_argument("--theme",
                    dest="theme",
                    type = int,
@@ -350,12 +338,12 @@ def setup_argument_parser():
                    dest="in_folder",
                    type=str,
                    required = True,
-                   help = "Input prediction data folder (output of graphprot2 gp)")
+                   help = "Input prediction data folder (output of rnaprot gp)")
     p_prm.add_argument("--train-in",
                    dest="train_in_folder",
                    type=str,
                    required = True,
-                   help = "Input model training folder containing model file and parameters (output of graphprot2 train)")
+                   help = "Input model training folder containing model file and parameters (output of rnaprot train)")
     p_prm.add_argument("--out",
                    dest="out_folder",
                    type=str,
@@ -375,7 +363,7 @@ def setup_argument_parser():
                    type = int,
                    metavar='int',
                    default = 20,
-                   help = "Window middle position extension on both sides for calculating position-wise scoring profiles. The center position of the window gets the window score assigned. If --seq-ext + --mode 1 was used in graphprot2 train, best set --win-ext to --seq-ext value (default: 20)")
+                   help = "Window middle position extension on both sides for calculating position-wise scoring profiles. The center position of the window gets the window score assigned. If --seq-ext + --mode 1 was used in rnaprot train, best set --win-ext to --seq-ext value (default: 20)")
     p_pr.add_argument("--thr",
                    dest="sc_thr",
                    type = float,
@@ -410,7 +398,7 @@ def setup_argument_parser():
                    type=str,
                    metavar='str',
                    required = True,
-                   help = "Output training data folder (== input folder to graphprot2 train)")
+                   help = "Output training data folder (== input folder to rnaprot train)")
 
     # Optional arguments for gt.
     p_gt.add_argument("--gtf",
@@ -579,12 +567,7 @@ def setup_argument_parser():
                    dest="add_str",
                    default = False,
                    action = "store_true",
-                   help = "Add base pairs and position-wise structural elements probabilities features (calculate with RNAplfold) (default: False)")
-    p_gta.add_argument("--bp-in",
-                   dest="bp_in",
-                   type=str,
-                   metavar='str',
-                   help = "Supply a custom base pair annotation file for all --in sites. This disables base pair calculation for the positive set (default: False)")
+                   help = "Add position-wise structural elements probabilities features (calculate with RNAplfold) (default: False)")
     p_gta.add_argument("--plfold-u",
                    dest="plfold_u",
                    type = int,
@@ -612,7 +595,7 @@ def setup_argument_parser():
                    dest="feat_in_1h",
                    default = False,
                    action = "store_true",
-                   help = "Use one-hot encoding for all additional position-wise features from --feat-in table, ignoring table type definitions (default: False)")
+                   help = "Use one-hot encoding for all additional position-wise features from --feat-in table, ignoring type definitions in --feat-in table (default: False)")
     p_gta.add_argument("--feat-in-norm",
                    dest="feat_in_norm",
                    default = False,
@@ -640,13 +623,13 @@ def setup_argument_parser():
                    type=str,
                    metavar='str',
                    required = True,
-                   help = "Training input folder (output folder of graphprot2 train) to extract the same features for --in sites which were used to train the model (info stored in --train-in folder)")
+                   help = "Training input folder (output folder of rnaprot train) to extract the same features for --in sites which were used to train the model (info stored in --train-in folder)")
     p_gpm.add_argument("--out",
                    dest="out_folder",
                    type=str,
                    metavar='str',
                    required = True,
-                   help = "Output prediction dataset folder (== input folder to graphprot2 predict)")
+                   help = "Output prediction dataset folder (== input folder to rnaprot predict)")
 
     # Optional arguments for gp.
     p_gp.add_argument("--gtf",
@@ -713,18 +696,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (graphprot2 gt --feat-in) for training the model from --train-in!")
-    p_gpa.add_argument("--bp-in",
-                   dest="bp_in",
-                   type=str,
-                   metavar='str',
-                   help = "Supply a custom base pair annotation file for all --in sites. This disables base pair calculation for --in sites (default: False)")
-    p_gpa.add_argument("--bps-prob-cutoff",
-                   dest = "bps_cutoff",
-                   type = float,
-                   metavar='float',
-                   default = 0.5,
-                   help = "Base pair probability cutoff for filtering base pairs added to the test graphs (default: use cutoff info from --train-in)")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
     return p
 
 
@@ -732,7 +704,7 @@ def setup_argument_parser():
 
 def main_train(args):
     """
-    Train a graphprot2 model.
+    Train a rnaprot model.
 
     """
 
@@ -740,7 +712,7 @@ def main_train(args):
 
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
-    indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str_elem_p + args.use_bps + args.use_add_feat
+    indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str_elem_p + args.use_add_feat
     if indiv_feat_check and args.only_seq:
         assert False, "--only-seq useless in combination with individually selected features (--use-xxx)"
     assert args.train_vs >= 0.1 and args.train_vs <= 0.5, "Use reasonable values for --train-vs (>= 0.1 and <= 0.5)"
@@ -751,9 +723,9 @@ def main_train(args):
     if args.str_elem_1h:
         assert args.use_str_elem_p, "--str-elem-1h requires --use-str-elem-p to be set"
 
-    # Get additional infos from graphprot2 gt settings.
-    gt_settings_file = args.in_folder + "/settings.graphprot2_gt.out"
-    assert os.path.exists(gt_settings_file), "graphprot2 gt settings file %s not found" %(gt_settings_file)
+    # Get additional infos from rnaprot gt settings.
+    gt_settings_file = args.in_folder + "/settings.rnaprot.out"
+    assert os.path.exists(gt_settings_file), "rnaprot gt settings file %s not found" %(gt_settings_file)
     gt_settings_dic = {}
     with open(gt_settings_file) as f:
         for line in f:
@@ -803,10 +775,6 @@ def main_train(args):
     # Silence con_ext options.
     args.bps_mode = 1
     args.uc_context = False
-    # Global add pool.
-    args.gadd_pool = True
-    if args.disable_gap:
-        args.gadd_pool = False
 
     # Generate results output folder.
     out_folder = args.out_folder
@@ -818,7 +786,7 @@ def main_train(args):
     print("Model training output folder:  %s" %(out_folder))
 
     # Output mode settings.
-    settings_file = out_folder + "/settings.graphprot2_train.out"
+    settings_file = out_folder + "/settings.rnaprot.out"
     SETOUT = open(settings_file, "w")
     for arg in vars(args):
         SETOUT.write("%s\t%s\n" %(arg, str(getattr(args, arg))))
@@ -828,8 +796,8 @@ def main_train(args):
     li2label_dic = {}
 
     # Load training data.
-    seqs_dic, idx2id_dic, label_list, all_graphs = gp2lib.load_training_data(args,
-                                                          li2label_dic=li2label_dic)
+    seqs_dic, idx2id_dic, label_list, all_graphs = rplib.load_training_data(args,
+                                                         li2label_dic=li2label_dic)
 
     # Node feature vector length.
     #y_g1 = all_graphs[0].y
@@ -6103,16 +6071,18 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Show some banner.
-    print("")
-    print("    ______                 __    ____             __   ")
-    print("   / ____/________ _____  / /_  / __ \_________  / /_ 2")
-    print("  / / __/ ___/ __ `/ __ \/ __ \/ /_/ / ___/ __ \/ __/  ")
-    print(" / /_/ / /  / /_/ / /_/ / / / / ____/ /  / /_/ / /_    ")
-    print(" \____/_/   \__,_/ .___/_/ /_/_/   /_/   \____/\__/    ")
-    print("                /_/                                    ")
+    banner = """
+     ____  _   _____    ____  ____  ____  ______
+    / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
+   / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
+  / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
+ /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
+
+"""
+    print(banner)
 
     # Drop a line.
-    print(gp2lib.drop_a_line())
+    print(rplib.drop_a_line())
 
     # Are my tools ready?
     assert gp2lib.is_tool("bedtools"), "bedtools not in PATH"
