@@ -1,0 +1,6 @@
+chr1	1000	1030	site1	0	+
+chr1	2000	2030	site2	0	-
+chr1	1090	1100	site3_p1	0	+
+chr1	1500	1505	site3_p2	0	+
+chr1	2500	2505	site4_e1	0	-
+chr1	2090	2100	site4_e2	0	-

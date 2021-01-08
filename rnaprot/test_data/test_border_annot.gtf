@@ -1,0 +1,8 @@
+1	havana	transcript	1001	1020	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	exon	1001	1020	.	+	.	gene_id "ENSG1"; transcript_id "ENST1"; exon_id "ENSE01"; exon_number "1";
+1	havana	transcript	2001	2100	.	+	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	exon	2001	2010	.	+	.	gene_id "ENSG2"; transcript_id "ENST2"; exon_id "ENSE02"; exon_number "1";
+1	havana	exon	2081	2100	.	+	.	gene_id "ENSG2"; transcript_id "ENST2"; exon_id "ENSE03"; exon_number "2";
+1	havana	transcript	2001	2100	.	-	.	gene_id "ENSG3"; transcript_id "ENST3";
+1	havana	exon	2081	2100	.	-	.	gene_id "ENSG3"; transcript_id "ENST3"; exon_id "ENSE04"; exon_number "1";
+1	havana	exon	2001	2010	.	-	.	gene_id "ENSG3"; transcript_id "ENST3"; exon_id "ENSE05"; exon_number "2";

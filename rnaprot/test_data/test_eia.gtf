@@ -1,0 +1,6 @@
+1	havana	transcript	101	200	.	+	.	gene_id "gene1"; transcript_id "tr1";
+1	havana	exon	101	120	.	+	.	gene_id "gene1"; transcript_id "tr1"; exon_id "ex1"; exon_number "1";
+1	havana	exon	191	200	.	+	.	gene_id "gene1"; transcript_id "tr1"; exon_id "ex2"; exon_number "2";
+1	havana	transcript	301	400	.	-	.	gene_id "gene2"; transcript_id "tr2";
+1	havana	exon	391	400	.	-	.	gene_id "gene2"; transcript_id "tr2"; exon_id "ex3"; exon_number "1";
+1	havana	exon	301	320	.	-	.	gene_id "gene2"; transcript_id "tr2"; exon_id "ex4"; exon_number "2";

@@ -1,0 +1,6 @@
+chr1	1000	1020	site1	0	+
+chr1	1000	1020	site2	0	-
+chr1	999	1002	site3_p1	0	+
+chr1	1008	1011	site3_p2	0	+
+chr1	999	1002	site4_e2	0	-
+chr1	1007	1011	site4_e1	0	-

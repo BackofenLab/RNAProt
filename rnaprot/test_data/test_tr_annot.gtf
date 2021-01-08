@@ -1,0 +1,16 @@
+1	havana	transcript	951	1100	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	exon	951	1050	.	+	.	gene_id "ENSG1"; transcript_id "ENST1"; exon_id "ex1"; exon_number "1";
+1	havana	exon	1051	1100	.	+	.	gene_id "ENSG1"; transcript_id "ENST1"; exon_id "ex2"; exon_number "2";
+1	havana	five_prime_utr	951	1005	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	start_codon	1006	1008	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	CDS	1006	1023	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	stop_codon	1021	1023	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	three_prime_utr	1024	1100	.	+	.	gene_id "ENSG1"; transcript_id "ENST1";
+1	havana	transcript	1951	2100	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	exon	2051	2100	.	-	.	gene_id "ENSG2"; transcript_id "ENST2"; exon_id "ex3"; exon_number "1";
+1	havana	exon	1951	2050	.	-	.	gene_id "ENSG2"; transcript_id "ENST2"; exon_id "ex4"; exon_number "2";
+1	havana	three_prime_utr	1951	2005	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	stop_codon	2006	2008	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	CDS	2006	2023	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	start_codon	2021	2023	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";
+1	havana	five_prime_utr	2024	2100	.	-	.	gene_id "ENSG2"; transcript_id "ENST2";

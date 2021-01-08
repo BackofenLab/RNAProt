@@ -1,0 +1,10 @@
+1	havana	transcript	32001	40000	.	+	.	gene_id "ENSG01"; transcript_id "ENST01"; gene_name "ABC1"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic";
+1	havana	exon	32001	40000	.	+	.	gene_id "ENSG01"; transcript_id "ENST01"; gene_name "ABC1"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic";
+1	havana	transcript	30001	40000	.	+	.	gene_id "ENSG01"; transcript_id "ENST02"; gene_name "ABC1"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic";
+1	havana	exon	30001	40000	.	+	.	gene_id "ENSG01"; transcript_id "ENST02"; gene_name "ABC1"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic";
+2	havana	transcript	70001	80000	.	-	.	gene_id "ENSG02"; transcript_id "ENST03"; gene_name "ABC2"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA";
+2	havana	exon	70001	80000	.	-	.	gene_id "ENSG02"; transcript_id "ENST03"; gene_name "ABC2"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA";
+X	havana	transcript	50001	60000	.	-	.	gene_id "ENSG03"; transcript_id "ENST04"; gene_name "ABC3"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic"; transcript_support_level "5";
+X	havana	exon	50001	60000	.	-	.	gene_id "ENSG03"; transcript_id "ENST04"; gene_name "ABC3"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic"; transcript_support_level "5";
+X	havana	transcript	52001	60000	.	-	.	gene_id "ENSG03"; transcript_id "ENST05"; gene_name "ABC3"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic"; transcript_support_level "2";
+X	havana	exon	52001	60000	.	-	.	gene_id "ENSG03"; transcript_id "ENST05"; gene_name "ABC3"; gene_biotype "transcribed_unprocessed_pseudogene"; transcript_biotype "lncRNA"; tag "basic"; transcript_support_level "2";
