@@ -796,14 +796,11 @@ def main_train(args):
     li2label_dic = {}
 
     # Load training data.
-    seqs_dic, idx2id_dic, label_list, all_graphs = rplib.load_training_data(args,
-                                                         li2label_dic=li2label_dic)
+    seqs_dic, idx2id_dic, label_list, all_features = rplib.load_training_data(args,
+                                                           li2label_dic=li2label_dic)
 
-    # Node feature vector length.
-    #y_g1 = all_graphs[0].y
-    #x_g1 = all_graphs[0].x
-    #num_features = len(x_g1[0])
-    num_features = all_graphs[0].num_features
+    # Number of features (feature vector length).
+    num_features = len(all_features[0][0])
     assert num_features, "invalid num_features (%s)" %(num_features)
 
     # Check for CUDA support.
@@ -817,23 +814,29 @@ def main_train(args):
     print("# dataset features:  %i" %(num_features))
     print("Dataset size:        %i" %(len(all_graphs)))
 
-    # Shuffle graphs.
+    # Shuffle features.
     random.seed(1)
-    random.shuffle(all_graphs)
-    labels = [g.y for g in all_graphs]
+    label_list_add = []
+    for idx,label in enumerate(label_list):
+        label_list_add.append([label,idx])
+    all_features_labels = list(zip(all_features, label_list_add))
+    random.shuffle(all_features_labels)
+    all_features, label_list_add = zip(*all_features_labels)
+    idx2id_dic_new = {}
+    label_list_new = []
+    for idx,lst in enumerate(label_list_add):
+        label = lst[0]
+        old_idx = lst[1]
+        label_list_new.append(label)
+        seq_id = idx2id_dic[old_idx]
+        idx2id_dic_new[idx] = seq_id
+    label_list = label_list_new
+    idx2id_dic = idx2id_dic_new
 
-    # Hyperparameters.
-    #args.list_lr = [0.001, 0.0001]
-    #args.list_node_hidden_dim = [96, 128]
-    #args.list_node_hidden_dim = [64, 128]
-    #args.list_weight_decay = [0.0001, 0.00001]
-    #args.list_weight_decay = [0.0, 0.0001, 0.0005]
-    #args.list_lr = [0.0001]
-    #args.list_lr = [0.001, 0.0001] 0.005? 0.01?
-    #args.list_node_hidden_dim = [128]
-    #args.list_weight_decay = [0.00001]
+
 
     """
+    HALLO123
 
     Default hyperparameters paper:
     patience=10

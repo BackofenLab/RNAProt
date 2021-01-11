@@ -168,7 +168,7 @@ def read_fasta_into_dic(fasta_file,
 
 ################################################################################
 
-def read_cat_feat_into_dic(feat_file,
+    def read_cat_feat_into_dic(feat_file,
                            feat_dic=False,
                            ids_dic=False,
                            all_uc=False):
@@ -11366,9 +11366,9 @@ def load_training_data(args,
     for seq_id in feat_dic:
         fvl_dic[len(feat_dic[seq_id][0])] = 1
     len_fvl_dic = len(fvl_dic)
-    assert len_fvl_dic == 1, "Various feature vector lengths (%i) encountered in feat_dic" %(len_fvl_dic)
+    assert len_fvl_dic == 1, "various feature vector lengths (%i) encountered in feat_dic" %(len_fvl_dic)
 
-    # Write used features.out file to graphprot2 train output folder.
+    # Write used features.out file to rnaprot train output folder.
     feat_table_out = args.out_folder + "/" + "features.out"
     FEATOUT = open(feat_table_out, "w")
     with open(feat_file) as f:
@@ -11377,12 +11377,7 @@ def load_training_data(args,
             cols = line.strip().split("\t")
             feat_id = cols[0]
             if feat_id in fid2type_dic:
-                if feat_id == "fa":
-                    if seqs_all_uc:
-                        FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
-                    else:
-                        FEATOUT.write("fa\tC\tA,C,G,U,a,c,g,u\t-\n")
-                elif feat_id == "elem_p.str" and args.str_elem_1h:
+                if feat_id == "elem_p.str" and args.str_elem_1h:
                     FEATOUT.write("elem_p.str\tC\tE,H,I,M,S\t-\n")
                 else:
                     FEATOUT.write("%s\n" %(row))
@@ -11397,7 +11392,7 @@ def load_training_data(args,
     CIOUT.close()
 
     """
-    Generate graphs.
+    Generate list of feature lists all_features.
 
     """
     # Sequence ID list + label list.
@@ -11455,67 +11450,12 @@ def load_training_data(args,
         assert len(label_list) == len(seqs_dic), "len(label_list) != len(seqs_dic)"
 
     # Construct graphs list.
-    all_graphs = []
+    all_features = []
 
     for idx, label in enumerate(label_list):
         seq_id = seq_ids_list[idx]
-        seq = seqs_dic[seq_id]
-        l_seq = len(seq)
-
-        # Make edge indices for backbone.
-        edge_index_1 = []
-        edge_index_2 = []
-        # Edge indices 0-based!
-        for n_idx in range(l_seq - 1):
-            edge_index_1.append(n_idx)
-            edge_index_2.append(n_idx+1)
-            # In case of undirected graphs, add backward edges too.
-            if args.undirected:
-                edge_index_1.append(n_idx+1)
-                edge_index_2.append(n_idx)
-
-        # Add base pair edges.
-        if bpp_dic:
-            vp_s = vp_dic[seq_id][0] # 1-based.
-            vp_e = vp_dic[seq_id][1] # 1-based.
-            # Entry e.g. 'CLIP_01': ['130-150,0.33', '160-200,0.44', '240-260,0.55']
-            for entry in bpp_dic[seq_id]:
-                m = re.search("(\d+)-(\d+),(.+)", entry)
-                p1 = int(m.group(1)) # 1-based.
-                p2 = int(m.group(2)) # 1-based.
-                bpp_value = float(m.group(3))
-                g_p1 = p1 - 1 # 0-based base pair index.
-                g_p2 = p2 - 1 # 0-based base pair index.
-                # Filter.
-                if bpp_value < args.bps_cutoff: continue
-                # Add base pair depending on set mode.
-                add_edge = False
-                if args.bps_mode == 1:
-                    if (p1 >= vp_s and p1 <= vp_e) or (p2 >= vp_s and p2 <= vp_e):
-                        add_edge = True
-                elif args.bps_mode == 2:
-                    if p1 >= vp_s and p2 <= vp_e:
-                        add_edge = True
-                if add_edge:
-                    edge_index_1.append(g_p1)
-                    edge_index_2.append(g_p2)
-                    if args.undirected:
-                        edge_index_1.append(g_p2)
-                        edge_index_2.append(g_p1)
-
-        # Merge edge indices.
-        edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-        # x: node feature matrix with shape [num_nodes, num_node_features].
-        x = torch.tensor(feat_dic[seq_id], dtype=torch.float)
-        # Make a PyG Data object / graph from features and edges.
-        # Data class description:
-        # A plain old python object modeling a single graph with various (optional) attributes:
-        # x, edge_index, edge_attr, y (Graph or node targets with arbitrary shape)
-        # https://pytorch-geometric.readthedocs.io/en/latest/modules/data.html
-        data = Data(x=x, edge_index=edge_index, y=label)
-        all_graphs.append(data)
-
-    assert all_graphs, "no graphs constructed (all_graphs empty)"
+        all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+    assert all_features, "no features stored in all_features (all_features empty)"
 
     """
     ~~~ RETURNS ~~~
@@ -11527,11 +11467,13 @@ def load_training_data(args,
         mapping.
     label_list:
         Class label list (indices correspond to all_graphs list)
-    all_graphs:
-        List of PyG dataset graphs (indices correspond to label_list)
+    all_features:
+        List of feature matrices / tensors for positive + negative
+        dataset, with order as in label_list. Get sequence ID with
+        idx2id_dic, using the list index.
 
     """
-    return seqs_dic, idx2id_dic, label_list, all_graphs
+    return seqs_dic, idx2id_dic, label_list, all_features
 
 
 ################################################################################
@@ -12270,6 +12212,7 @@ def read_feat_into_dic(feat_file, feat_type,
 
     1) Categorical data (C)
     Categorical (feat_type == C) data example, with label_list = ['E', 'I']:
+    Old format:
     CLIP_1	EI
     CLIP_2	IE
     Generated one-hot lists:
@@ -12277,6 +12220,11 @@ def read_feat_into_dic(feat_file, feat_type,
     [[0, 1], [1, 0]]
     Generated dictionary:
     {'CLIP_1': [[1, 0], [0, 1]], 'CLIP_2': [[0, 1], [1, 0]]}
+    New format (like FASTA):
+    >CLIP_1
+    EI
+    >CLIP_2
+    IE
 
     2) Numerical data (N)
     Numerical (feat_type == N) data example:
@@ -12322,6 +12270,9 @@ def read_feat_into_dic(feat_file, feat_type,
     >>> tra_labels = ['C', 'F', 'N', 'T']
     >>> read_feat_into_dic(cat_test_in, "C", label_list=tra_labels)
     {'site1': [[0, 1, 0, 0], [0, 0, 0, 1]], 'site2': [[1, 0, 0, 0], [0, 0, 1, 0]]}
+    >>> cat_test_in = "test_data/test_new_format.tra"
+    >>> read_feat_into_dic(cat_test_in, "C", label_list=tra_labels)
+    {'site1': [[0, 1, 0, 0], [0, 0, 0, 1]], 'site2': [[1, 0, 0, 0], [0, 0, 1, 0]]}
 
     """
     feat_dic_given = False
@@ -12333,15 +12284,46 @@ def read_feat_into_dic(feat_file, feat_type,
     assert feat_type in types, "invalid feature type given (expects C or N)"
     if feat_type == 'C':
         assert label_list, "label_list needed if feat_type == C"
+        old_cat_format = True
+        # Check which file format is present.
         with open(feat_file) as f:
             for line in f:
-                cols = line.strip().split("\t")
-                seq_id = cols[0]
+                if re.search("^>.+", line):
+                    old_cat_format = False
+                elif re.search(".+?\t.+?", line):
+                    old_cat_format = True
+                else:
+                    assert False, "invalid format encountered in feat_file %s" %(feat_file)
+                break
+        f.closed
+        if old_cat_format:
+            with open(feat_file) as f:
+                for line in f:
+                    cols = line.strip().split("\t")
+                    seq_id = cols[0]
+                    if seq_id not in feat_dic:
+                        feat_dic[seq_id] = string_vectorizer(cols[1], custom_alphabet=label_list)
+                    else:
+                        # feat_dic already populated / initialized.
+                        add_list = string_vectorizer(cols[1], custom_alphabet=label_list)
+                        assert add_list, "add_list empty (feat_file: %s, seq_id: %s)" %(feat_file, seq_id)
+                        # Check.
+                        l_old = len(feat_dic[seq_id])
+                        l_add = len(add_list)
+                        assert l_old == l_add, "existing list length in feat_dic != list length from feat_file to add (feat_file: %s, seq_id: %s)" %(feat_file, seq_id)
+                        for i in range(l_old):
+                            feat_dic[seq_id][i] += add_list[i]
+            f.closed
+        else:
+            # Read in feature sequences into dic.
+            feat_dic = read_cat_feat_into_dic(feat_file)
+            for seq_id in feat_dic:
+                seq = feat_dic[seq_id]
                 if seq_id not in feat_dic:
-                    feat_dic[seq_id] = string_vectorizer(cols[1], custom_alphabet=label_list)
+                    feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=label_list)
                 else:
                     # feat_dic already populated / initialized.
-                    add_list = string_vectorizer(cols[1], custom_alphabet=label_list)
+                    add_list = string_vectorizer(seq, custom_alphabet=label_list)
                     assert add_list, "add_list empty (feat_file: %s, seq_id: %s)" %(feat_file, seq_id)
                     # Check.
                     l_old = len(feat_dic[seq_id])
@@ -12349,7 +12331,6 @@ def read_feat_into_dic(feat_file, feat_type,
                     assert l_old == l_add, "existing list length in feat_dic != list length from feat_file to add (feat_file: %s, seq_id: %s)" %(feat_file, seq_id)
                     for i in range(l_old):
                         feat_dic[seq_id][i] += add_list[i]
-        f.closed
     else:
         seq_id = ""
         pos_i = 0
