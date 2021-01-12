@@ -10289,14 +10289,12 @@ def get_valid_file_ending(s):
 
 def load_eval_data(args,
                    load_negatives=False,
-                   return_graphs=False,
                    train_folder=False,
                    num_features=4,
-                   undirected=True,
                    str_elem_1h=False):
 
     """
-    Load training data for graphprot2 eval, to generate motifs and profiles.
+    Load training data for rnaprot eval, to generate motifs and profiles.
 
     """
 
@@ -10342,9 +10340,7 @@ def load_eval_data(args,
             fid2cat_dic[feat_id] = feat_cat_list
             fid2norm_dic[feat_id] = feat_norm
     f.closed
-    assert fid2type_dic, "no feature infos read in from graphprot2 train feature file %s" %(feat_file)
-    # Check for base pair model.
-    assert "bpp.str" not in fid2type_dic, "--train-in model was trained with base pair information, but graphprot2 eval so far does not support the visualization of base pair information"
+    assert fid2type_dic, "no feature infos read in from rnaprot train feature file %s" %(feat_file)
 
     # Read in features.out from graphprot2 gt and check.
     gt_feat_file = args.in_gt_folder + "/" + "features.out"
@@ -10361,11 +10357,7 @@ def load_eval_data(args,
     assert gt_fid2row_dic, "no feature infos found in --gt-in feature file %s" %(gt_feat_file)
     # Compare gt+train features.
     for fid in fid2row_dic:
-        assert fid in gt_fid2row_dic, "graphprot2 train feature ID \"%s\" not found in %s" %(fid, gt_feat_file)
-
-    # Context + bp settings.
-    seqs_all_uc = True
-    bps_mode = 1
+        assert fid in gt_fid2row_dic, "rnaprot train feature ID \"%s\" not found in %s" %(fid, gt_feat_file)
 
     # Check sequence feature.
     assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
@@ -10376,14 +10368,10 @@ def load_eval_data(args,
     if load_negatives:
         pos_fa_in = args.in_gt_folder + "/" + "negatives.fa"
     assert os.path.exists(pos_fa_in), "--gt-in folder does not contain %s"  %(pos_fa_in)
-    seqs_dic = read_fasta_into_dic(pos_fa_in, all_uc=seqs_all_uc)
+    seqs_dic = read_fasta_into_dic(pos_fa_in, all_uc=True)
     assert seqs_dic, "no sequences read in from FASTA file \"%s\"" %(pos_fa_in)
 
-    # Get uppercase (viewpoint) region start and ends for each sequence.
-    vp_dic = extract_uc_region_coords_from_fasta(seqs_dic)
-
     # Data dictionaries.
-    bpp_dic = {}
     feat_dic = {}
 
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
@@ -10408,15 +10396,6 @@ def load_eval_data(args,
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
         if fid == "fa": # already added to feat_dic (first item).
             continue
-        # base pairs not supported by eval so far, so do not load.
-        #if fid == "bpp.str":
-        #    test_bpp_in = args.in_folder + "/" + "test.bpp.str"
-        #    assert os.path.exists(test_bpp_in), "--in folder does not contain %s"  %(test_bpp_in)
-        #    print("Read in base pair data ... ")
-        #    bpp_dic = read_bpp_into_dic(test_bpp_in, vp_dic,
-        #                                bps_mode=args.bps_mode)
-        #    assert bpp_dic, "no base pair information read in (bpp_dic empty)"
-
         # All features (additional to .fa) like .elem_p.str, .con, .eia, .tra, .rra, or user defined.
         feat_alphabet = fid2cat_dic[fid]
         pos_feat_in = args.in_gt_folder + "/positives." + fid
@@ -10486,8 +10465,6 @@ def load_eval_data(args,
 
     # Store node data in list of 2d lists.
     all_features = []
-    # if return_graphs=True.
-    all_graphs = []
 
     for idx, label in enumerate(label_list):
         seq_id = seq_ids_list[idx]
@@ -10497,31 +10474,12 @@ def load_eval_data(args,
         # Checks.
         check_num_feat = len(feat_dic[seq_id][0])
         assert num_features == check_num_feat, "# features (num_features) from model parameter file != loaded number of node features (%i != %i)" %(model_num_feat, check_num_feat)
-
-        if return_graphs:
-            edge_index_1 = []
-            edge_index_2 = []
-            for ni in range(l_seq - 1):
-                edge_index_1.append(ni)
-                edge_index_2.append(ni+1)
-                if undirected:
-                    edge_index_1.append(ni+1)
-                    edge_index_2.append(ni)
-            edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-            x = torch.tensor(feat_dic[seq_id], dtype=torch.float)
-            data = Data(x=x, edge_index=edge_index, y=label)
-            all_graphs.append(data)
-        else:
-            # Appendo.
-            all_features.append(feat_dic[seq_id])
+        # Add to all_features list as tensor.
+        all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
 
     # Return some double talking jive data.
-    if return_graphs:
-        assert all_graphs, "all_graphs empty"
-        return seqs_dic, idx2id_dic, all_graphs, ch_info_dic
-    else:
-        assert all_features, "all_features empty"
-        return seqs_dic, idx2id_dic, all_features, ch_info_dic
+    assert all_features, "all_features empty"
+    return seqs_dic, idx2id_dic, all_features, ch_info_dic
 
 
 ################################################################################
@@ -11474,6 +11432,50 @@ def load_training_data(args,
 
     """
     return seqs_dic, idx2id_dic, label_list, all_features
+
+
+################################################################################
+
+def shuffle_idx_feat_labels(labels, features,
+                            random_seed=False,
+                            idx2id_dic=False):
+    """
+    Shuffle features list and return shuffled list, together with
+    new labels list corresponding to new label order in features list
+    and an updated dictionary idx2id_dic, mapping the index to an
+    identifier like sequence ID.
+
+    random_seed:
+        Set random.seed().
+    idx2id_dic:
+        If given, update dictionary with new indices (after shuffling)
+        to ID mapping.
+
+    """
+    assert labels, "given labels empty"
+    assert features, "given features empty"
+    if random_seed:
+        random.seed(random_seed)
+    labels_add = []
+    for idx,label in enumerate(labels):
+        labels_add.append([label,idx])
+    features_labels = list(zip(features, labels_add))
+    random.shuffle(features_labels)
+    features, labels_add = zip(*features_labels)
+    idx2id_dic_new = {}
+    new_labels = []
+    for idx,lst in enumerate(label_list_add):
+        label = lst[0]
+        old_idx = lst[1]
+        new_labels.append(label)
+        if idx2id_dic:
+            assert old_idx in idx2id_dic, "index %i is not a key in idx2id_dic" %(old_idx)
+            seq_id = idx2id_dic[old_idx]
+            idx2id_dic_new[idx] = seq_id
+    assert new_labels, "resulting new_labels list empty"
+    if idx2id_dic:
+        idx2id_dic = idx2id_dic_new
+    return new_labels, features
 
 
 ################################################################################
