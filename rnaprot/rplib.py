@@ -42,63 +42,6 @@ python3 -m doctest -v rplib.py
 
 ################################################################################
 
-def extract_vp_seq(seqs_dic, seq_id,
-                   use_con_ext=False,
-                   con_ext=100):
-    """
-    Extract viewpoint part (uppercase chars) from sequence with
-    given sequence ID seq_id.
-    If use_con_ext is set, viewpoint region will be extended by
-    con_ext. Thus total length of returned sequence will be
-    len(vp_region)+2*len(con_ext).
-    Return sequence, start position + end position (both one-based)
-    of extracted sequence.
-
-    >>> seqs_dic = {"CLIP_01" : "acguACGUacgu", "CLIP_02" : "CCCCgggg"}
-    >>> seq, s, e = extract_vp_seq(seqs_dic, "CLIP_01")
-    >>> print(seq, s, e)
-    ACGU 5 8
-    >>> seq, s, e = extract_vp_seq(seqs_dic, "CLIP_01", use_con_ext=True, con_ext=2)
-    >>> print(seq, s, e)
-    guACGUac 3 10
-    >>> seq, s, e = extract_vp_seq(seqs_dic, "CLIP_02", use_con_ext=True, con_ext=2)
-    >>> print(seq, s, e)
-    CCCCgg 1 6
-
-    """
-    # Check.
-    if not seq_id in seqs_dic:
-        print ("ERROR: seq_id \"%s\" not found in seqs_dic" % (seq_id))
-        sys.exit()
-    seq = seqs_dic[seq_id]
-    m = re.search("([acgun]*)([ACGUN]+)([acgun]*)", seq)
-    if m:
-        us_seq = m.group(1)
-        vp_seq = m.group(2)
-        ds_seq = m.group(3)
-        l_us = len(us_seq)
-        l_vp = len(vp_seq)
-        l_ds = len(ds_seq)
-        # Viewpoint start + end.
-        new_s = l_us+1
-        new_e = l_us+l_vp
-        new_seq = vp_seq
-        if use_con_ext:
-            new_us_seq = us_seq[-con_ext:]
-            new_ds_seq = ds_seq[:con_ext]
-            l_new_us = len(new_us_seq)
-            l_new_ds = len(new_ds_seq)
-            new_s = l_us-l_new_us+1
-            new_e = l_us+l_vp+l_new_ds
-            new_seq = new_us_seq+vp_seq+new_ds_seq
-        return new_seq, new_s, new_e
-    else:
-        print ("ERROR: extract_vp_seq() viewpoint extraction failed for \"%s\"" % (seq_id))
-        sys.exit()
-
-
-################################################################################
-
 def read_fasta_into_dic(fasta_file,
                         seqs_dic=False,
                         ids_dic=False,
@@ -505,22 +448,22 @@ def read_str_elem_p_into_dic(str_elem_p_file,
     return dictionary.
 
     p_to_str:
-        Read in probs as strings.
+        Read in probabilities as strings, not as float.
 
     Example input:
     >CLIP_01
-    0.9	0.1	0.2	0.4	0.2	0.1
-    0.8	0.2	0.3	0.2	0.1	0.2
+    0.1	0.2	0.4	0.2	0.1
+    0.2	0.3	0.2	0.1	0.2
     Resulting dictionary:
-    d = {'CLIP_01': [[0.9, 0.1, 0.2, 0.4, 0.2, 0.1], [0.8, 0.2, 0.3, 0.2, 0.1, 0.2]]}
+    d = {'CLIP_01': [[0.1, 0.2, 0.4, 0.2, 0.1], [0.2, 0.3, 0.2, 0.1, 0.2]]}
     print(d["CLIP_01"][0])
-    [0.9, 0.1, 0.2, 0.4, 0.2, 0.1]
+    [0.1, 0.2, 0.4, 0.2, 0.1]
     print(d["CLIP_01"][0][0])
-    0.9
+    0.1
 
     >>> str_elem_up_test = "test_data/test.elem_p.str"
     >>> read_str_elem_p_into_dic(str_elem_up_test)
-    {'CLIP_01': [[0.9, 0.1, 0.2, 0.4, 0.2, 0.1], [0.8, 0.2, 0.3, 0.2, 0.1, 0.2]]}
+    {'CLIP_01': [[0.1, 0.2, 0.4, 0.2, 0.1], [0.2, 0.3, 0.2, 0.1, 0.2]]}
 
     """
     if not str_elem_p_dic:
@@ -1060,48 +1003,33 @@ def up_split_callback(v, v_size, i, maxsize, what, data):
 
 ################################################################################
 
-def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
-                         out_miss=False,
-                         missing_ids_dic=None,
-                         report=True,
-                         stats_dic=None,
-                         id2ucr_dic=False,
-                         plfold_u=3,
-                         plfold_l=100,
-                         plfold_w=150):
+def calc_str_elem_p(in_fasta, out_str,
+                    report=True,
+                    stats_dic=None,
+                    id2ucr_dic=False,
+                    plfold_u=3,
+                    plfold_l=100,
+                    plfold_w=150):
     """
     Calculate structural elements probabilities (different loop contexts),
-    as well as base pairs and their probabilities, using ViennaRNA.
+    using ViennaRNA's RNAplfold.
 
-    This uses the Python3 API (RNA.py) of ViennaRNA (tested with v 2.4.14).
+    This uses the Python3 API (RNA.py) of ViennaRNA (tested with v 2.4.17).
     So RNA.py needs to be in PYTHONPATH, which it is,
     if e.g. installed via:
-    conda install -c bioconda viennarna=2.4.14
+    conda install -c bioconda viennarna=2.4.17
 
-    If no base pairs found for sequence, still print out ID header to
-    out_bpp (just no base pair rows following).
+    NOTE that there is still a memory bug in the Python API as for 2.4.17.
+    The more sequences get processed, the more memory is consumed. Bug
+    has been reported and should be gone in the next release.
 
     in_fasta:
         Input FASTA file
-    out_bpp:
-        Output base pair probabilities file
     out_str:
         Output position-wise structural elements probabilities file
-    out_miss:
-        Output file to store FASTA IDs for which no BPs were found
-    missing_ids_dic:
-        Optionally, store missing IDs in missing_ids_dic. Like out_miss
-        obsolete, since all sequence IDs are output even if no base pairs
-        found for a given sequence.
     stats_dic:
         If not None, extract statistics from structure data and store
         in stats_dic.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        Set to define regions for which to generate element probability
-        stats, stored in stats_dic.
     plfold_u:
         RNAplfold -u parameter value
     plfold_l:
@@ -1127,9 +1055,7 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
 
     # If stats dictionary given, compute statistics during run.
     if stats_dic is not None:
-        stats_dic["bp_c"] = 0
         stats_dic["seqlen_sum"] = 0
-        stats_dic["nobpsites_c"] = 0
         stats_dic["seq_c"] = len(seqs_dic)
         pu_list = []
         ps_list = []
@@ -1140,10 +1066,7 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
         pbp_list = []
 
     # Output files.
-    OUTBPP = open(out_bpp,"w")
     OUTSTR = open(out_str,"w")
-    if out_miss:
-        OUTMISS = open(out_miss,"w")
 
     # Floor float, for centering probabilities (important when u > 1).
     i_add = int(plfold_u/2)
@@ -1153,7 +1076,7 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
 
     # Calculate base pair and structural elements probabilities.
     if report:
-        print("Calculate base pair and structural elements probabilities ... ")
+        print("Calculate structural elements probabilities ... ")
 
     for seq_id, seq in sorted(seqs_dic.items()):
 
@@ -1161,40 +1084,12 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
         md.max_bp_span = plfold_l
         md.window_size = plfold_w
 
-        # Get base pairs and their probabilities.
-        data = []
         # Different loop context probabilities.
         data_split = {'ext': [], 'hp': [], 'int': [], 'mb': [] }
 
         fc = RNA.fold_compound(seq, md, RNA.OPTION_WINDOW)
-        # Get base pairs and their probabilities.
-        fc.probs_window(plfold_u, RNA.PROBS_WINDOW_BPP, bpp_callback, data)
         # Get different loop context probabilities.
         fc.probs_window(plfold_u, RNA.PROBS_WINDOW_UP | RNA.PROBS_WINDOW_UP_SPLIT, up_split_callback, data_split)
-
-        # If base pairs found.
-        if data:
-            # Output base pair probabilities.
-            OUTBPP.write(">%s\n" %(seq_id))
-            for prob in data:
-                p = prob['p']
-                i = prob['i']
-                j = prob['j']
-                OUTBPP.write("%i\t%i\t%f\n" %(i,j,p))
-                if stats_dic:
-                    stats_dic["bp_c"] += 1
-                    pbp_list.append(p)
-        else:
-            if report:
-                print("WARNING: no base pairs found for \"%s\"" %(seq_id))
-            # Still print header.
-            OUTBPP.write(">%s\n" %(seq_id))
-            if stats_dic:
-                stats_dic["nobpsites_c"] += 1
-            if out_miss:
-                OUTMISS.write("%s\n" %(seq_id))
-            if missing_ids_dic is not None:
-                missing_ids_dic[seq_id] = 1
 
         # Store individual probs for sequence in lists.
         ups = []
@@ -1264,34 +1159,19 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
             #OUTSTR.write("%i\t%f\t%f\t%f\t%f\t%f\t%f\n" %(pos,p_u,p_e,p_h,p_i,p_m,p_s))
             OUTSTR.write("%f\t%f\t%f\t%f\t%f\n" %(p_e,p_h,p_i,p_m,p_s))
             if stats_dic:
-                if id2ucr_dic:
-                    # If id2ucr_dic, record values only for uppercase part of sequence.
-                    uc_s = id2ucr_dic[seq_id][0]
-                    uc_e = id2ucr_dic[seq_id][1]
-                    if pos >= uc_s and pos <= uc_e:
-                        pu_list.append(p_u)
-                        ps_list.append(p_s)
-                        pe_list.append(p_e)
-                        ph_list.append(p_h)
-                        pi_list.append(p_i)
-                        pm_list.append(p_m)
-                else:
-                    pu_list.append(p_u)
-                    ps_list.append(p_s)
-                    pe_list.append(p_e)
-                    ph_list.append(p_h)
-                    pi_list.append(p_i)
-                    pm_list.append(p_m)
+                pu_list.append(p_u)
+                ps_list.append(p_s)
+                pe_list.append(p_e)
+                ph_list.append(p_h)
+                pi_list.append(p_i)
+                pm_list.append(p_m)
 
         c_seq += 1
         if report:
             if not c_seq % 100:
                 print("%i sequences processed" %(c_seq))
 
-    OUTBPP.close()
     OUTSTR.close()
-    if out_miss:
-        OUTMISS.close()
 
     # Calculate stats if stats_dic set.
     if stats_dic:
@@ -1302,7 +1182,6 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
         stats_dic["H"] = [statistics.mean(ph_list)]
         stats_dic["I"] = [statistics.mean(pi_list)]
         stats_dic["M"] = [statistics.mean(pm_list)]
-        stats_dic["bp_p"] = [statistics.mean(pbp_list)]
         # Standard deviations.
         stats_dic["U"] += [statistics.stdev(pu_list)]
         stats_dic["S"] += [statistics.stdev(ps_list)]
@@ -1310,7 +1189,6 @@ def calc_str_elem_up_bpp(in_fasta, out_bpp, out_str,
         stats_dic["H"] += [statistics.stdev(ph_list)]
         stats_dic["I"] += [statistics.stdev(pi_list)]
         stats_dic["M"] += [statistics.stdev(pm_list)]
-        stats_dic["bp_p"] += [statistics.stdev(pbp_list)]
 
 
 ################################################################################
@@ -1760,7 +1638,6 @@ def bed_check_for_part_ids(in_bed):
 
 def extract_conservation_scores(in_bed, out_con, con_bw,
                                 stats_dic=None,
-                                id2ucr_dic=False,
                                 merge_split_regions=True,
                                 report=False):
     """
@@ -1781,12 +1658,6 @@ def extract_conservation_scores(in_bed, out_con, con_bw,
     stats_dic:
         If not None, extract statistics on conservation scores and store
         in stats_dic.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        Set to define regions for which to extract conservation score
-        stats, stored in stats_dic.
     merge_split_regions:
         If True, merge regions with IDs id1_p1, id1_p2 .. or id1_e1, id1_e2 ..
         The function thus looks for IDs with _e or _p attached to core ID,
@@ -1930,21 +1801,10 @@ def extract_conservation_scores(in_bed, out_con, con_bw,
             OUTCON.write("%s\n" %(sc))
         # Store conservation score stats.
         if stats_dic:
-            if id2ucr_dic:
-                # If id2ucr_dic, record values only for uppercase part of sequence.
-                uc_s = id2ucr_dic[reg_id][0]
-                uc_e = id2ucr_dic[reg_id][1]
-                for i,sc in enumerate(id2sc_dic[reg_id]):
-                    pos = i+1
-                    if pos >= uc_s and pos <= uc_e:
-                        if sc == 0:
-                            stats_dic["zero_pos"] += 1
-                        sc_list.append(sc)
-            else:
-                for sc in id2sc_dic[reg_id]:
-                    if sc == 0:
-                        stats_dic["zero_pos"] += 1
-                    sc_list.append(sc)
+            for sc in id2sc_dic[reg_id]:
+                if sc == 0:
+                    stats_dic["zero_pos"] += 1
+                sc_list.append(sc)
     OUTCON.close()
 
     if stats_dic:
@@ -1967,8 +1827,8 @@ def extract_conservation_scores(in_bed, out_con, con_bw,
 def bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, in_bed,
                                              in_gtf, eia_out,
                                              stats_dic=None,
-                                             id2ucr_dic=False,
                                              own_exon_bed=False,
+                                             split_size=60,
                                              n_labels=False,
                                              intron_border_labels=False):
 
@@ -1990,16 +1850,12 @@ def bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, in_bed,
     stats_dic:
         If not None, extract exon-intron annotation statistics and store
         in stats_dic.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        Set to define regions for which to extract exon-intron annotation
-        stats, stored in stats_dic.
     own_exon_bed:
         Supply own exon BED file. This disables n_labels and
         intron_border_labels annotations. Also tr_ids_dic is not used anymore
         for defining transcript / exon regions.
+    split_size:
+        Split size for outputting labels (FASTA style row width).
     n_labels:
         If True, label all positions not covered by intron or exon regions
         with "N".
@@ -2158,14 +2014,11 @@ def bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, in_bed,
     for site_id in id2labels_dic:
         # List to string.
         label_str = "".join(id2labels_dic[site_id])
-        OUTEIA.write("%s\t%s\n" %(site_id, label_str))
+        OUTEIA.write(">%s\n" %(site_id))
+        for i in range(0, len(label_str), split_size):
+            OUTEIA.write("%s\n" %((label_str[i:i+split_size])))
         # Get label statistics.
         if stats_dic:
-            if id2ucr_dic:
-                # If uppercase part only, prune label_str.
-                uc_s = id2ucr_dic[site_id][0]
-                uc_e = id2ucr_dic[site_id][1]
-                label_str = label_str[uc_s-1:uc_e]
             stats_dic["total_pos"] += len(label_str)
             occ_labels = ["F", "T"]
             for ocl in occ_labels:
@@ -6054,9 +5907,9 @@ def gtf_count_isoforms_per_gene(in_gtf,
 
 def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
                                             stats_dic=None,
-                                            id2ucr_dic=False,
                                             codon_annot=False,
                                             border_annot=False,
+                                            split_size=60,
                                             merge_split_regions=True):
     """
     Get transcript region annotations for genomic BED file in_bed, given
@@ -6075,18 +5928,14 @@ def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
     stats_dic:
         If not None, extract statistics from transcript annotations and store
         in stats_dic.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        Set to define regions for which to extract transcript annotation
-        stats, stored in stats_dic.
     codon_annot:
         Add start + stop codon region labels to regions overlapping with
         annotated start or stop codons (from in_gtf). S: start, E: stop
     border_annot:
         Add Transcript and exon border labels (from in_gtf).
         A: transcript start nt, Z: transcript end nt,  B: exon border nts
+    split_size:
+        Split size for outputting labels (FASTA style row width).
     merge_split_regions:
         If True, merge labels from IDs with format id1_p1, id1_p2 .. into one.
         Also works for _e1, _e2 .. labels.
@@ -6103,7 +5952,10 @@ def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
     start_codon -> S, stop_codon -> E
 
     Output .tra file with format:
-    transcript_region_id<tab>FFFFSSSCCCC...
+    >transcript_region_id
+    FFFFSSSCCCC
+    CCCCCCCCCCC
+    ...
 
     >>> tr_ids_dic = {"ENST1": 1, "ENST2": 1}
     >>> in_bed = "test_data/test_tr_annot.bed"
@@ -6272,13 +6124,19 @@ def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
                 assert new_label_list, "merging split region label lists failed"
                 # List to string.
                 label_str = "".join(new_label_list)
-            OUTLAB.write("%s\t%s\n" %(site_id, label_str))
+            # New FASTA style output.
+            OUTLAB.write(">%s\n" %(site_id))
+            for i in range(0, len(label_str), split_size):
+                OUTLAB.write("%s\n" %((label_str[i:i+split_size])))
+            #OUTLAB.write("%s\t%s\n" %(site_id, label_str))
     else:
         # Do not merge split regions, just output labels for each site.
         for site_id in id2labels_dic:
             # List to string.
             label_str = "".join(id2labels_dic[site_id])
-            OUTLAB.write("%s\t%s\n" %(site_id, label_str))
+            OUTLAB.write(">%s\n" %(site_id))
+            for i in range(0, len(label_str), split_size):
+                OUTLAB.write("%s\n" %((label_str[i:i+split_size])))
     OUTLAB.close()
 
     if stats_dic:
@@ -6288,11 +6146,6 @@ def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
                 cols = line.strip().split("\t")
                 reg_id = cols[0]
                 label_str = cols[1]
-                if id2ucr_dic:
-                    # If uppercase part only, prune label_str.
-                    uc_s = id2ucr_dic[reg_id][0]
-                    uc_e = id2ucr_dic[reg_id][1]
-                    label_str = label_str[uc_s-1:uc_e]
                 stats_dic["total_pos"] += len(label_str)
                 # Count occurences (+1 for each site with label) for these labels.
                 occ_labels = ["S", "E", "A", "Z", "B"]
@@ -6858,8 +6711,8 @@ def seq_count_nt_freqs(seq,
 ################################################################################
 
 def fasta_get_repeat_region_annotations(seqs_dic, out_rra,
-                                        stats_dic=None,
-                                        id2ucr_dic=False):
+                                        split_size=60,
+                                        stats_dic=None):
     """
     Get repeat region annotations for genomic and transcript regions,
     given a dictionary of sequences with lower- and uppercase sequences.
@@ -6872,20 +6725,18 @@ def fasta_get_repeat_region_annotations(seqs_dic, out_rra,
     to label repeat and non-repeat region sequences and output to
     rra_out.
 
+    split_size:
+        Split size for outputting labels (FASTA style row width).
     stats_dic:
         If not None, extract statistics from repeat annotations and store
         in stats_dic.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        Set to define regions for which to extract repeat annotation
-        stats, stored in stats_dic.
 
     Output format example:
-    seq1<tab>NNRRRRNN
-    seq2<tab>NNNNNNN
-    seq3<tab>RRRRRRRRR
+    >seq1
+    NNRRRRNN
+    >seq2
+    NNNNNNN
+    ...
 
     >>> seqs_dic = {'seq1': 'ACacgtAC', 'seq2': 'ACGUACG', 'seq3': 'acguacguu'}
     >>> out_exp_rra = "test_data/test8.exp.rra"
@@ -6912,7 +6763,10 @@ def fasta_get_repeat_region_annotations(seqs_dic, out_rra,
                 rra_str += "R"
             else:
                 rra_str += "N"
-        OUTRRA.write("%s\t%s\n" %(seq_id, rra_str))
+        #OUTRRA.write("%s\t%s\n" %(seq_id, rra_str))
+        OUTRRA.write(">%s\n" %(seq_id))
+        for i in range(0, len(rra_str), split_size):
+            OUTRRA.write("%s\n" %((rra_str[i:i+split_size])))
         if stats_dic:
             if id2ucr_dic:
                 # If uppercase part only, prune rra_str.
@@ -7455,7 +7309,7 @@ def create_eval_model_comp_scatter_plot(model1_scores, model2_scores, out_plot,
                                         y_label="Score model 2",
                                         theme=1):
     """
-    Create graphprot2 eval scatter plot, to compare scores produced by
+    Create rnaprot eval scatter plot, to compare scores produced by
     two models on same dataset. Also calculates and plots R2 (coefficient
     of determination) value for two datasets.
 
@@ -7550,7 +7404,7 @@ def create_eval_kmer_score_kde_plot(set_scores, out_plot,
                                     y_label="Density",
                                     theme=1):
     """
-    Create graphprot2 eval kdeplot, plotting density for set of k-mer scores.
+    Create rnaprot eval kdeplot, plotting density for set of k-mer scores.
 
     """
     assert set_scores, "set_scores empty"
@@ -7597,7 +7451,7 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
                          y_label="Density",
                          theme=1):
     """
-    Create graphprot2 eval kdeplot, plotting densities for two sets of
+    Create rnaprot eval kdeplot, plotting densities for two sets of
     scores.
 
     """
@@ -7644,9 +7498,9 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
 
 ################################################################################
 
-def gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
-                                  out_folder, gp2lib_path,
-                                  html_report_out="report.graphprot2_eval.html",
+def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
+                                  out_folder, rplib_path,
+                                  html_report_out="report.rnaprot_eval.html",
                                   kmer2rank_dic=False,
                                   kmer2sc_dic=False,
                                   kmer2c_dic=False,
@@ -7672,7 +7526,7 @@ def gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   jacc_stats_dic=False,
                                   plots_subfolder="html_plots"):
     """
-    Generate HTML report for graphprot2 eval, showing stats and plots regarding
+    Generate HTML report for rnaprot eval, showing stats and plots regarding
     whole site scores and k-mers.
 
     For onlyseq:
@@ -7692,7 +7546,7 @@ def gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
     assert ws_scores, "ws_scores empty"
     assert neg_ws_scores, "neg_ws_scores empty"
     assert os.path.exists(out_folder), "out_folder does not exist"
-    assert os.path.exists(gp2lib_path), "gp2lib_path does not exist"
+    assert os.path.exists(rplib_path), "rplib_path does not exist"
     assert kmer2rank_dic, "kmer2rank_dic needed"
     assert kmer2sc_dic, "kmer2sc_dic needed"
     assert kmer2c_dic, "kmer2c_dic needed"
@@ -7717,7 +7571,7 @@ def gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
     if not os.path.exists(plots_out_folder):
         os.makedirs(plots_out_folder)
     # Output files.
-    html_out = out_folder + "/" + "report.graphprot2_eval.html"
+    html_out = out_folder + "/" + "report.rnaprot_eval.html"
     if html_report_out:
         html_out = html_report_out
     # Plot files.
@@ -7733,27 +7587,26 @@ def gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
     avg_best_kmer_scatter_plot_out = plots_out_folder + "/" + avg_best_kmer_scatter_plot
 
     # Logo paths.
-    logo1_path = gp2lib_path + "/content/logo1.png"
-    logo2_path = gp2lib_path + "/content/logo2.png"
-    logo3_path = gp2lib_path + "/content/logo3.png"
-    sorttable_js_path = gp2lib_path + "/content/sorttable.js"
+    logo1_path = rplib_path + "/content/logo1.png"
+    logo2_path = rplib_path + "/content/logo2.png"
+    sorttable_js_path = rplib_path + "/content/sorttable.js"
 
     # Create theme-specific HTML header.
     if theme == 1:
         mdtext = """
 <head>
-<title>GraphProt2 - Model Evaluation Report</title>
+<title>RNAProt - Model Evaluation Report</title>
 <script src="%s" type="text/javascript"></script>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="600" />
+<img src="%s" alt="rp_logo"
+	title="rp_logo" width="600" />
 
 """ %(sorttable_js_path, logo1_path)
     elif theme == 2:
         mdtext = """
 <head>
-<title>GraphProt2 - Model Evaluation Report</title>
+<title>RNAProt - Model Evaluation Report</title>
 <script src="%s" type="text/javascript"></script>
 <style>
 h1 {color:#fd3b9d;}
@@ -7762,30 +7615,12 @@ h3 {color:#fd3b9d;}
 </style>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="500" />
+<img src="%s" alt="rp_logo"
+	title="rp_logo" width="500" />
 
 <body style="font-family:sans-serif" bgcolor="#190250" text="#fcc826" link="#fd3b9d" vlink="#fd3b9d" alink="#fd3b9d">
 
 """ %(sorttable_js_path, logo2_path)
-    elif theme == 3:
-        mdtext = """
-<head>
-<title>GraphProt2 - Model Evaluation Report</title>
-<script src="%s" type="text/javascript"></script>
-<style>
-h1 {color:#1fcc2c;}
-h2 {color:#1fcc2c;}
-h3 {color:#1fcc2c;}
-</style>
-</head>
-
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="400" />
-
-<body style="font-family:monospace" bgcolor="#1d271e" text="#1fcc2c" link="#1fcc2c" vlink="#1fcc2c" alink="#1fcc2c">
-
-""" %(sorttable_js_path, logo3_path)
     else:
         assert False, "invalid theme ID given"
 
@@ -7795,7 +7630,7 @@ h3 {color:#1fcc2c;}
 # Model Evaluation Report
 
 List of available model evaluation statistics generated
-by GraphProt2 (graphprot2 eval):
+by RNAProt (rnaprot eval):
 
 - [Whole-site score distribution](#ws-scores-plot)"""
     if onlyseq:
@@ -8300,48 +8135,40 @@ on the positive training set for the two input models. Model 1: model from
 
 ################################################################################
 
-def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
-                                dataset_type, gp2lib_path,
-                                html_report_out=False,
-                                plots_subfolder=False,
-                                id2ucr_dic=False,
-                                pos_str_stats_dic=False,
-                                neg_str_stats_dic=False,
-                                pos_phastcons_stats_dic=False,
-                                neg_phastcons_stats_dic=False,
-                                pos_phylop_stats_dic=False,
-                                neg_phylop_stats_dic=False,
-                                pos_eia_stats_dic=False,
-                                neg_eia_stats_dic=False,
-                                pos_tra_stats_dic=False,
-                                neg_tra_stats_dic=False,
-                                pos_rra_stats_dic=False,
-                                neg_rra_stats_dic=False,
-                                add_feat_dic_list=False,
-                                target_gbtc_dic=False,
-                                all_gbtc_dic=False,
-                                t2hc_dic=False,
-                                t2i_dic=False,
-                                theme=1,
-                                kmer_top=10,
-                                target_top=10,
-                                rna=True,
-                                uc_entropy=True,
-                                ):
+def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
+                            dataset_type, rplib_path,
+                            html_report_out=False,
+                            plots_subfolder=False,
+                            pos_str_stats_dic=False,
+                            neg_str_stats_dic=False,
+                            pos_phastcons_stats_dic=False,
+                            neg_phastcons_stats_dic=False,
+                            pos_phylop_stats_dic=False,
+                            neg_phylop_stats_dic=False,
+                            pos_eia_stats_dic=False,
+                            neg_eia_stats_dic=False,
+                            pos_tra_stats_dic=False,
+                            neg_tra_stats_dic=False,
+                            pos_rra_stats_dic=False,
+                            neg_rra_stats_dic=False,
+                            add_feat_dic_list=False,
+                            target_gbtc_dic=False,
+                            all_gbtc_dic=False,
+                            t2hc_dic=False,
+                            t2i_dic=False,
+                            theme=1,
+                            kmer_top=10,
+                            target_top=10,
+                            rna=True
+                            ):
     """
-    Generate HTML report for graphprot2 gt, comparing extracted positive
+    Generate HTML report for rnaprot gt, comparing extracted positive
     with negative set.
 
     pos_seqs_dic:
         Positive set sequences dictionary.
     neg_seqs_dic:
         Negative set sequences dictionary.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> "uppercase_start-uppercase_end"
-        where both positions are 1-based.
-        If given, use only subsequences defined by this dictionary for
-        generating sequence stats.
     pos_str_stats_dic:
         Positive set structure statistics dictionary
     neg_str_stats_dic:
@@ -8355,12 +8182,9 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
         where positive and corresponding negative set are stored together,
         so indices 1,2 3,4 5,6 ... belong together (positive stats dic first).
     out_folder:
-        graphprot2 gt results output folder, to store report in.
+        rnaprot gt results output folder, to store report in.
     rna:
         Set True if input sequences are RNA.
-    uc_entropy:
-        Calculate sequence entropies only for uppercase sequence parts,
-        ignoring the lowercase context sequence parts.
     html_report_out:
         HTML report output file.
     target_gbtc_dic:
@@ -8374,7 +8198,7 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
 
     More to add:
     References
-    GraphProt2 version
+    RNAProt version
     Command line call
 
     """
@@ -8395,10 +8219,10 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     if not os.path.exists(plots_out_folder):
         os.makedirs(plots_out_folder)
     # Output files.
-    html_out = out_folder + "/" + "report.graphprot2_gt.html"
+    html_out = out_folder + "/" + "report.rnaprot_gt.html"
     if html_report_out:
         html_out = html_report_out
-    #md_out = out_folder + "/" + "report.graphprot2_gt.md"
+    #md_out = out_folder + "/" + "report.rnaprot_gt.md"
     # Plot files.
     lengths_plot = "set_lengths_plot.png"
     entropy_plot = "sequence_complexity_plot.png"
@@ -8421,23 +8245,6 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
 
     print("Generate statistics for HTML report ... ")
 
-    """
-    If only uppercase part of sequences should be used for stats,
-    prune the sequence dictionaries based on uppercase region start
-    and end info stored in id2ucr_dic.
-    """
-    if id2ucr_dic:
-        for pos_id in pos_seqs_dic:
-            seq = pos_seqs_dic[pos_id]
-            uc_s = id2ucr_dic[pos_id][0]
-            uc_e = id2ucr_dic[pos_id][1]
-            pos_seqs_dic[pos_id] = seq[uc_s-1:uc_e]
-        for neg_id in neg_seqs_dic:
-            seq = neg_seqs_dic[neg_id]
-            uc_s = id2ucr_dic[neg_id][0]
-            uc_e = id2ucr_dic[neg_id][1]
-            neg_seqs_dic[neg_id] = seq[uc_s-1:uc_e]
-
     # Site numbers.
     c_pos_out = len(pos_seqs_dic)
     c_neg_out = len(neg_seqs_dic)
@@ -8446,9 +8253,9 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     neg_len_list = get_seq_len_list_from_dic(neg_seqs_dic)
     # Get entropy scores for sequences.
     pos_entr_list = seqs_dic_calc_entropies(pos_seqs_dic, rna=rna,
-                                            uc_part_only=uc_entropy)
+                                            uc_part_only=False)
     neg_entr_list = seqs_dic_calc_entropies(neg_seqs_dic, rna=rna,
-                                            uc_part_only=uc_entropy)
+                                            uc_part_only=False)
 
     # Get set nucleotide frequencies.
     pos_ntc_dic = seqs_dic_count_nt_freqs(pos_seqs_dic, rna=rna,
@@ -8505,25 +8312,24 @@ def gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
                                              convert_to_uc=True)
 
     # Logo paths.
-    logo1_path = gp2lib_path + "/content/logo1.png"
-    logo2_path = gp2lib_path + "/content/logo2.png"
-    logo3_path = gp2lib_path + "/content/logo3.png"
+    logo1_path = rplib_path + "/content/logo1.png"
+    logo2_path = rplib_path + "/content/logo2.png"
 
     # Create theme-specific HTML header.
     if theme == 1:
         mdtext = """
 <head>
-<title>GraphProt2 - Training Set Generation Report</title>
+<title>RNAProt - Training Set Generation Report</title>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="600" />
+<img src="%s" alt="rp_logo"
+	title="rnaprot_logo" width="600" />
 
 """ %(logo1_path)
     elif theme == 2:
         mdtext = """
 <head>
-<title>GraphProt2 - Training Set Generation Report</title>
+<title>RNAProt - Training Set Generation Report</title>
 <style>
 h1 {color:#fd3b9d;}
 h2 {color:#fd3b9d;}
@@ -8531,29 +8337,12 @@ h3 {color:#fd3b9d;}
 </style>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="500" />
+<img src="%s" alt="rp_logo"
+	title="rnaprot_logo" width="500" />
 
 <body style="font-family:sans-serif" bgcolor="#190250" text="#fcc826" link="#fd3b9d" vlink="#fd3b9d" alink="#fd3b9d">
 
 """ %(logo2_path)
-    elif theme == 3:
-        mdtext = """
-<head>
-<title>GraphProt2 - Training Set Generation Report</title>
-<style>
-h1 {color:#1fcc2c;}
-h2 {color:#1fcc2c;}
-h3 {color:#1fcc2c;}
-</style>
-</head>
-
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="400" />
-
-<body style="font-family:monospace" bgcolor="#1d271e" text="#1fcc2c" link="#1fcc2c" vlink="#1fcc2c" alink="#1fcc2c">
-
-""" %(logo3_path)
     else:
         assert False, "invalid theme ID given"
 
@@ -8563,15 +8352,13 @@ h3 {color:#1fcc2c;}
 # Training set generation report
 
 List of available statistics for the training dataset generated
-by GraphProt2 (graphprot2 gt):
+by RNAProt (rnaprot gt):
 
 - [Training dataset statistics](#set-stats)
 - [Site length distribution](#len-plot)
 - [Sequence complexity distribution](#ent-plot)
 - [Di-nucleotide distribution](#dint-plot)
 - [Top k-mer statistics](#kmer-stats)"""
-
-
 
     if pos_str_stats_dic and neg_str_stats_dic:
         mdtext += "\n"
@@ -8646,17 +8433,10 @@ Lengths differences in the training dataset can arise in two cases:
 Otherwise, all sequences (positives and negatives) are expected to have
 more or less the same length. This is because --mode 1 or --mode 3 both
 reduce the sites to a length of 1 before uniform extension is applied
-(controlled by --seq-ext and --con-ext).
+(controlled by --seq-ext).
 Some length differences can still occur though, e.g. if transcript
 sequences are extracted close to transcript ends, or as negatives
 are sampled randomly from a larger pool of initial negatives.
-Note that the lowercase context sequence parts which can be added by
---con-ext are excluded from the HTML report statistics. Only the
-uppercase sequence parts of each site (== whole site if --con-ext False)
-contribute to the statistics in this report.
-Lowercase context sequence parts (if --con-ext is set) are only
-used for base pair calculation as well as during model training
-(graphprot train) for profile prediction and motif generation.
 
 """
     mdtext += '<img src="' + lengths_plot_path + '" alt="Site length distribution"' + "\n"
@@ -8784,28 +8564,18 @@ I: internal loop, M: multi-loop, S: paired.
 &nbsp;
 
 """
-        # Make base pair stats table.
-        pos_bps_per_100nt = pos_str_stats_dic['bp_c'] / (pos_str_stats_dic['seqlen_sum'] / 100)
-        neg_bps_per_100nt = neg_str_stats_dic['bp_c'] / (neg_str_stats_dic['seqlen_sum'] / 100)
-        pos_mean_bp_p = pos_str_stats_dic['bp_p'][0]
-        neg_mean_bp_p = neg_str_stats_dic['bp_p'][0]
-        pos_mean_bp_stdev = pos_str_stats_dic['bp_p'][1]
-        neg_mean_bp_stdev = neg_str_stats_dic['bp_p'][1]
 
         mdtext += """
 ## Secondary structure statistics ### {#bp-stats}
 
-**Table:** Secondary structure (base pair + structural elements) statistics of
-the generated training set. Mean probabilities p() are given together with standard deviations (+- ...).
+**Table:** Secondary structure statistics of
+the generated training set. Mean probabilities p(..) of structural elements
+are given together with standard deviations (+- ..).
 
 """
         mdtext += "| &nbsp; &nbsp; &nbsp; Attribute &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; Positives &nbsp; &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; Negatives &nbsp; &nbsp; &nbsp; &nbsp; | \n"
         mdtext += "| :-: | :-: | :-: |\n"
         mdtext += "| total sequence length | %i | %i |\n" %(pos_str_stats_dic['seqlen_sum'], neg_str_stats_dic['seqlen_sum'])
-        mdtext += "| # base pairs | %i | %i |\n" %(pos_str_stats_dic['bp_c'], neg_str_stats_dic['bp_c'])
-        mdtext += "| base pairs per 100 nt | %.1f | %.1f |\n" %(pos_bps_per_100nt, neg_bps_per_100nt)
-        mdtext += "| # no-base-pair sites | %i | %i |\n" %(pos_str_stats_dic['nobpsites_c'], neg_str_stats_dic['nobpsites_c'])
-        mdtext += "| mean p(base pair) | %.4f (+-%.4f) | %.4f (+-%.4f) |\n" %(pos_mean_bp_p, pos_mean_bp_stdev, neg_mean_bp_p, neg_mean_bp_stdev)
         mdtext += "| mean p(paired) | %.4f (+-%.4f) | %.4f (+-%.4f) |\n" %(pos_str_stats_dic['S'][0], pos_str_stats_dic['S'][1], neg_str_stats_dic['S'][0], neg_str_stats_dic['S'][1])
         mdtext += "| mean p(unpaired) | %.4f (+-%.4f) | %.4f (+-%.4f) |\n" %(pos_str_stats_dic['U'][0], pos_str_stats_dic['U'][1], neg_str_stats_dic['U'][0], neg_str_stats_dic['U'][1])
         mdtext += "| mean p(external loop) | %.4f (+-%.4f) | %.4f (+-%.4f) |\n" %(pos_str_stats_dic['E'][0], pos_str_stats_dic['E'][1], neg_str_stats_dic['E'][0], neg_str_stats_dic['E'][1])
@@ -10038,6 +9808,7 @@ def feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
 def bed_get_feature_annotations(in_bed, feat_bed, feat_out,
                                 feat_type="C",
                                 stats_dic=None,
+                                split_size=60,
                                 disable_pol=False):
 
     """
@@ -10051,7 +9822,10 @@ def bed_get_feature_annotations(in_bed, feat_bed, feat_out,
 
     Format of feat_out file depends on feat_type:
     if "C":
-    id1<tab>00000111111 ...
+    >id1
+    00000111111
+    11110000000
+    ...
     if "N":
     >id1
     value1
@@ -10066,6 +9840,10 @@ def bed_get_feature_annotations(in_bed, feat_bed, feat_out,
         Output feature annotation file. Format depends on feat_type.
     feat_type:
         "C" for categorical, or "N" for numerical output annotations.
+    stats_dic:
+        2 store ya stats, bro.
+    split_size:
+        Split size for outputting C labels (FASTA style row width).
     disable_pol:
         If yes, disable strandedness (== do not set -s in intersectBed),
         i.e., do not differentiate between strands when adding
@@ -10203,7 +9981,10 @@ def bed_get_feature_annotations(in_bed, feat_bed, feat_out,
         if feat_type == "C":
             # List to string.
             label_str = "".join(id2vl_dic[site_id])
-            OUTLAB.write("%s\t%s\n" %(site_id, label_str))
+            OUTLAB.write(">%s\n" %(site_id))
+            for i in range(0, len(label_str), split_size):
+                OUTLAB.write("%s\n" %((label_str[i:i+split_size])))
+            #OUTLAB.write("%s\t%s\n" %(site_id, label_str))
             if stats_dic:
                 stats_dic["total_sites"] += 1
                 site_0 = True
@@ -10289,9 +10070,10 @@ def get_valid_file_ending(s):
 
 def load_eval_data(args,
                    load_negatives=False,
+                   store_tensors=True,
                    train_folder=False,
                    num_features=4,
-                   str_elem_1h=False):
+                   str_mode=False):
 
     """
     Load training data for rnaprot eval, to generate motifs and profiles.
@@ -10309,7 +10091,7 @@ def load_eval_data(args,
         feat_file = args.in_train_folder + "/" + "features.out"
     assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
 
-    # graphprot2 predict output folder.
+    # rnaprot predict output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
@@ -10342,7 +10124,7 @@ def load_eval_data(args,
     f.closed
     assert fid2type_dic, "no feature infos read in from rnaprot train feature file %s" %(feat_file)
 
-    # Read in features.out from graphprot2 gt and check.
+    # Read in features.out from rnaprot gt and check.
     gt_feat_file = args.in_gt_folder + "/" + "features.out"
     assert os.path.exists(gt_feat_file), "%s features file expected but not does not exist" %(gt_feat_file)
     gt_fid2row_dic = {}
@@ -10403,40 +10185,68 @@ def load_eval_data(args,
             pos_feat_in = args.in_gt_folder + "/negatives." + fid
         assert os.path.exists(pos_feat_in), "--in folder does not contain %s"  %(pos_feat_in)
         print("Read in .%s annotations ... " %(fid))
-        n_to_1h = False
-        # Special case: convert elem_p.str probabilities to 1-hot encoding.
-        if fid == "elem_p.str" and str_elem_1h:
-            n_to_1h = True
-        feat_dic = read_feat_into_dic(pos_feat_in, ftype,
-                                      feat_dic=feat_dic,
-                                      n_to_1h=n_to_1h,
-                                      label_list=feat_alphabet)
-        assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
-        if fid == "elem_p.str" and str_elem_1h:
-            ftype = "C"
-        ch_info_dic[fid] = [ftype, [], [], "-"]
-        if ftype == "N":
-            for c in feat_alphabet:
+        # Load tructure data according to set str_mode in train.
+        if fid == "str":
+            # Deal with structure data.
+            feat_dic = read_str_feat_into_dic(pos_feat_in,
+                                              str_mode=str_mode,
+                                              feat_dic=feat_dic)
+            assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            if args.str_mode == 1:
+                # Same as read in.
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    encoding = fid2norm_dic[fid]
+                    channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                    channel_info_list.append(channel_info)
+            elif args.str_mode == 2:
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
+                    channel_info_list.append(channel_info)
+            elif args.str_mode == 3:
                 channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[fid]
+                channel_id = "up"
+                encoding = "prob"
                 channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                 channel_info_list.append(channel_info)
-                ch_info_dic[fid][1].append(channel_nr-1)
-                ch_info_dic[fid][2].append(channel_id)
-                ch_info_dic[fid][3] = encoding
-        elif ftype == "C":
-            for c in feat_alphabet:
+            elif args.str_mode == 4:
                 channel_nr += 1
-                #channel_id = fid + "_" + c
-                channel_id = c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
+                channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
-                ch_info_dic[fid][1].append(channel_nr-1)
-                ch_info_dic[fid][2].append(channel_id)
-                ch_info_dic[fid][3] = "-"
+                channel_nr += 1
+                channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
+                channel_info_list.append(channel_info)
+            else:
+                assert False, "invalid str_mode given"
+
         else:
-            assert False, "invalid feature type given (%s) for feature %s" %(ftype,fid)
+            """
+            All features (additional to .fa and .str) like
+            .pc.con, .pp.con, .eia, .tra, .rra, or user-defined.
+            """
+            feat_dic = read_feat_into_dic(pos_feat_in, ftype,
+                                          feat_dic=feat_dic,
+                                          label_list=feat_alphabet)
+            assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            if ftype == "N":
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    encoding = fid2norm_dic[fid]
+                    channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                    channel_info_list.append(channel_info)
+            elif ftype == "C":
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    #channel_id = fid + "_" + c
+                    channel_id = c
+                    channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
+                    channel_info_list.append(channel_info)
+            else:
+                assert False, "invalid feature type given (%s) for feature %s" %(ftype,fid)
 
     # Output channel infos.
     CIOUT = open(channel_infos_out, "w")
@@ -10446,8 +10256,7 @@ def load_eval_data(args,
     CIOUT.close()
 
     """
-    Generate feature+edges lists or graph list (if return_graphs=True)
-    to return.
+    Generate list of feature lists all_features and more stuff to return.
 
     """
     # Sequence ID list + label list.
@@ -10475,7 +10284,10 @@ def load_eval_data(args,
         check_num_feat = len(feat_dic[seq_id][0])
         assert num_features == check_num_feat, "# features (num_features) from model parameter file != loaded number of node features (%i != %i)" %(model_num_feat, check_num_feat)
         # Add to all_features list as tensor.
-        all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+        if store_tensors:
+            all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+        else:
+            all_features.append(feat_dic[seq_id])
 
     # Return some double talking jive data.
     assert all_features, "all_features empty"
@@ -10485,10 +10297,10 @@ def load_eval_data(args,
 ################################################################################
 
 def load_predict_data(args,
-                      return_graphs=False):
+                      store_tensors=True):
 
     """
-    Load prediction data from GraphProt2 predict output folder
+    Load prediction data from RNAProt predict output folder
     and return either as list of graphs or list of feature lists.
 
     """
@@ -10508,7 +10320,7 @@ def load_predict_data(args,
     assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
     model_num_feat = int(params_dic["num_features"])
 
-    # graphprot2 predict output folder.
+    # rnaprot predict output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
@@ -10539,16 +10351,12 @@ def load_predict_data(args,
             fid2cat_dic[feat_id] = feat_cat_list
             fid2norm_dic[feat_id] = feat_norm
     f.closed
-    assert fid2type_dic, "no feature infos read in from graphprot2 train feature file %s" %(feat_file)
+    assert fid2type_dic, "no feature infos read in from rnaprot train feature file %s" %(feat_file)
     # Check sequence feature.
     assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
     assert fid2cat_dic["fa"] == ["A", "C", "G", "U"], "sequence feature alphabet != A,C,G,U"
 
-    # args.mode == 2 (predict position-wise scoring profiles) check.
-    if args.mode == 2:
-        assert "bpp.str" not in fid2type_dic, "--model-in model was trained with base pair information, but profile prediction mode (--mode 2) so far does not support base pair information. Use --mode 1 or train models without base pair information"
-
-    # Read in features.out from graphprot2 gp and check.
+    # Read in features.out from rnaprot gp and check.
     gp_feat_file = args.in_folder + "/" + "features.out"
     assert os.path.exists(gp_feat_file), "%s features file expected but not does not exist" %(gp_feat_file)
     gp_fid2row_dic = {}
@@ -10560,27 +10368,24 @@ def load_predict_data(args,
             feat_id = cols[0]
             gp_fid2row_dic[feat_id] = row
     f.closed
-    assert gp_fid2row_dic, "no feature infos found in graphprot2 gp feature file %s" %(gp_feat_file)
+    assert gp_fid2row_dic, "no feature infos found in rnaprot gp feature file %s" %(gp_feat_file)
     #assert len(fid2row_dic) == len(gp_fid2row_dic), "# features in gp + train feature files differ"
     for fid in fid2row_dic:
-        assert fid in gp_fid2row_dic, "graphprot2 train feature ID \"%s\" not found in %s" %(fid, gp_feat_file)
+        assert fid in gp_fid2row_dic, "rnaprot train feature ID \"%s\" not found in %s" %(fid, gp_feat_file)
         # If predict_profiles, "fa" feature between gp + train can differ.
         if not (args.mode == 2 and fid == "fa"):
             assert gp_fid2row_dic[fid] == fid2row_dic[fid], "feature infos for feature ID \"%s\" differ between gp + train feature files (train: \"%s\", gp: \"%s\")" %(fid, gp_fid2row_dic[fid], fid2row_dic[fid])
 
     # Get base pair cutoff from train.
-    bps_cutoff = False
-    gp2_train_param_file = args.train_in_folder + "/settings.graphprot2_train.out"
-    assert os.path.isfile(gp2_train_param_file), "missing graphprot2 train parameter file %s" %(gp2_train_param_file)
-    gp2_train_param_dic = read_settings_into_dic(gp2_train_param_file)
-    if "bpp.str" in fid2type_dic:
-        assert "bps_cutoff" in gp2_train_param_dic, "bps_cutoff info missing in graphprot2 train parameter file %s" %(gp2_train_param_file)
-        bps_cutoff = float(cols[1])
-    # Get str_elem_1h info.
-    str_elem_1h = False
-    assert "str_elem_1h" in gp2_train_param_dic, "str_elem_1h info missing in graphprot2 train parameter file %s" %(gp2_train_param_file)
-    if gp2_train_param_dic["str_elem_1h"] == "True":
-        str_elem_1h = True
+    rp_train_param_file = args.train_in_folder + "/settings.rnaprot_train.out"
+    assert os.path.isfile(rp_train_param_file), "missing rnaprot train parameter file %s" %(rp_train_param_file)
+    rp_train_param_dic = read_settings_into_dic(rp_train_param_file)
+
+    # Get str_mode info from train settings file.
+    assert "str_mode" in rp_train_param_dic, "str_mode info missing in rnaprot train parameter file %s" %(rp_train_param_file)
+    str_mode = int(rp_train_param_dic["str_mode"])
+    str_mode_check = [1,2,3,4]
+    assert str_mode in str_mode_check, "invalid str_mode given"
 
     # Read in FASTA sequences.
     test_fa_in = args.in_folder + "/" + "test.fa"
@@ -10588,11 +10393,7 @@ def load_predict_data(args,
     test_seqs_dic = read_fasta_into_dic(test_fa_in, all_uc=True)
     assert test_seqs_dic, "no sequences read in from FASTA file \"%s\"" %(test_fa_in)
 
-    # Get uppercase (viewpoint) region start and ends for each sequence.
-    vp_dic = extract_uc_region_coords_from_fasta(test_seqs_dic)
-
     # Data dictionaries.
-    bpp_dic = {}
     feat_dic = {}
 
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
@@ -10600,41 +10401,69 @@ def load_predict_data(args,
         seq = test_seqs_dic[seq_id]
         feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
 
+    # Add sequence one-hot channels.
+    for c in fid2cat_dic["fa"]:
+        channel_nr += 1
+        channel_id = c
+        channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+        channel_info_list.append(channel_info)
+
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
-        if fid == "fa":
-            # Add sequence one-hot channels.
-            for c in fid2cat_dic["fa"]:
-                channel_nr += 1
-                channel_id = c
-                channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
-                channel_info_list.append(channel_info)
+        if fid == "fa": # already added to feat_dic (first item).
             continue
-        if fid == "bpp.str":
-            test_bpp_in = args.in_folder + "/" + "test.bpp.str"
-            assert os.path.exists(test_bpp_in), "--in folder does not contain %s"  %(test_bpp_in)
-            print("Read in base pair data ... ")
-            bpp_dic = read_bpp_into_dic(test_bpp_in, vp_dic,
-                                        bps_mode=args.bps_mode)
-            assert bpp_dic, "no base pair information read in (bpp_dic empty)"
-        else:
-            # All features (additional to .fa) like .elem_p.str, .con, .eia, .tra, .rra, or user defined.
-            feat_alphabet = fid2cat_dic[fid]
-            test_feat_in = args.in_folder + "/test." + fid
 
-            assert os.path.exists(test_feat_in), "--in folder does not contain %s"  %(test_feat_in)
-            print("Read in .%s annotations ... " %(fid))
-            n_to_1h = False
-            # Special case: convert elem_p.str probabilities to 1-hot encoding.
-            if fid == "elem_p.str" and str_elem_1h:
-                n_to_1h = True
+        feat_alphabet = fid2cat_dic[fid]
+        test_feat_in = args.in_folder + "/test." + fid
+        assert os.path.exists(test_feat_in), "--in folder does not contain %s"  %(test_feat_in)
+
+        print("Read in .%s annotations ... " %(fid))
+
+        if fid == "str":
+            # Deal with structure data.
+            feat_dic = read_str_feat_into_dic(test_feat_in,
+                                              str_mode=str_mode,
+                                              feat_dic=feat_dic)
+            assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            # Set channel infos depending on str_mode.
+            if args.str_mode == 1:
+                # Same as read in.
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    encoding = fid2norm_dic[fid]
+                    channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                    channel_info_list.append(channel_info)
+            elif args.str_mode == 2:
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
+                    channel_info_list.append(channel_info)
+            elif args.str_mode == 3:
+                channel_nr += 1
+                channel_id = "up"
+                encoding = "prob"
+                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                channel_info_list.append(channel_info)
+            elif args.str_mode == 4:
+                channel_nr += 1
+                channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
+                channel_info_list.append(channel_info)
+                channel_nr += 1
+                channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
+                channel_info_list.append(channel_info)
+            else:
+                assert False, "invalid str_mode given"
+        else:
+            """
+            All features (additional to .fa and .str) like
+            .pc.con, .pp.con, .eia, .tra, .rra, or user-defined.
+            """
             feat_dic = read_feat_into_dic(test_feat_in, ftype,
                                           feat_dic=feat_dic,
-                                          n_to_1h=n_to_1h,
                                           label_list=feat_alphabet)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
-            if fid == "elem_p.str" and str_elem_1h:
-                ftype = "C"
             if ftype == "N":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -10660,8 +10489,7 @@ def load_predict_data(args,
     CIOUT.close()
 
     """
-    Generate feature+edges lists or graph list (if return_graphs=True)
-    to return.
+    Generate list of feature lists all_features and sum mo stuff 2 return.
 
     """
     # Sequence ID list + label list.
@@ -10677,450 +10505,126 @@ def load_predict_data(args,
         idx2id_dic[i] = seq_id
         i += 1
 
-    # If return_graphs=False.
     all_features = []
-    # if return_graphs=True.
-    all_graphs = []
 
     for idx, label in enumerate(label_list):
         seq_id = seq_ids_list[idx]
         seq = test_seqs_dic[seq_id]
         l_seq = len(seq)
 
-        # Make edge indices for backbone.
-        edge_index_1 = []
-        edge_index_2 = []
-        # Edge indices 0-based!
-        for n_idx in range(l_seq - 1):
-            edge_index_1.append(n_idx)
-            edge_index_2.append(n_idx+1)
-            # In case of undirected graphs, add backward edges too.
-            if args.undirected:
-                edge_index_1.append(n_idx+1)
-                edge_index_2.append(n_idx)
-
-        # Add base pair edges.
-        if bpp_dic:
-            vp_s = vp_dic[seq_id][0] # 1-based.
-            vp_e = vp_dic[seq_id][1] # 1-based.
-            # Entry e.g. 'CLIP_01': ['130-150,0.33', '160-200,0.44', '240-260,0.55']
-            for entry in bpp_dic[seq_id]:
-                m = re.search("(\d+)-(\d+),(.+)", entry)
-                p1 = int(m.group(1)) # 1-based.
-                p2 = int(m.group(2)) # 1-based.
-                bpp_value = float(m.group(3))
-                g_p1 = p1 - 1 # 0-based base pair index.
-                g_p2 = p2 - 1 # 0-based base pair index.
-                # Filter.
-                if bpp_value < args.bps_cutoff: continue
-                # Add base pair depending on set mode.
-                add_edge = False
-                if args.bps_mode == 1:
-                    if (p1 >= vp_s and p1 <= vp_e) or (p2 >= vp_s and p2 <= vp_e):
-                        add_edge = True
-                elif args.bps_mode == 2:
-                    if p1 >= vp_s and p2 <= vp_e:
-                        add_edge = True
-                if add_edge:
-                    edge_index_1.append(g_p1)
-                    edge_index_1.append(g_p2)
-                    if args.undirected:
-                        edge_index_1.append(g_p2)
-                        edge_index_2.append(g_p1)
-
         # Checks.
         check_num_feat = len(feat_dic[seq_id][0])
         assert model_num_feat == check_num_feat, "# features (num_features) from model parameter file != loaded number of node features (%i != %i)" %(model_num_feat, check_num_feat)
 
-        if return_graphs:
-            edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-            x = torch.tensor(feat_dic[seq_id], dtype=torch.float)
-            data = Data(x=x, edge_index=edge_index, y=label)
-            all_graphs.append(data)
+        # Gimme a choice.
+        if store_tensors:
+            all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
         else:
-            #all_edges.append([edge_index_1, edge_index_2])
             all_features.append(feat_dic[seq_id])
 
     # Return some double talking jive data.
-    if return_graphs:
-        assert all_graphs, "no graphs constructed (all_graphs empty)"
-        return test_seqs_dic, idx2id_dic, all_graphs
-    else:
-        assert all_features, "no graphs constructed (all_features empty)"
-        return test_seqs_dic, bpp_dic, idx2id_dic, all_features
+    return seqs_dic, idx2id_dic, all_features
 
 
 ################################################################################
 
-def load_ws_predict_data(args,
-                         data_id="data",
-                         predict_con_ext=False,
-                         add_info_out=True):
+def read_str_feat_into_dic(str_feat_file,
+                           str_mode=1,
+                           feat_dic=False):
+    """
+    Read in .str feature data into dictionary.
+    Depending on set --str-mode from rnaprot train, store data differently.
+
+    Example:
+    >CLIP_01
+    0.1	0.2	0.4	0.2	0.1
+    0.2	0.3	0.2	0.1	0.2
+
+    >>> str_feat_file = "test_data/test.elem_p.str"
+    >>> read_str_feat_into_dic(str_feat_file, str_mode=1)
+    {'CLIP_01' : [[0.1, 0.2, 0.4, 0.2, 0.1], [0.2, 0.3, 0.2, 0.1, 0.2]]}
+    >>> read_str_feat_into_dic(str_feat_file, str_mode=2)
+    {'CLIP_01' : [[0, 0, 1, 0, 0], [0, 1, 0, 0, 0]]}
+    >>> read_str_feat_into_dic(str_feat_file, str_mode=3)
+    {'CLIP_01' : [[0.9], [0.8]]}
+    >>> read_str_feat_into_dic(str_feat_file, str_mode=4)
+    {'CLIP_01' : [[0, 1], [0, 1]]}
 
     """
-    Load whole site prediction data from GraphProt2 predict output folder
-    and store in PyG format.
 
-    Needs a data ID in args to construct output folder.
-
-    """
-
-    # Checks.
-    assert os.path.isdir(args.in_folder), "--in folder does not exist"
-    assert os.path.isdir(args.train_in_folder), "--train-in model folder does not exist"
-
-    # Feature file containing info for features used for model training.
-    feat_file = args.train_in_folder + "/" + "features.out"
-    assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
-
-    # Data ID.
-    data_id = data_id
-    # graphprot2 predict output folder.
-    out_folder = args.out_folder
-    if not os.path.exists(out_folder):
-        os.makedirs(out_folder)
-    # PyTorch geometric data output folder.
-    data_out_folder = args.out_folder + "/" + data_id
-    if not os.path.exists(data_out_folder):
-        os.makedirs(data_out_folder)
-
-    # Raw and processed data subfolders (structure dictated by PyG).
-    raw_out_folder = data_out_folder + "/raw"
-    proc_out_folder = data_out_folder + "/processed"
-    if not os.path.exists(raw_out_folder):
-        os.makedirs(raw_out_folder)
-    if not os.path.exists(proc_out_folder):
-        os.makedirs(proc_out_folder)
-
-    # Output additional infos (sequences + IDs)?
-    add_out_folder = data_out_folder + "/add_info"
-    test_add_ids_out_file = False
-    test_add_seqs_out_file = False
-    if add_info_out:
-        if not os.path.exists(add_out_folder):
-            os.makedirs(add_out_folder)
-        test_add_ids_out_file = add_out_folder + "/test.add_info.ids"
-        test_add_seqs_out_file = add_out_folder + "/test.add_info.fa"
-
-    # Delete old .pt files.
-    processed_file = proc_out_folder + "/data.pt"
-    if os.path.exists(processed_file):
-        print("Remove existing data.pt file ... ")
-        os.remove(processed_file)
-
-    # Channel info output file.
-    channel_infos_out = out_folder + "/" + "channel_infos.out"
-    channel_info_list = []
-    channel_nr = 0
-
-    # Read in feature info.
-    fid2type_dic = {}
-    fid2cat_dic = {} # Store category labels or numerical score IDs in list.
-    fid2norm_dic = {}
-    fid2row_dic = {}
-    print("Read in feature infos from %s ... " %(feat_file))
-    with open(feat_file) as f:
+    feat_dic_given = False
+    if not feat_dic:
+        feat_dic = {}
+    else:
+        feat_dic_given = True
+    str_mode_check = [1,2,3,4]
+    assert str_mode in str_mode_check, "invalid str_mode given"
+    seq_id = ""
+    pos_i = 0
+    with open(str_feat_file) as f:
         for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            feat_id = cols[0]
-            feat_type = cols[1]
-            feat_cat_list = cols[2].split(",")
-            feat_cat_list.sort()
-            feat_norm = cols[3]
-            fid2row_dic[feat_id] = row
-            assert feat_id not in fid2type_dic, "feature ID \"%s\" found twice in feature file" %(feat_id)
-            fid2type_dic[feat_id] = feat_type
-            fid2cat_dic[feat_id] = feat_cat_list
-            fid2norm_dic[feat_id] = feat_norm
-    f.closed
-    assert fid2type_dic, "no feature infos read in from graphprot2 train feature file %s" %(feat_file)
-
-    if args.mode == 2:
-        assert "bpp.str" not in fid2type_dic, "--model-in model was trained with base pair information, but profile prediction mode (--mode 2) so far does not support base pair information. Use --mode 1 or train models without base pair information"
-
-    # Read in features.out from graphprot2 gp and check.
-    gp_feat_file = args.in_folder + "/" + "features.out"
-    assert os.path.exists(gp_feat_file), "%s features file expected but not does not exist" %(gp_feat_file)
-    gp_fid2row_dic = {}
-    print("Read in feature infos from %s ... " %(gp_feat_file))
-    with open(gp_feat_file) as f:
-        for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            feat_id = cols[0]
-            gp_fid2row_dic[feat_id] = row
-    f.closed
-    assert gp_fid2row_dic, "no feature infos found in graphprot2 gp feature file %s" %(gp_feat_file)
-    #assert len(fid2row_dic) == len(gp_fid2row_dic), "# features in gp + train feature files differ"
-    for fid in fid2row_dic:
-        assert fid in gp_fid2row_dic, "graphprot2 train feature ID \"%s\" not found in %s" %(fid, gp_feat_file)
-        # If predict_profiles, "fa" feature between gp + train can differ.
-        if not (args.mode == 2 and fid == "fa"):
-            assert gp_fid2row_dic[fid] == fid2row_dic[fid], "feature infos for feature ID \"%s\" differ between gp + train feature files (train: \"%s\", gp: \"%s\")" %(fid, gp_fid2row_dic[fid], fid2row_dic[fid])
-
-    # Get sequence context extension set in gp.
-    con_ext = False
-    gp_settings_file = args.in_folder + "/settings.graphprot2_gp.out"
-    if os.path.exists(gp_settings_file):
-        with open(gp_settings_file) as f:
-            for line in f:
-                cols = line.strip().split("\t")
-                if cols[0] == "con_ext":
-                    if cols[1] == "False":
-                        con_ext = False
-                    else:
-                        con_ext = int(cols[1])
-        f.closed
-    # Get base pair + con_ext settings from train.
-    bps_mode = 1
-    bps_cutoff = 0.5
-    con_ext_train = False
-    train_settings_file = args.train_in_folder + "/settings.graphprot2_train.out"
-    if os.path.exists(train_settings_file):
-        with open(train_settings_file) as f:
-            for line in f:
-                cols = line.strip().split("\t")
-                if cols[0] == "bps_mode":
-                    bps_mode = int(cols[1])
-                if cols[0] == "bps_cutoff":
-                    bps_cutoff = float(cols[1])
-                if cols[0] == "con_ext":
-                    if cols[1] == "False":
-                        con_ext_train = False
-                    else:
-                        con_ext_train = int(cols[1])
-        f.closed
-    # Compare gp + train context settings.
-    seqs_all_uc = False
-    if con_ext:
-        if not con_ext_train:
-            print("WARNING: --con-ext prediction data incompatible with trained model")
-            print("           Changing lowercase context regions to uppercase to")
-            print("            restore compatibility with trained model. To use")
-            print("             lowercase context regions in predictions train")
-            print("              a compatible model (graphprot2 gt --con-ext")
-            print("              and graphprot2 train --uc-context disabled)")
-            seqs_all_uc = True
-
-    # Double talking jive fake graph switches.
-    add_fake_g=False
-    fake_g_lcuc=False
-    # If we have a lowercase uppercase model.
-    if con_ext_train:
-        if con_ext:
-            if predict_con_ext:
-                if con_ext_train != predict_con_ext:
-                    print("WARNING: set context extension differs between trained model and --con-ext (%i != %i)" %(con_ext_train, predict_con_ext))
+            if re.search(">.+", line):
+                m = re.search(">(.+)", line)
+                seq_id = m.group(1)
+                # Init only necessary if no populated / initialized feat_dic given.
+                if not feat_dic_given:
+                    feat_dic[seq_id] = []
+                pos_i = 0
             else:
-                if con_ext_train != con_ext:
-                    print("WARNING: --con-ext differs between trained model and --in dataset (%i != %i)" %(con_ext_train, con_ext))
-        else:
-            # Only a problem for --mode 1 whole site prediction.
-            if args.mode == 1:
-                assert False, "Provided model (--model-in) was trained on upper- and lowercase context, but --in dataset does not contain lowercase context. Please provide a compatible model+dataset combination for whole site prediction (--mode 1)."
-
-        if args.mode == 2:
-            # Convert profile prediction sequences to uppercase.
-            seqs_all_uc = True
-            # For profile prediction, we need to add a UC LC fake graph here.
-            add_fake_g = True
-            fake_g_lcuc = True
-
-    # Check sequence feature.
-    assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
-
-    if con_ext_train:
-        assert fid2cat_dic["fa"] == ["A", "C", "G", "U", "a", "c", "g", "u"], "sequence feature alphabet != A,C,G,U,a,c,g,u"
-
-    else:
-        assert fid2cat_dic["fa"] == ["A", "C", "G", "U"], "sequence feature alphabet != A,C,G,U"
-
-    # Read in FASTA sequences.
-    test_fa_in = args.in_folder + "/" + "test.fa"
-    assert os.path.exists(test_fa_in), "--in folder does not contain %s"  %(test_fa_in)
-    test_seqs_dic = read_fasta_into_dic(test_fa_in, all_uc=seqs_all_uc)
-    assert test_seqs_dic, "no sequences read in from FASTA file \"%s\"" %(test_fa_in)
-
-    # Get uppercase (viewpoint) region start and ends for each sequence.
-    test_vp_dic = extract_uc_region_coords_from_fasta(test_seqs_dic)
-
-    # Additional features.
-    test_pc_con_in = args.in_folder + "/" + "test.pc.con"
-    test_pp_con_in = args.in_folder + "/" + "test.pp.con"
-    test_tra_in = args.in_folder + "/" + "test.tra"
-    test_rra_in = args.in_folder + "/" + "test.rra"
-    test_eia_in = args.in_folder + "/" + "test.eia"
-    test_str_elem_p_in = args.in_folder + "/" + "test.elem_p.str"
-    test_bpp_in = args.in_folder + "/" + "test.bpp.str"
-
-    # Dictionaries.
-    test_pc_con_dic = False
-    test_pp_con_dic = False
-    test_tra_dic = False
-    test_rra_dic = False
-    test_eia_dic = False
-    test_str_elem_p_dic = False
-    test_bpp_dic = False
-
-    # Check and read in data.
-    for fid, ftype in sorted(fid2type_dic.items()):
-        if fid == "fa":
-            continue
-        if fid == "bpp.str":
-            assert os.path.exists(test_bpp_in), "--in folder does not contain %s"  %(test_bpp_in)
-            print("Read in base pair data ... ")
-            test_bpp_dic = read_bpp_into_dic(test_bpp_in, test_vp_dic,
-                                            bps_mode=bps_mode)
-        if fid == "eia":
-            feat_id = "eia"
-            eia_alphabet = fid2cat_dic[feat_id]
-            assert os.path.exists(test_eia_in), "--in folder does not contain %s"  %(test_eia_in)
-            print("Read in exon-intron annotations ... ")
-            test_eia_dic = read_feat_into_dic(test_eia_in, "C",
-                                             label_list=eia_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-        if fid == "elem_p.str":
-            feat_id = "elem_p.str"
-            assert os.path.exists(test_str_elem_p_in), "--in folder does not contain %s"  %(test_str_elem_p_in)
-            print("Read structural elements probabilities ... ")
-            test_str_elem_p_dic = read_str_elem_p_into_dic(test_str_elem_p_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "pc.con":
-            feat_id = "pc.con"
-            assert os.path.exists(test_pc_con_in), "--in folder does not contain %s"  %(test_pc_con_in)
-            print("Read in phastCons scores ... ")
-            test_pc_con_dic = read_con_into_dic(test_pc_con_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "pp.con":
-            feat_id = "pp.con"
-            assert os.path.exists(test_pp_con_in), "--in folder does not contain %s"  %(test_pp_con_in)
-            print("Read in phyloP scores ... ")
-            test_pp_con_dic = read_con_into_dic(test_pp_con_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "rra":
-            feat_id = "rra"
-            rra_alphabet = fid2cat_dic["rra"]
-            assert os.path.exists(test_rra_in), "--in folder does not contain %s"  %(test_rra_in)
-            print("Read in repeat region annotations ... ")
-            test_rra_dic = read_feat_into_dic(test_rra_in, "C",
-                                             label_list=rra_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-        if fid == "tra":
-            feat_id = "tra"
-            tra_alphabet = fid2cat_dic["tra"]
-            assert os.path.exists(test_tra_in), "--in folder does not contain %s"  %(test_tra_in)
-            print("Read in transcript region annotations ... ")
-            test_tra_dic = read_feat_into_dic(test_tra_in, "C",
-                                             label_list=tra_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-    # Output channel infos.
-    CIOUT = open(channel_infos_out, "w")
-    CIOUT.write("ch\tch_id\tfeat_id\tfeat_type\tencoding\n")
-    for ch_info in channel_info_list:
-        CIOUT.write("%s\n" %(ch_info))
-    CIOUT.close()
-
-    print("Convert data to PyG format ... ")
-
-    # Convert data to PyTorch geometric format.
-    anl, agi, ae, ana, g_idx, n_idx = generate_geometric_data(test_seqs_dic,
-                                                        test_vp_dic,
-                                                        pc_con_dic=test_pc_con_dic,
-                                                        pp_con_dic=test_pp_con_dic,
-                                                        eia_dic=test_eia_dic,
-                                                        rra_dic=test_rra_dic,
-                                                        tra_dic=test_tra_dic,
-                                                        str_elem_p_dic=test_str_elem_p_dic,
-                                                        bpp_dic=test_bpp_dic,
-                                                        add_ids_out_file=test_add_ids_out_file,
-                                                        add_seqs_out_file=test_add_seqs_out_file,
-                                                        bps_mode=bps_mode,
-                                                        add_fake_g=add_fake_g,
-                                                        fake_g_lcuc=fake_g_lcuc,
-                                                        plfold_bpp_cutoff=bps_cutoff)
-
-    print("Store PyG data on HD ... ")
-
-    # RAW output files.
-    agi_file = raw_out_folder + "/" + data_id + "_graph_indicator.txt"
-    anl_file = raw_out_folder + "/" + data_id + "_node_labels.txt"
-    ana_file = raw_out_folder + "/" + data_id + "_node_attributes.txt"
-    ae_file = raw_out_folder + "/" + data_id + "_A.txt"
-    # Write to files.
-    f = open(agi_file, 'w')
-    f.writelines([str(e) + "\n" for e in agi])
-    f.close()
-    f = open(anl_file, 'w')
-    f.writelines([str(e) + "\n" for e in anl])
-    f.close()
-    if ana:
-        f = open(ana_file, 'w')
-        f.writelines([s + "\n" for s in ana])
-        f.close()
-    else:
-        if os.path.exists(ana_file):
-            os.remove(ana_file)
-    f = open(ae_file, 'w')
-    f.writelines([str(e[0]) + ", " + str(e[1]) + "\n" for e in ae])
-    f.close()
-    # Return test sequences dic.
-    return test_seqs_dic
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                vl = line.strip().split('\t')
+                # E H I M S.
+                for i,v in enumerate(vl):
+                    vl[i] = float(v)
+                if str_mode == 1:
+                    if feat_dic_given:
+                        for v in vl:
+                            feat_dic[seq_id][pos_i].append(v)
+                    else:
+                        feat_dic[seq_id].append(vl)
+                elif str_mode == 2:
+                    vl_1h = convert_prob_list_to_1h(vl)
+                    vl = vl_1h
+                    if feat_dic_given:
+                        for v in vl:
+                            feat_dic[seq_id][pos_i].append(v)
+                    else:
+                        feat_dic[seq_id].append(vl)
+                elif str_mode == 3:
+                    u_p = 1 - vl[4]
+                    if u_p < 0:
+                        u_p = 0.0
+                    if up > 1 :
+                        u_p = 1.0
+                    if feat_dic_given:
+                        feat_dic[seq_id][pos_i].append(u_p)
+                    else:
+                        feat_dic[seq_id].append([u_p])
+                elif str_mode == 4:
+                    u_p = 1 - vl[4]
+                    if u_p < 0:
+                        u_p = 0.0
+                    if up > 1 :
+                        u_p = 1.0
+                    vl_1h = [1, 0]
+                    if u_p > vl[4]:
+                        vl_1h = [0, 1]
+                    if feat_dic_given:
+                        for v in vl_1h:
+                            feat_dic[seq_id][pos_i].append(v)
+                    else:
+                        feat_dic[seq_id].append(vl_1h)
+                else:
+                    assert False, "invalid str_mode set"
+                pos_i += 1
+    f.closed
+    assert feat_dic, "feat_dic empty"
+    return feat_dic
 
 
 ################################################################################
 
 def load_training_data(args,
+                       store_tensors=True,
                        li2label_dic=None):
 
     """
@@ -11128,6 +10632,8 @@ def load_training_data(args,
     return training data as:
     seqs_dic, idx2id_dic, label_list, all_fatures
 
+    store_tensors:
+        Store data as tensors in returned all_features.
     li2label_dic:
         Class label to RBP label/name dictionary. For associating the
         positive class label to the RBP name in generic model cross
@@ -11142,7 +10648,7 @@ def load_training_data(args,
     feat_file = args.in_folder + "/" + "features.out"
     assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
 
-    # graphprot2 train output folder.
+    # rnaprot train output folder.
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
 
@@ -11150,19 +10656,6 @@ def load_training_data(args,
     channel_infos_out = args.out_folder + "/" + "channel_infos.out"
     channel_info_list = []
     channel_nr = 0
-
-    """
-    Read in feature info.
-
-    features.out example content:
-    fa	C	A,C,G,U	-
-    elem_p.str	N	p_u,p_e,p_h,p_i,p_m,p_s	prob
-    pc.con	N	phastcons_score	prob
-    pp.con	N	phylop_score	mean
-    tra	C	A,B,C,E,F,S,T,Z	-
-    rra	C	N,R	-
-
-    """
     fid2type_dic = {}
     fid2cat_dic = {} # Store category labels or numerical score IDs in list.
     fid2norm_dic = {}
@@ -11227,8 +10720,8 @@ def load_training_data(args,
         indiv_feat_dic["tra"] = 1
     if args.use_rra:
         indiv_feat_dic["rra"] = 1
-    if args.use_str_elem_p:
-        indiv_feat_dic["elem_p.str"] = 1
+    if args.use_str:
+        indiv_feat_dic["str"] = 1
 
     # Looking for additional features.
     std_fid_dic = {"pc.con" : 1,
@@ -11237,7 +10730,7 @@ def load_training_data(args,
                     "tra" : 1,
                     "rra" : 1,
                     "fa" : 1,
-                    "elem_p.str" : 1}
+                    "str" : 1}
     add_fid_dic = {}
     for fid in fid2type_dic:
         if fid not in std_fid_dic:
@@ -11263,11 +10756,14 @@ def load_training_data(args,
 
     # Data dictionaries.
     feat_dic = {}
+    # features.out str row.
+    feat_out_str_row = False
 
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
     for seq_id in seqs_dic:
         seq = seqs_dic[seq_id]
         feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
+
     # Add sequence one-hot channels.
     for c in fid2cat_dic["fa"]:
         channel_nr += 1
@@ -11279,29 +10775,66 @@ def load_training_data(args,
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
         if fid == "fa": # already added to feat_dic (first item).
             continue
+        feat_alphabet = fid2cat_dic[fid]
+        pos_feat_in = args.in_folder + "/positives." + fid
+        neg_feat_in = args.in_folder + "/negatives." + fid
+        assert os.path.exists(pos_feat_in), "--in folder does not contain %s"  %(pos_feat_in)
+        assert os.path.exists(neg_feat_in), "--in folder does not contain %s"  %(neg_feat_in)
+        print("Read in .%s annotations ... " %(fid))
+        if fid == "str":
+            # Deal with structure data.
+            feat_dic = read_str_feat_into_dic(pos_feat_in,
+                                              str_mode=args.str_mode,
+                                              feat_dic=feat_dic)
+            feat_dic = read_str_feat_into_dic(neg_feat_in,
+                                              str_mode=args.str_mode,
+                                              feat_dic=feat_dic)
+            assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            if args.str_mode == 1:
+                # Same as read in.
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    encoding = fid2norm_dic[fid]
+                    channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                    channel_info_list.append(channel_info)
+                feat_out_str_row = "str\tN\tE,H,I,M,S\tprob"
+            elif args.str_mode == 2:
+                for c in feat_alphabet:
+                    channel_nr += 1
+                    channel_id = c
+                    channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
+                    channel_info_list.append(channel_info)
+                feat_out_str_row = "str\tC\tE,H,I,M,S\t-"
+            elif args.str_mode == 3:
+                channel_nr += 1
+                channel_id = "up"
+                encoding = "prob"
+                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
+                channel_info_list.append(channel_info)
+                feat_out_str_row = "str\tN\tup\tprob"
+            elif args.str_mode == 4:
+                channel_nr += 1
+                channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
+                channel_info_list.append(channel_info)
+                channel_nr += 1
+                channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
+                channel_info_list.append(channel_info)
+                feat_out_str_row = "str\tC\tP,U\t-"
+            else:
+                assert False, "invalid str_mode given"
         else:
-            # All features (additional to .fa) like .elem_p.str, .con, .eia, .tra, .rra, or user defined.
-            feat_alphabet = fid2cat_dic[fid]
-            pos_feat_in = args.in_folder + "/positives." + fid
-            neg_feat_in = args.in_folder + "/negatives." + fid
-            assert os.path.exists(pos_feat_in), "--in folder does not contain %s"  %(pos_feat_in)
-            assert os.path.exists(neg_feat_in), "--in folder does not contain %s"  %(neg_feat_in)
-            print("Read in .%s annotations ... " %(fid))
-            n_to_1h = False
-            # Special case: convert elem_p.str probabilities to 1-hot encoding.
-            if fid == "elem_p.str" and args.str_elem_1h:
-                n_to_1h = True
+            """
+            All features (additional to .fa and .str) like
+            .pc.con, .pp.con, .eia, .tra, .rra, or user-defined.
+            """
             feat_dic = read_feat_into_dic(pos_feat_in, ftype,
                                           feat_dic=feat_dic,
-                                          n_to_1h=n_to_1h,
                                           label_list=feat_alphabet)
             feat_dic = read_feat_into_dic(neg_feat_in, ftype,
                                           feat_dic=feat_dic,
-                                          n_to_1h=n_to_1h,
                                           label_list=feat_alphabet)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
-            if fid == "elem_p.str" and args.str_elem_1h:
-                ftype = "C"
             if ftype == "N":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -11335,8 +10868,8 @@ def load_training_data(args,
             cols = line.strip().split("\t")
             feat_id = cols[0]
             if feat_id in fid2type_dic:
-                if feat_id == "elem_p.str" and args.str_elem_1h:
-                    FEATOUT.write("elem_p.str\tC\tE,H,I,M,S\t-\n")
+                if feat_id == "str":
+                    FEATOUT.write("%s\n" %(feat_out_str_row))
                 else:
                     FEATOUT.write("%s\n" %(row))
     f.closed
@@ -11412,7 +10945,10 @@ def load_training_data(args,
 
     for idx, label in enumerate(label_list):
         seq_id = seq_ids_list[idx]
-        all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+        if store_tensors:
+            all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+        else:
+            all_features.append(feat_dic[seq_id])
     assert all_features, "no features stored in all_features (all_features empty)"
 
     """
@@ -11486,7 +11022,7 @@ def load_geo_training_data(args,
                            add_info_out=True):
 
     """
-    Load training data from data folder generated by GraphProt2 gt and
+    Load training data from data folder generated by rnaprot gt and
     store data in PyG format.
 
     features.out example:
@@ -11509,7 +11045,7 @@ def load_geo_training_data(args,
 
     # Data ID.
     data_id = data_id
-    # graphprot2 train output folder.
+    # rnaprot train output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
@@ -11614,8 +11150,8 @@ def load_geo_training_data(args,
 
     # Get con_ext info used to create dataset.
     con_ext_str = "False"
-    gt_settings_file = args.in_folder + "/settings.graphprot2_gt.out"
-    assert os.path.exists(gt_settings_file), "graphprot2 gt settings file %s not found" %(gt_settings_file)
+    gt_settings_file = args.in_folder + "/settings.rnaprot_gt.out"
+    assert os.path.exists(gt_settings_file), "rnaprot gt settings file %s not found" %(gt_settings_file)
     with open(gt_settings_file) as f:
         for line in f:
             cols = line.strip().split("\t")
@@ -11626,7 +11162,7 @@ def load_geo_training_data(args,
     if seqs_all_uc:
         con_ext_str = "False"
     # Add info to train settings file.
-    train_settings_file = args.out_folder + "/settings.graphprot2_train.out"
+    train_settings_file = args.out_folder + "/settings.rnaprot_train.out"
     SETOUT = open(train_settings_file, "a")
     SETOUT.write("con_ext\t%s\n" %(con_ext_str))
     SETOUT.close()
@@ -11802,7 +11338,7 @@ def load_geo_training_data(args,
                 channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
                 channel_info_list.append(channel_info)
 
-    # Write used features.out file to graphprot2 train output folder.
+    # Write used features.out file to rnaprot train output folder.
     feat_table_out = args.out_folder + "/" + "features.out"
     FEATOUT = open(feat_table_out, "w")
     with open(feat_file) as f:
@@ -12370,7 +11906,7 @@ def revise_in_sites(in_bed, out_bed,
                     transcript_regions=False):
 
     """
-    Revise positive or negative sites as part of graphprot2 gt.
+    Revise positive or negative sites as part of rnaprot gt.
     Output rows with zero values in column 5, store original rows in
     dictionary. Return this site ID to row dictionary.
     Zero scores are necessary since twoBitToFa despises decimal scores.
@@ -12397,35 +11933,8 @@ def revise_in_sites(in_bed, out_bed,
             site_id = cols[3]
             site_sc = cols[4]
             site_pol = cols[5]
-            if not args.pre_con_ext_merge and args.con_ext:
-                seq_ext_s = site_s
-                seq_ext_e = site_e
-                new_s = site_s - args.con_ext
-                new_e = site_e + args.con_ext
-                # Check for sequence ends.
-                if transcript_regions:
-                    # Truncate sites at transcript ends.
-                    if new_s < 0:
-                        new_s = 0
-                    if new_e > chr_len_dic[chr_id]:
-                        new_e = chr_len_dic[chr_id]
-                else:
-                    # Discard sites at chromosome ends.
-                    if new_s < 0:
-                        if site_id in id2pl_dic:
-                            del id2pl_dic[site_id]
-                        continue
-                    if new_e > chr_len_dic[chr_id]:
-                        if site_id in id2pl_dic:
-                            del id2pl_dic[site_id]
-                        continue
-                us_lc_len = seq_ext_s - new_s
-                ds_lc_len = new_e - seq_ext_e
-                id2pl_dic[site_id][0] = us_lc_len
-                id2pl_dic[site_id][2] = ds_lc_len
-            else:
-                new_s = site_s
-                new_e = site_e
+            new_s = site_s
+            new_e = site_e
             site_len = new_e - new_s
             # Since score can be decimal, convert to 0 (twoBitToFa despises decimal scores).
             new_sc = "0"
@@ -12448,7 +11957,7 @@ def process_test_sites(in_bed, out_bed, chr_len_dic,
                        count_dic=None,
                        id_prefix=False):
     """
-    Process --in sites from graphprot2 gp.
+    Process --in sites from rnaprot gp.
 
     """
     # Checks.
@@ -12556,7 +12065,7 @@ def process_in_sites(in_bed, out_bed, chr_len_dic, args,
                      count_dic=None,
                      id_prefix="CLIP"):
     """
-    Process --in or --neg-in sites as part of graphprot2 gt.
+    Process --in or --neg-in sites as part of rnaprot gt.
     Return dictionary of lists, with
     upstream lowercase length, uppercase length, downstream lowercase length
     for every site ID. E.g.
@@ -12669,25 +12178,6 @@ def process_in_sites(in_bed, out_bed, chr_len_dic, args,
             seq_ext_len = new_e - new_s
             # Store future uppercase region length.
             id2pl_dic[new_site_id] = [0, seq_ext_len, 0]
-            # If context extension should be applied before merging overlapping sites.
-            if args.pre_con_ext_merge:
-                if args.con_ext:
-                    seq_ext_s = new_s
-                    seq_ext_e = new_e
-                    new_s = new_s - args.con_ext
-                    new_e = new_e + args.con_ext
-                    # Truncate sites at reference ends.
-                    if new_s < 0:
-                        new_s = 0
-                    if new_e > chr_len_dic[chr_id]:
-                        new_e = chr_len_dic[chr_id]
-                    us_lc_len = seq_ext_s - new_s
-                    ds_lc_len = new_e - seq_ext_e
-                    id2pl_dic[new_site_id][0] = us_lc_len
-                    id2pl_dic[new_site_id][2] = ds_lc_len
-                    if site_pol == "-":
-                        id2pl_dic[new_site_id][0] = ds_lc_len
-                        id2pl_dic[new_site_id][2] = us_lc_len
 
             # Store site length in list.
             new_site_len = new_e - new_s
@@ -14304,11 +13794,10 @@ def create_test_set_region_annot_plot(test_ra_dic, out_plot,
 
 ################################################################################
 
-def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
-                                dataset_type, gp2lib_path,
+def rp_gp_generate_html_report(test_seqs_dic, out_folder,
+                                dataset_type, rplib_path,
                                 html_report_out=False,
-                                id2ucr_dic=False,
-                                plots_subfolder="plots_graphprot2_gp",
+                                plots_subfolder="plots_rnaprot_gp",
                                 test_str_stats_dic=False,
                                 test_phastcons_stats_dic=False,
                                 test_phylop_stats_dic=False,
@@ -14325,7 +13814,7 @@ def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
                                 rna=True,
                                 ):
     """
-    Generate HTML report for graphprot2 gp, providing statistics for the
+    Generate HTML report for rnaprot gp, providing statistics for the
     generated prediction dataset.
 
     test_seqs_dic:
@@ -14335,13 +13824,7 @@ def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
     test_phastcons_stats_dic:
         Phastcons scores statistics dictionary
     out_folder:
-        graphprot2 gp results output folder, to store report in.
-    id2ucr_dic:
-        Sequence ID to uppercase sequence start + end, with format:
-        sequence_id -> [uppercase_start,uppercase_end]
-        where both positions are 1-based.
-        If given, use only subsequences defined by this dictionary for
-        generating sequence stats.
+        rnaprot gp results output folder, to store report in.
     rna:
         Set True if input sequences are RNA.
     html_report_out:
@@ -14368,7 +13851,7 @@ def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
     if not os.path.exists(plots_out_folder):
         os.makedirs(plots_out_folder)
     # Output files.
-    html_out = out_folder + "/" + "report.graphprot2_gp.html"
+    html_out = out_folder + "/" + "report.rnaprot_gp.html"
     if html_report_out:
         html_out = html_report_out
     # Plot files.
@@ -14390,18 +13873,6 @@ def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
     eia_plot_out = plots_out_folder + "/" + eia_plot
     tra_plot_out = plots_out_folder + "/" + tra_plot
     rra_plot_out = plots_out_folder + "/" + rra_plot
-
-    """
-    If only uppercase part of sequences should be used for stats,
-    prune sequence dictionary based on uppercase region start
-    and end info stored in id2ucr_dic.
-    """
-    if id2ucr_dic:
-        for seq_id in test_seqs_dic:
-            seq = test_seqs_dic[seq_id]
-            uc_s = id2ucr_dic[seq_id][0]
-            uc_e = id2ucr_dic[seq_id][1]
-            test_seqs_dic[seq_id] = seq[uc_s-1:uc_e]
 
     print("Generate statistics for HTML report ... ")
 
@@ -14445,25 +13916,24 @@ def gp2_gp_generate_html_report(test_seqs_dic, out_folder,
                                              convert_to_uc=True)
 
     # Logo paths.
-    logo1_path = gp2lib_path + "/content/logo1.png"
-    logo2_path = gp2lib_path + "/content/logo2.png"
-    logo3_path = gp2lib_path + "/content/logo3.png"
+    logo1_path = rplib_path + "/content/logo1.png"
+    logo2_path = rplib_path + "/content/logo2.png"
 
     # Create theme-specific HTML header.
     if theme == 1:
         mdtext = """
 <head>
-<title>GraphProt2 - Prediction Set Generation Report</title>
+<title>RNAProt - Prediction Set Generation Report</title>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="600" />
+<img src="%s" alt="rp_logo"
+	title="rp_logo" width="600" />
 
 """ %(logo1_path)
     elif theme == 2:
         mdtext = """
 <head>
-<title>GraphProt2 - Prediction Set Generation Report</title>
+<title>RNAProt - Prediction Set Generation Report</title>
 <style>
 h1 {color:#fd3b9d;}
 h2 {color:#fd3b9d;}
@@ -14471,29 +13941,12 @@ h3 {color:#fd3b9d;}
 </style>
 </head>
 
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="500" />
+<img src="%s" alt="rp_logo"
+	title="rp_logo" width="500" />
 
 <body style="font-family:sans-serif" bgcolor="#190250" text="#fcc826" link="#fd3b9d" vlink="#fd3b9d" alink="#fd3b9d">
 
 """ %(logo2_path)
-    elif theme == 3:
-        mdtext = """
-<head>
-<title>GraphProt2 - Prediction Set Generation Report</title>
-<style>
-h1 {color:#1fcc2c;}
-h2 {color:#1fcc2c;}
-h3 {color:#1fcc2c;}
-</style>
-</head>
-
-<img src="%s" alt="gp2_logo"
-	title="gp2_logo" width="400" />
-
-<body style="font-family:monospace" bgcolor="#1d271e" text="#1fcc2c" link="#1fcc2c" vlink="#1fcc2c" alink="#1fcc2c">
-
-""" %(logo3_path)
     else:
         assert False, "invalid theme ID given"
 
@@ -14503,7 +13956,7 @@ h3 {color:#1fcc2c;}
 # Prediction set generation report
 
 List of available statistics for the prediction dataset generated
-by GraphProt2 (graphprot2 gp):
+by RNAProt (rnaprot gp):
 
 - [Prediction dataset statistics](#set-stats)
 - [Site length distribution](#len-plot)
@@ -15024,7 +14477,7 @@ def get_ext_site_parts(id2bedrow_dic, chr_len_dic,
     id2extrow_dic:
         Extended reference BED row dictionary.
     id2newvp_dic:
-        Stores new site viewpoint coordinates.
+        Stores new site viewpoint coordinates (not on reference but on sequence!).
         Site ID -> [new_vp_start, new_vp_end]
 
     >>> id2bedrow_dic = {'sid1': 'id1\\t950\\t990\\tsid1\\t0\\t+', 'sid2': 'id1\\t500\\t540\\tsid2\\t0\\t+', 'sid3': 'id1\\t0\\t40\\tsid3\\t0\\t+', 'sid4': 'id1\\t10\\t50\\tsid4\\t0\\t-'}
@@ -15032,6 +14485,22 @@ def get_ext_site_parts(id2bedrow_dic, chr_len_dic,
     >>> chr_len_dic = {'id1' : 1000}
     >>> get_ext_site_parts(id2bedrow_dic, chr_len_dic, str_ext=100, id2ucr_dic=id2ucr_dic)
     {'sid1': [100, 10, 20, 10, 10], 'sid2': [100, 10, 20, 10, 100], 'sid3': [0, 10, 20, 10, 100], 'sid4': [100, 5, 25, 10, 10]}
+    >>> id2bedrow_dic = {'sid1': 'id1\\t30\\t40\\tsid1\\t0\\t+', 'sid2': 'id1\\t110\\t120\\tsid2\\t0\\t+', 'sid3': 'id1\\t110\\t120\\tsid3\\t0\\t-'}
+    >>> id2newvp_dic = {}
+    >>> extlen_dic = {}
+    >>> id2extrow_dic = {}
+    >>> refid_dic = {}
+    >>> chr_len_dic = {'id1' : 200}
+    >>> get_ext_site_parts(id2bedrow_dic, chr_len_dic, str_ext=100, id2newvp_dic=id2newvp_dic, extlen_dic=extlen_dic, refid_dic=refid_dic, id2extrow_dic=id2extrow_dic)
+    {'sid1': [30, 0, 10, 0, 100], 'sid2': [100, 0, 10, 0, 80], 'sid3': [80, 0, 10, 0, 100]}
+    >>> id2newvp_dic
+    {'sid1': [31, 40], 'sid2': [101, 110], 'sid3': [81, 90]}
+    >>> refid_dic
+    {'id1': 1}
+    >>> id2extrow_dic
+    {'sid1': 'id1\\t0\\t140\\tsid1\\t0\\t+', 'sid2': 'id1\\t10\\t200\\tsid2\\t0\\t+', 'sid3': 'id1\\t10\\t200\\tsid3\\t0\\t-'}
+    >>> extlen_dic
+    {'sid1': 140, 'sid2': 190, 'sid3': 190}
 
     """
     # Checks.
@@ -15120,30 +14589,35 @@ def get_ext_site_parts(id2bedrow_dic, chr_len_dic,
 ################################################################################
 
 def calc_ext_str_features(id2bedrow_dic, chr_len_dic,
-                          out_bpp, out_str, args,
-                          id2ucr_dic=False,
+                          out_str, args,
+                          check_seqs_dic=False,
                           stats_dic=None,
-                          bp_check_seqs_dic=False,
                           tr_regions=False,
                           tr_seqs_dic=False):
     """
-    Calculate structure features (base pairs and structural element
-    probabilities) by using extended sequences, and then prune them to
-    viewpoint + context parts to match remaining feature lists.
+    Calculate structure features (structural element probabilities)
+    by using extended sequences, and then prune them to match
+    remaining feature lists.
 
     id2bedrow_dic:
         Site ID to BED region (tab separated)
-    id2ucr_dic:
-        Site ID -> [viewpoint_start, viewpoint_end]
-        with 1-based coords.
     chr_len_dic:
         Reference sequence lengths dictionary.
-    out_bpp:
-        output .bpp.str file.
     out_str:
-        Output .elem_p.str file.
+        Output .str file.
     args:
-        Arguments from graphprot2 gt / gp.
+        Arguments from rnaprot gt / gp.
+    check_seqs_dic:
+        Center sequences to compare to extended and truncated ones.
+        Should be the same after extension, structure calculation, and
+        truncation.
+    stats_dic:
+        For .html statistics.
+    tr_regions:
+        Are we dealing with transcript regions?
+    tr_seqs_dic:
+        If tr_regions supplied, transcript sequences need to be supplied
+        as well.
 
     """
     assert id2bedrow_dic, "id2bedrow_dic empty"
@@ -15152,13 +14626,13 @@ def calc_ext_str_features(id2bedrow_dic, chr_len_dic,
     print("Extend sequences by --plfold-w for structure calculations ... ")
 
     # Get extended parts and infos.
-    id2newvp_dic = {}
-    id2extrow_dic = {}
-    extlen_dic = {}
-    refid_dic = {}
+    id2newvp_dic = {} # viewpoint region coords on extended sequence (1-based).
+    id2extrow_dic = {} # Extended sites BED on reference.
+    extlen_dic = {} # Extended lengths of sites.
+    refid_dic = {} # Reference IDs.
     id2newl_dic = get_ext_site_parts(id2bedrow_dic, chr_len_dic,
                                      str_ext=args.plfold_w,
-                                     id2ucr_dic=id2ucr_dic,
+                                     id2ucr_dic=False,
                                      refid_dic=refid_dic,
                                      extlen_dic=extlen_dic,
                                      id2extrow_dic=id2extrow_dic,
@@ -15173,9 +14647,7 @@ def calc_ext_str_features(id2bedrow_dic, chr_len_dic,
     random_id = uuid.uuid1()
     tmp_bed = str(random_id) + ".tmp.bed"
     random_id = uuid.uuid1()
-    tmp_bpp_out = str(random_id) + ".tmp.bpp.str"
-    random_id = uuid.uuid1()
-    tmp_elem_p_out = str(random_id) + ".tmp.elem_p.str"
+    tmp_str_out = str(random_id) + ".tmp.str"
 
     # If transcript regions.
     if tr_regions:
@@ -15195,19 +14667,18 @@ def calc_ext_str_features(id2bedrow_dic, chr_len_dic,
 
     # Check extracted sequences, replace N's with random nucleotides.
     polish_fasta_seqs(tmp_fa, extlen_dic,
-                      vp_check_seqs_dic=bp_check_seqs_dic,
+                      vp_check_seqs_dic=check_seqs_dic,
                       vp_dic=id2newvp_dic)
-    calc_str_elem_up_bpp(tmp_fa, tmp_bpp_out, tmp_elem_p_out,
-                                stats_dic=stats_dic,
-                                id2ucr_dic=id2newvp_dic,
-                                plfold_u=args.plfold_u,
-                                plfold_l=args.plfold_l,
-                                plfold_w=args.plfold_w)
+    calc_str_elem_p(tmp_fa, tmp_str_out,
+                    stats_dic=stats_dic,
+                    plfold_u=args.plfold_u,
+                    plfold_l=args.plfold_l,
+                    plfold_w=args.plfold_w)
 
     print("Post-process structure files ... ")
 
     # Refine elem_p.str.
-    str_elem_p_dic = read_str_elem_p_into_dic(tmp_elem_p_out,
+    str_elem_p_dic = read_str_elem_p_into_dic(tmp_str_out,
                                               p_to_str=True)
     assert str_elem_p_dic, "str_elem_p_dic empty"
 
@@ -15231,65 +14702,13 @@ def calc_ext_str_features(id2bedrow_dic, chr_len_dic,
             SEPOUT.write("%s\n" %(s))
     SEPOUT.close()
 
-    # Refine .bpp.str.
-    seq_id = ""
-    us_ext = 0
-    ds_ext = 0
-    max_len = 0
-
-    # Pairing rules for sanity checking new base pair coords.
-    bp_nts_dic = {
-        "A" : ["U"],
-        "C" : ["G"],
-        "G" : ["C","U"],
-        "U" : ["A","G"]
-    }
-
-    BPPOUT = open(out_bpp,"w")
-    with open(tmp_bpp_out) as f:
-        for line in f:
-            if re.search(">.+", line):
-                m = re.search(">(.+)", line)
-                seq_id = m.group(1)
-                us_ext = id2newl_dic[seq_id][0]
-                ds_ext = id2newl_dic[seq_id][4]
-                # Original length.
-                max_len = extlen_dic[seq_id] - us_ext - ds_ext
-                BPPOUT.write(">%s\n" %(seq_id))
-            else:
-                m = re.search("(\d+)\t(\d+)\t(.+)", line)
-                s = int(m.group(1))
-                e = int(m.group(2))
-                bpp = m.group(3)
-                new_s = s - us_ext
-                new_e = e - us_ext
-                # Filter.
-                if new_s < 1:
-                    continue
-                if new_e < 1:
-                    continue
-                if new_s > max_len:
-                    continue
-                if new_e > max_len:
-                    continue
-                if bp_check_seqs_dic:
-                    seq = bp_check_seqs_dic[seq_id].upper()
-                    nt1 = seq[new_s-1]
-                    nt2 = seq[new_e-1]
-                    nt2_list = bp_nts_dic[nt1]
-                    assert nt2 in nt2_list, "invalid base pair coordinates encountered for site ID %s (%s cannot pair with %s)" %(seq_id, nt1, nt2)
-                BPPOUT.write("%i\t%i\t%s\n" %(new_s, new_e, bpp))
-    BPPOUT.close()
-
     # Remove tmp files.
     if os.path.exists(tmp_fa):
         os.remove(tmp_fa)
     if os.path.exists(tmp_bed):
         os.remove(tmp_bed)
-    if os.path.exists(tmp_bpp_out):
-        os.remove(tmp_bpp_out)
-    if os.path.exists(tmp_elem_p_out):
-        os.remove(tmp_elem_p_out)
+    if os.path.exists(tmp_str_out):
+        os.remove(tmp_str_out)
 
 
 ################################################################################
@@ -15413,6 +14832,10 @@ def drop_a_line():
     c = """
            \"There's always barber college.\"
 """
+    d = """
+             \"Yo, Steve! You're history.\"
+"""
+
     lines.append(a)
     lines.append(b)
     lines.append(c)
@@ -15423,6 +14846,11 @@ def drop_a_line():
 ################################################################################
 
 """
+
+"We could not understand because we were too far and could not remember
+ because we were travelling in the night of first ages, of those ages
+ that are gone, leaving hardly a sign - and no memories." J.C.
+
 
                  ^OMQQOO6|^OQQM6MOMMMOQQQQMMMMOMIQMQMQOOO6QO6O6QQMQQQMO6QMMOOQMMQQMQQOI66IOOQQMMM|QQO66
                  OOQQM!I|6OMOQMOQOQQQOMQQOMMMMQMQQMQOQOOQI^QOMOQMQMMQMMOOQOQQOQMQMQMMOOOOQQMOMQMQOQQQOO!
@@ -15473,8 +14901,8 @@ def drop_a_line():
 .. . ....  ....^.^^^!|III6|          6QQQOQ6!!!!^^!!^!|I66OQQQMQQMMMMMMMMQQOOOOO6O66666^QI66I66I|!^^^...^^.^.^^^...... . ......^^.^!^!
   ..  . ... ......^^^^!!||II6|.   !QMMMMOQOI|^^^!^!^!!!!I666QOQQOQMQMQMQQOOO66O6666I6III6|IIIII||!^!^^^!!!^.^.......... .....^..^.^!^!
  . . .  ..  .....^.^^^^!^!||||6O6OMQMMQMOQ6I!!!^!^^^^^^!^|I66O6OOOOQOOOO6666I6I6IIII|I 6I|I||I|I||!!!!!!^^^^..^................^.^^^^!
-. . .  ..   . ......^^^!!!!^!!!|IOOQQQ6Q6|||!!^!!^^^^^^!^!||II666O6666666I666II|I!|||IO|!|I|!||!!!^!^^^^^^....... THIS IS THE END
-                                                                                                                  BEAUTIFUL FRIEND ...
+. . .  ..   . ......^^^!!!!^!!!|IOOQQQ6Q6|||!!^!!^^^^^^!^!||II666O6666666I666II|I!|||IO|!|I|!||!!!^!^^^^^^....... this is the end
+                                                                                                                  beautiful friend ...
 
 
 """

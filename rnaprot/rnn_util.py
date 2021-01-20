@@ -119,14 +119,11 @@ def test(loader, model, criterion):
 
 ################################################################################
 
-def test_scores(loader, model, criterion,
-                min_max_norm=True):
+def get_scores(loader, model, criterion,
+                min_max_norm=False):
     model.eval()
     site_scores = []
     loss_all = 0
-    score_all = []
-    test_labels = []
-    correct = 0
     for batch_data, batch_labels in loader:
         batch_data, batch_labels = mysort(batch_data, batch_labels)
         embed = my_embedding(batch_data)
@@ -147,7 +144,6 @@ def test_scores(loader, model, criterion,
 
         #correct += (outputs[0].argmax(dim=1) == batch_labels).sum().item()
         #score_all.extend(outputs[0].cpu().detach().numpy()[:, 1])
-        test_labels.extend(batch_labels.cpu().detach().numpy())
     #predicted_labels = [1 if s >= 0.5 else 0 for s in score_all]
     #test_acc = correct / len(test_labels)
     #fpr, tpr, thresholds = metrics.roc_curve(test_labels, score_all, pos_label=1)

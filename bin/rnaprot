@@ -114,21 +114,22 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Add repeat region annotations. Set --use-xxx to define which features to add on top of sequence feature (by default all --in features are used)")
-    p_trf.add_argument("--use-str-elem-p",
-                   dest = "use_str_elem_p",
+    p_trf.add_argument("--use-str",
+                   dest = "use_str",
                    default = False,
                    action = "store_true",
-                   help = "Add structural elements probabilities. Set --use-xxx to define which features to add on top of sequence feature (by default all --in features are used)")
+                   help = "Add secondary structure features (type defined by --str-mode). Set --use-xxx to define which features to add on top of sequence feature (by default all --in features are used)")
+    p_trf.add_argument("--str-mode",
+                   dest="str_mode",
+                   type = int,
+                   default = 1,
+                   choices = [1,2,3,4],
+                   help = "Define secondary structure feature representation: 1) use probabilities of five structural elements (E,I,H,M,S) 2) same as 1) but encoded as one-hot (element with highest probability gets 1, others 0) 3) use unpaired probabilities 4) same as 3) but encoded as one-hot (default: 1)")
     p_trf.add_argument("--use-add-feat",
                    dest = "use_add_feat",
                    default = False,
                    action = "store_true",
                    help = "Add additional feature annotations. Set --use-xxx to define which features to add on top of sequence feature (by default all --in features are used)")
-    p_trf.add_argument("--str-elem-1h",
-                   dest="str_elem_1h",
-                   default = False,
-                   action = "store_true",
-                   help = "Use one-hot encoding for structural elements probabilities (assign 1 to highest probability, and 0 to others) (default: False)")
 
     # Add advanced model definition arguments group.
     p_tra = p_tr.add_argument_group("model definition arguments")
@@ -183,7 +184,7 @@ def setup_argument_parser():
                    metavar='int',
                    nargs='+',
                    default=[2],
-                   help="Number of hidden layers. Can also be provided as list for hyperparameter optimzation (e.g. --nr-hidden-layers 2 3) (default: 2)")
+                   help="Number of hidden layers. Can also be provided as list for hyperparameter optimzation (e.g. --n-hidden-layers 2 3) (default: 2)")
     p_tra.add_argument("--batch-size",
                    dest="list_batch_size",
                    type = int,
@@ -197,7 +198,7 @@ def setup_argument_parser():
                    metavar='int',
                    nargs='+',
                    default=[32],
-                   help = "Number of hidden layer dimensions. Can also be provided as list for hyperparameter optimzation (e.g. --nr-hidden-dim 32 64) (default: 32)")
+                   help = "Number of hidden layer dimensions. Can also be provided as list for hyperparameter optimzation (e.g. --n-hidden-dim 32 64) (default: 32)")
     p_tra.add_argument("--lr",
                    dest="list_lr",
                    type=float,
@@ -218,7 +219,7 @@ def setup_argument_parser():
                    metavar='float',
                    nargs='+',
                    default=[0.5],
-                   help="Dropout rate for GRU model. Can also be provided as list for hyperparameter optimzation (e.g. --dr 0.3 0.5) (default: 0.5)")
+                   help="Dropout rate for RNN model. Can also be provided as list for hyperparameter optimzation (e.g. --dr 0.3 0.5) (default: 0.5)")
 
     """
     Model evaluation mode.
@@ -560,7 +561,7 @@ def setup_argument_parser():
                    dest="add_str",
                    default = False,
                    action = "store_true",
-                   help = "Add position-wise structural elements probabilities features (calculate with RNAplfold) (default: False)")
+                   help = "Add secondary structure probabilities features (calculate with RNAplfold) (default: False)")
     p_gta.add_argument("--plfold-u",
                    dest="plfold_u",
                    type = int,
@@ -705,7 +706,7 @@ def main_train(args):
 
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
-    indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str_elem_p + args.use_add_feat
+    indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
     if indiv_feat_check and args.only_seq:
         assert False, "--only-seq useless in combination with individually selected features (--use-xxx)"
     assert args.train_vs >= 0.1 and args.train_vs <= 0.5, "Use reasonable values for --train-vs (>= 0.1 and <= 0.5)"
@@ -713,11 +714,9 @@ def main_train(args):
         assert False, "use either --gen-cv to estimate single model generalization performance, or --gm-cv to estimate generic model generalization performance"
     assert args.epochs >= 10 and args.epochs <= 500, "use reasonable number for --epochs (>= 10 and <= 500)"
     assert args.patience > 0 and args.patience <= 100, "use reasonable number for --patience (> 0 and <= 100)"
-    if args.str_elem_1h:
-        assert args.use_str_elem_p, "--str-elem-1h requires --use-str-elem-p to be set"
 
     # Get additional infos from rnaprot gt settings.
-    gt_settings_file = args.in_folder + "/settings.rnaprot.out"
+    gt_settings_file = args.in_folder + "/settings.rnaprot_gt.out"
     assert os.path.exists(gt_settings_file), "rnaprot gt settings file %s not found" %(gt_settings_file)
     gt_settings_dic = {}
     with open(gt_settings_file) as f:
@@ -765,10 +764,6 @@ def main_train(args):
     args.tr_reg_codon_annot = gt_settings_dic["tr_reg_codon_annot"]
     args.tr_reg_border_annot = gt_settings_dic["tr_reg_border_annot"]
 
-    # Silence con_ext options.
-    args.bps_mode = 1
-    args.uc_context = False
-
     # Generate results output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
@@ -779,7 +774,7 @@ def main_train(args):
     print("Model training output folder:  %s" %(out_folder))
 
     # Output mode settings.
-    settings_file = out_folder + "/settings.rnaprot.out"
+    settings_file = out_folder + "/settings.rnaprot_train.out"
     SETOUT = open(settings_file, "w")
     for arg in vars(args):
         SETOUT.write("%s\t%s\n" %(arg, str(getattr(args, arg))))
@@ -790,6 +785,7 @@ def main_train(args):
 
     # Load training data.
     seqs_dic, idx2id_dic, label_list, all_features = rplib.load_training_data(args,
+                                                           store_tensors=True,
                                                            li2label_dic=li2label_dic)
 
     # Number of features (feature vector length).
@@ -1263,7 +1259,7 @@ def main_eval(args):
         assert os.path.isfile(params_file2), "--add-train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model" %(params_file2)
 
     # Read in model parameters.
-    params_dic = gp2lib.read_settings_into_dic(params_file)
+    params_dic = rplib.read_settings_into_dic(params_file)
     # Check parameters.
     assert "n_hidden_dim" in params_dic, "n_hidden_dim info missing in model parameter file %s" %(params_file)
     assert "n_hidden_layers" in params_dic, "n_hidden_layers info missing in model parameter file %s" %(params_file)
@@ -1286,8 +1282,12 @@ def main_eval(args):
     onlyseq = False
     if args.num_features == 4:
         onlyseq = True
+    # Loss criterion.
+    criterion = nn.CrossEntropyLoss()
+    # Min-max normalization for scores.
+    min_max_norm = True
 
-    # Get graphprot2 train parameters for additional checks.
+    # Get rnaprot train parameters for additional checks.
     rnaprot_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
     assert os.path.isfile(rnaprot_train_settings_file), "missing --train-in settings file %s" %(rnaprot_train_settings_file)
     rnaprot_train_settings_dic = {}
@@ -1297,10 +1297,10 @@ def main_eval(args):
             cols = line.strip().split("\t")
             rnaprot_train_settings_dic[cols[0]] = cols[1]
     f.closed
-    assert "str_elem_1h" in rnaprot_train_settings_dic, "str_elem_1h info missing in --train-in settings file %s" %(gp2_train_settings_dic)
-    str_elem_1h = False
-    if rnaprot_train_settings_dic["str_elem_1h"] == "True":
-        str_elem_1h = True
+    assert "str_mode" in rnaprot_train_settings_dic, "str_mode info missing in --train-in settings file %s" %(rnaprot_train_settings_file)
+    str_mode = int(rnaprot_train_settings_dic["str_mode"])
+    str_mode_check = [1,2,3,4]
+    assert str_mode in str_mode_check, "invalid str_mode given"
 
     # Plot format.
     plot_format = "png"
@@ -1376,10 +1376,16 @@ def main_eval(args):
     # Load data.
     print("Load positive training set from --gt-in ... ")
     seqs_dic, idx2id_dic, all_features, ch_info_dic = rplib.load_eval_data(args,
-                                                             num_features=num_features,
-                                                             str_elem_1h=str_elem_1h)
+                                                            num_features=num_features,
+                                                            store_tensors=False,
+                                                            str_mode=str_mode)
     l_dataset = len(all_features)
     print("Positive set size:     %i" %(l_dataset))
+
+    # Convert to tensors for prediction, keep all_features for motif extraction later.
+    all_feat_tens = []
+    for feat in all_features:
+        all_feat_tens.append(torch.tensor(feat, dtype=torch.float))
 
     # Check sequence size vs set window size.
     min_seq_len = 66666666
@@ -1403,39 +1409,20 @@ def main_eval(args):
                      2, device, dr=dr).to(device)
     model.load_state_dict(torch.load(model_file))
 
-    all_labels = [1]*len(all_features)
-    predict_dataset = RNNDataset(all_features, all_labels)
-
-
-
-
-    # Get test error of optimized model.
-    predict_loader = DataLoader(dataset=predict_dataset, batch_size=opt_batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
-    loss, acc, auc = rnn_util.test(test_loader, model, criterion)
-
-            # Store test accuracy and AUC.
-            acc_list.append(acc)
-            auc_list.append(auc)
-            with open(cv_results_file, 'a+') as f:
-                f.write(str(acc) + "\t" + str(auc) + "\n")
-            print("Generic model accuracy:  %f" %(acc))
-            print("Generic model AUC:       %f" %(auc))
-
-
-
-    # Load dataset.
-    print("Load whole-site graphs dataset ... ")
-    predict_dataset = MyDataset(all_graphs)
-    predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
+    # Load whole-site dataset.
+    c_all_feat = len(all_feat_tens)
+    all_labels = [1]*c_all_feat
+    predict_dataset = RNNDataset(all_feat_tens, all_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
     # Predict.
     print("Predict whole sites ... ")
-    ws_scores = model_util.get_scores(predict_loader, device, model,
-                                      min_max_norm=True)
+    ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                    min_max_norm=min_max_norm)
 
     # Checks.
     c_ws_scores = len(ws_scores)
-    assert c_ws_scores == c_all_graphs, "# whole-site scores != of whole-site graphs (%i != %i)" %(c_ws_scores, c_all_graphs)
+    assert c_ws_scores == c_all_feat, "# whole-site scores != size features list (%i != %i)" %(c_ws_scores, c_all_feat)
 
     """
     If --report, predict on negative set too
@@ -1447,12 +1434,11 @@ def main_eval(args):
     if args.report:
         # Load data again.
         print("Load negative training set for --report ... ")
-        neg_seqs_dic, idx2negid_dic, all_neg_graphs, ch_info_neg_dic = gp2lib.load_eval_data(args,
+        neg_seqs_dic, idx2negid_dic, all_neg_feat, ch_info_neg_dic = rplib.load_eval_data(args,
                                                                    load_negatives=True,
                                                                    num_features=num_features,
-                                                                   return_graphs=True,
-                                                                   undirected=undirected,
-                                                                   str_elem_1h=str_elem_1h)
+                                                                   str_mode=str_mode)
+
         # Check # features.
         check_num_feat = 0
         for fid in ch_info_neg_dic:
@@ -1460,19 +1446,21 @@ def main_eval(args):
         assert num_features == check_num_feat, "num_features != check_num_feat (%i != %i)" %(num_features, check_num_feat)
 
         # Load dataset.
-        predict_dataset = MyDataset(all_neg_graphs)
-        predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
+        c_neg_feat = len(all_neg_feat)
+        all_neg_labels = [1]*c_neg_feat
+        predict_dataset = RNNDataset(all_neg_feat, all_neg_labels)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
         # Predict.
         print("Predict whole-site scores for negatives ... ")
-        neg_ws_scores = model_util.get_scores(predict_loader, device, model,
-                                              min_max_norm=True)
+        neg_ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                            min_max_norm=min_max_norm)
+
         # Checks.
         assert neg_ws_scores, "neg_ws_scores empty"
-        c_all_neg_graphs = len(all_neg_graphs)
         c_neg_ws_scores = len(neg_ws_scores)
-        print("Negative set size:     %i" %(c_all_neg_graphs))
-        assert c_neg_ws_scores == c_all_neg_graphs, "c_neg_ws_scores != c_all_neg_graphs (%i != %i)" %(c_neg_ws_scores, c_all_neg_graphs)
+        print("Negative set size:     %i" %(c_neg_feat))
+        assert c_neg_ws_scores == c_neg_feat, "c_neg_ws_scores != c_neg_feat (%i != %i)" %(c_neg_ws_scores, c_neg_feat)
 
     """
     Additional model given via --add-train-in
@@ -1489,65 +1477,48 @@ def main_eval(args):
         params_file2 = args.add_train_folder + "/final.params"
         model_file2 = args.add_train_folder + "/final.model"
         # Read in model parameters.
-        params_dic2 = gp2lib.read_settings_into_dic(params_file2)
+        params_dic2 = rplib.read_settings_into_dic(params_file2)
         # Check parameters.
-        assert "node_hidden_dim" in params_dic2, "node_hidden_dim info missing in model parameter file %s" %(params_dic2)
-        assert "fc_hidden_dim" in params_dic2, "fc_hidden_dim info missing in model parameter file %s" %(params_dic2)
+        assert "n_hidden_dim" in params_dic2, "n_hidden_dim info missing in model parameter file %s" %(params_dic2)
+        assert "n_hidden_layers" in params_dic2, "n_hidden_layers info missing in model parameter file %s" %(params_dic2)
         assert "batch_size" in params_dic2, "batch_size info missing in model parameter file %s" %(params_dic2)
         assert "num_features" in params_dic2, "num_features info missing in model parameter file %s" %(params_dic2)
         assert "dr" in params_dic2, "dropout rate info missing in model parameter file %s" %(params_dic2)
         assert "lr" in params_dic2, "learning rate info missing in model parameter file %s" %(params_dic2)
-        assert "incr_hidden_dim" in params_dic2, "incr_hidden_dim info missing in model parameter file %s" %(params_dic2)
-        assert "undirected" in params_dic2, "undirected info missing in model parameter file %s" %(params_dic2)
-        assert "nr_hidden_layers" in params_dic2, "nr_hidden_layers info missing in model parameter file %s" %(params_dic2)
         assert "weight_decay" in params_dic2, "weight_decay info missing in model parameter file %s" %(params_dic2)
-        assert "gadd_pool" in params_dic2, "gadd_pool info missing in model parameter file %s" %(params_dic2)
 
         # Set parameters.
-        fc_hidden_dim2 = int(params_dic2["fc_hidden_dim"])
-        node_hidden_dim2	= int(params_dic2["node_hidden_dim"])
+        n_hidden_dim2 = int(params_dic2["n_hidden_dim"])
+        n_hidden_layers2 = int(params_dic2["n_hidden_layers"])
         batch_size2 = int(params_dic2["batch_size"])
         num_features2 = int(params_dic2["num_features"])
-        nr_hidden_layers2 = int(params_dic2["nr_hidden_layers"])
         weight_decay_str2 = params_dic2["weight_decay"]
         dr2 = float(params_dic2["dr"])
         dr_str2 = params_dic2["dr"]
         lr_str2 = params_dic2["lr"]
-        incr_hidden_dim2 = False
-        if params_dic2["incr_hidden_dim"] == "True":
-            incr_hidden_dim2 = True
-        gadd_pool2 = True
-        if params_dic2["gadd_pool"] == "False":
-            gadd_pool2 = False
-        undirected2 = False
-        if params_dic2["undirected"] == "True":
-            undirected2 = True
 
-        # Get graphprot2 train parameters for additional checks.
-        gp2_train_settings_file = args.add_train_folder + "/settings.graphprot2_train.out"
-        assert os.path.isfile(gp2_train_settings_file), "missing --train-in settings file %s" %(gp2_train_settings_file)
-        gp2_train_settings_dic = {}
-        with open(gp2_train_settings_file) as f:
+        # Get rnaprot train parameters for additional checks.
+        rp_train_settings_file = args.add_train_folder + "/settings.rnaprot_train.out"
+        assert os.path.isfile(rp_train_settings_file), "missing --add-train-in settings file %s" %(rp_train_settings_file)
+        rp_train_settings_dic = {}
+        with open(rp_train_settings_file) as f:
             for line in f:
                 row = line.strip()
                 cols = line.strip().split("\t")
-                gp2_train_settings_dic[cols[0]] = cols[1]
+                rp_train_settings_dic[cols[0]] = cols[1]
         f.closed
-        assert "use_bps" in gp2_train_settings_dic, "use_bps info missing in --add-train-in settings file %s" %(gp2_train_settings_dic)
-        assert "str_elem_1h" in gp2_train_settings_dic, "str_elem_1h info missing in --add-train-in settings file %s" %(gp2_train_settings_dic)
-        assert gp2_train_settings_dic["use_bps"] == "False", "--add-train-in model was trained with base pair information, but so far graphprot2 (v%s) does not support the visualization of base pair information" %(__version__)
-        str_elem_1h2 = False
-        if gp2_train_settings_dic["str_elem_1h"] == "True":
-            str_elem_1h2 = True
+
+        assert "str_mode" in rp_train_settings_dic, "str_mode info missing in --add-train-in settings file %s" %(rp_train_settings_file)
+        str_mode2 = int(rp_train_settings_dic["str_mode"])
+        str_mode_check = [1,2,3,4]
+        assert str_mode2 in str_mode_check, "invalid str_mode2 given"
 
         # Load data again.
         print("Load positive training set from --gt-in for --add-train-in model ... ")
-        seqs_dic2, idx2id_dic2, all_graphs2, ch_info_dic2 = gp2lib.load_eval_data(args,
-                                                                   return_graphs=True,
-                                                                   train_folder=args.add_train_folder,
-                                                                   num_features=num_features2,
-                                                                   undirected=undirected2,
-                                                                   str_elem_1h=str_elem_1h2)
+        seqs_dic2, idx2id_dic2, all_features2, ch_info_dic2 = rplib.load_eval_data(args,
+                                                                    train_folder=args.add_train_folder,
+                                                                    num_features=num_features2,
+                                                                    str_mode=str_mode2)
 
         # Check # features.
         check_num_feat = 0
@@ -1555,38 +1526,39 @@ def main_eval(args):
             check_num_feat += len(ch_info_dic2[fid][1])
         assert num_features2 == check_num_feat, "num_features != check_num_feat (%i != %i)" %(num_features2, check_num_feat)
 
+        # Demand training set to be same for both models.
+        c_seqs1 = len(seqs_dic)
+        c_seqs2 = len(seqs_dic2)
+        assert c_seqs1 == c_seqs2, "# positive --train-in sequences != # positive --add-train-in sequences (%i != %i). Please train two models on the same training set in order to compare the models" %(c_seqs1, c_seqs2)
+        for seq_id1 in seqs_dic:
+            assert seq_id1 in seqs_dic2, "--train-in sequence ID %s not found in --add-train-in sequence set. Please train two models on the same training set in order to compare the models" %(seq_id1)
+            assert seqs_dic[seq_id1] == seqs_dic2[seq_id1],  "--train-in sequence %s is not equal to --add-train-in sequence %s. Please train two models on the same training set in order to compare the models" %(seq_id1, seq_id1)
+
         # Load trained model.
         print("Load --add-train-in model ... ")
-        add_model = FunnelGNN(input_dim=num_features2,
-                              node_hidden_dim=node_hidden_dim2,
-                              dropout_rate=dr2,
-                              nr_hidden_layers=nr_hidden_layers2,
-                              add_gadd=gadd_pool2,
-                              incr_hidden_dim=incr_hidden_dim2,
-                              fc_hidden_dim=fc_hidden_dim2,
-                              out_dim=2).to(device)
-
+        add_model = GRUModel(num_features2, n_hidden_dim2, n_hidden_layers2,
+                             2, device, dr=dr2).to(device)
         add_model.load_state_dict(torch.load(model_file2))
 
         # Load dataset.
-        print("Load whole-site graphs dataset ... ")
-        predict_dataset = MyDataset(all_graphs2)
-        predict_loader = DataLoader(predict_dataset, batch_size=batch_size2, shuffle=False)
+        c_all_feat2 = len(all_features2)
+        all_labels2 = [1]*c_all_feat2
+        predict_dataset = RNNDataset(all_features2, all_labels2)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
         # Predict.
         print("Predict whole sites with --add-train-in model ... ")
-        add_ws_scores = model_util.get_scores(predict_loader, device, add_model,
-                                              min_max_norm=True)
+        add_ws_scores = rnn_util.get_scores(predict_loader, add_model, criterion,
+                                            min_max_norm=min_max_norm)
 
         # Checks.
         c_add_ws_scores = len(add_ws_scores)
-        c_all_graphs2 = len(all_graphs2)
-        assert c_all_graphs == c_all_graphs2, "c_all_graphs != c_all_graphs2 (%i != %i)" %(c_all_graphs, c_all_graphs2)
-        assert c_add_ws_scores == c_all_graphs2, "# whole-site scores != of whole-site graphs (%i != %i)" %(c_add_ws_scores, c_all_graphs2)
+        assert c_all_feat == c_all_feat2, "c_all_feat != c_all_feat2 (%i != %i)" %(c_all_feat, c_all_feat2)
+        assert c_add_ws_scores == c_all_feat2, "# whole-site scores != size of features list (%i != %i)" %(c_add_ws_scores, c_all_feat2)
 
-    # Just 2 B sure.
+    # Just 2 B sure bro.
     if add_ws_scores:
-        assert len(add_ws_scores) == len(ws_scores), "len(add_ws_scores) != len(ws_scores)"
+        assert len(add_ws_scores) == len(ws_scores), "len(add_ws_scores) != len(ws_scores) (%i != %i)" %(len(add_ws_scores), len(ws_scores))
 
     """
     Window predictions.
@@ -1594,12 +1566,12 @@ def main_eval(args):
     """
 
     # Create window graphs.
-    all_win_graphs = []
+    all_win_feat = []
     seq_len_list = []
     c_all_seq_len = 0
 
-    print("Create window graphs ... ")
-    for feat_list in all_features:
+    print("Create windows ... ")
+    for feat_list in all_feat_tens:
         l_seq = len(feat_list)
         # l_seq == window graphs for sequence.
         seq_len_list.append(l_seq)
@@ -1613,37 +1585,23 @@ def main_eval(args):
                 reg_e = l_feat
             if reg_s < 0:
                 reg_s = 0
-            feat_list_win = feat_list[reg_s:reg_e]
-            l_feat_win = len(feat_list_win)
-            # Construct window graph.
-            edge_index_1 = []
-            edge_index_2 = []
-            for ni in range(l_feat_win - 1):
-                edge_index_1.append(ni)
-                edge_index_2.append(ni+1)
-                if args.undirected:
-                    edge_index_1.append(ni+1)
-                    edge_index_2.append(ni)
-
-            edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-            x = torch.tensor(feat_list_win, dtype=torch.float)
-            data = Data(x=x, edge_index=edge_index, y=1)
-            all_win_graphs.append(data)
+            #all_win_feat.append(torch.tensor(feat_list[reg_s:reg_e], dtype=torch.float))
+            all_win_feat.append(feat_list[reg_s:reg_e])
 
     # Checks.
-    c_all_win_graphs = len(all_win_graphs)
-    assert c_all_win_graphs, "no window graphs constructed (# window graphs == 0)"
-    assert c_all_seq_len == c_all_win_graphs, "total sequence length != # of window graphs (%i != %i)" %(c_all_seq_len, c_all_win_graphs)
+    c_all_win_feat = len(all_win_feat)
+    assert c_all_win_feat, "no windows extracted (size of window features list == 0)"
+    assert c_all_seq_len == c_all_win_feat, "total sequence length != # of windows (%i != %i)" %(c_all_seq_len, c_all_win_feat)
 
     # Load dataset.
-    print("Load window graphs dataset ... ")
-    predict_dataset = MyDataset(all_win_graphs)
-    predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
+    all_win_feat_labels = [1]*c_all_win_feat
+    predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
     # Predict.
     print("Predict windows ... ")
-    win_scores = model_util.get_scores(predict_loader, device, model,
-                                       min_max_norm=True)
+    win_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                     min_max_norm=min_max_norm)
 
     # Checks.
     c_win_scores = len(win_scores)
@@ -1659,11 +1617,11 @@ def main_eval(args):
     assert profile_scores_ll, "profile_scores_ll list empty"
     assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
 
-    # Connect whole-site graph indices to scores.
-    gi2sc_dic = {}
+    # Connect whole-site indices to scores.
+    si2sc_dic = {}
     for i, sc in enumerate(ws_scores):
-        gi2sc_dic[i] = sc
-    assert len(gi2sc_dic) == len(seqs_dic), "length gi2sc_dic != length seqs_dic"
+        si2sc_dic[i] = sc
+    assert len(si2sc_dic) == len(seqs_dic), "length si2sc_dic != length seqs_dic"
 
     # Print out two model scores stats.
     if add_ws_scores:
@@ -1672,7 +1630,7 @@ def main_eval(args):
         TMOUT = open(two_model_scores_out, "w")
         TMOUT.write("model1_score_rank\tsequence_id\tmodel1_score\tmodel2_score\tscore_diff\tsequence\n")
         ws_sc_rank = 0
-        for gi, ws_sc in sorted(gi2sc_dic.items(), key=lambda item: item[1], reverse=True):
+        for gi, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
             ws_sc_rank += 1
             add_ws_sc = add_ws_scores[gi]
             seq_id = idx2id_dic[gi]
@@ -1681,24 +1639,11 @@ def main_eval(args):
             TMOUT.write("%i\t%s\t%.6f\t%.6f\t%.6f\t%s\n" %(ws_sc_rank, seq_id, ws_sc, add_ws_sc, abs_diff, seq))
         TMOUT.close()
 
-    # For directed graphs, shift profiles to left.
-    shift_profiles = False
-    if shift_profiles:
-        shift_pos = win_extlr # number of positions to shift scores left.
-        if win_extlr > nr_hidden_layers:
-            shift_pos = nr_hidden_layers
-        if not args.undirected:
-            for i in range(len(profile_scores_ll)):
-                site_l = len(profile_scores_ll[i])
-                for j in range(site_l):
-                    if j+shift_pos < site_l:
-                        profile_scores_ll[i][j] = profile_scores_ll[i][j+shift_pos]
-
     """
     Plot profiles and motifs
     ========================
 
-    - Sort graphs by score and evaluate top sites.
+    - Sort sites by score and evaluate top sites.
     - Get profile plot for each site.
     - Get motifs inside the set by selecting positions with max score,
       and take sequence around them (defined by motif size).
@@ -1730,14 +1675,14 @@ def main_eval(args):
 
     # Plot top --nr-top-profiles profiles and output all site scores.
     print("Plot top %i profiles ... " %(args.nr_top_profiles))
-    for gi, ws_sc in sorted(gi2sc_dic.items(), key=lambda item: item[1], reverse=True):
+    for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
         # Profile scores.
-        profile_scores = profile_scores_ll[gi]
+        profile_scores = profile_scores_ll[si]
         if not profile_scores:
             continue
         site_count += 1
         id_i += 1
-        seq_id = idx2id_dic[gi]
+        seq_id = idx2id_dic[si]
         seq = seqs_dic[seq_id]
         l_sc = len(profile_scores)
 
@@ -1771,23 +1716,23 @@ def main_eval(args):
             plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
             # Plot profile.
-            gp2lib.make_feature_attribution_plot(seq, profile_scores, all_features[gi],
-                                                 ch_info_dic, plot_out_file,
-                                                 seq_label_plot=False)
+            rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
+                                                ch_info_dic, plot_out_file,
+                                                seq_label_plot=False)
     RSOUT.close()
 
     # Plot bottom profiles too.
     if args.bottoms_up:
         print("Plot bottom %i profiles ... " %(args.nr_top_profiles))
         site_count = 0
-        for gi, sc in sorted(gi2sc_dic.items(), key=lambda item: item[1], reverse=False):
+        for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=False):
             # Profile scores.
-            profile_scores = profile_scores_ll[gi]
+            profile_scores = profile_scores_ll[si]
             if not profile_scores:
                 continue
             site_count += 1
             id_i += 1
-            seq_id = idx2id_dic[gi]
+            seq_id = idx2id_dic[si]
             seq = seqs_dic[seq_id]
 
             # Print only top --nr-top-profiles profiles.
@@ -1796,9 +1741,9 @@ def main_eval(args):
                 plot_file_name = str(id_i)[1:] + "_" + win_info_str + "_sc" + str(sc) + "." + plot_format
                 plot_out_file = bottom_profiles_folder + "/" + plot_file_name
                 # Plot profile.
-                gp2lib.make_feature_attribution_plot(seq, profile_scores, all_features[gi],
-                                                      ch_info_dic, plot_out_file,
-                                                      seq_label_plot=False)
+                rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
+                                                    ch_info_dic, plot_out_file,
+                                                    seq_label_plot=False)
             else:
                 break
 
@@ -1854,16 +1799,16 @@ def main_eval(args):
                         fid2sc_dic[fid].append([])
 
             # Brick by brick.
-            for gi, sc in sorted(gi2sc_dic.items(), key=lambda item: item[1], reverse=True):
+            for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
 
                 # Feature list.
-                feat_list = all_features[gi]
+                feat_list = all_features[si]
                 # Profile scores.
-                profile_scores = profile_scores_ll[gi]
+                profile_scores = profile_scores_ll[si]
                 if not profile_scores:
                     continue
 
-                seq_id = idx2id_dic[gi]
+                seq_id = idx2id_dic[si]
                 seq = seqs_dic[seq_id]
                 l_seq = len(seq)
                 max_pos = id2maxpos_dic[seq_id]  # 0-based.
@@ -1931,8 +1876,8 @@ def main_eval(args):
 
             # Plot motif.
             motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
-            gp2lib.make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
-                                   fid2stdev_dic=fid2stdev_dic)
+            rplib.make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
+                                  fid2stdev_dic=fid2stdev_dic)
 
             top_motif_file_dic[motif_out_file] = 1
 
@@ -1979,16 +1924,16 @@ def main_eval(args):
                             fid2sc_dic[fid].append([])
 
                 # Brick by brick.
-                for gi, sc in sorted(gi2sc_dic.items(), key=lambda item: item[1], reverse=False):
+                for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=False):
 
                     # Feature list.
-                    feat_list = all_features[gi]
+                    feat_list = all_features[si]
                     # Profile scores.
-                    profile_scores = profile_scores_ll[gi]
+                    profile_scores = profile_scores_ll[si]
                     if not profile_scores:
                         continue
 
-                    seq_id = idx2id_dic[gi]
+                    seq_id = idx2id_dic[si]
                     seq = seqs_dic[seq_id]
                     min_pos = id2minpos_dic[seq_id]  # 0-based.
                     min_sc = profile_scores[min_pos]
@@ -2043,8 +1988,8 @@ def main_eval(args):
 
                 # Plot motif.
                 motif_out_file = motif_plots_folder + "/" + "bottom_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
-                gp2lib.make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
-                                       fid2stdev_dic=fid2stdev_dic)
+                rplib.make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
+                                      fid2stdev_dic=fid2stdev_dic)
 
                 bottom_motif_file_dic[motif_out_file] = 1
 
@@ -2067,7 +2012,7 @@ def main_eval(args):
 
     if args.report:
 
-        kmer_graphs = []
+        kmer_feat = []
         kmer2sc_dic = {}
         # Dictionaries for additional feature analysis.
         kmer2mm_dic = {} # Dictionary of motif matrices.
@@ -2089,10 +2034,10 @@ def main_eval(args):
         print("Score k-mers ... ")
         print("--kmer-size:  %i" %(args.kmer_size))
         print("Extract %i-mers from sequences ... " %(args.kmer_size))
-        kmer2c_dic = gp2lib.seqs_dic_count_kmer_freqs(seqs_dic, args.kmer_size,
-                                                      rna=True,
-                                                      convert_to_uc=True,
-                                                      report_key_error=True)
+        kmer2c_dic = rplib.seqs_dic_count_kmer_freqs(seqs_dic, args.kmer_size,
+                                                     rna=True,
+                                                     convert_to_uc=True,
+                                                     report_key_error=True)
         assert kmer2c_dic, "kmer2c_dic k-mer counts dictionary empty"
 
         # Check lookup k-mer.
@@ -2114,29 +2059,23 @@ def main_eval(args):
 
         # If only sequence features.
         if onlyseq:
-            print("--train-in model trained on sequences only. Generate k-mer graphs ... ")
+            print("--train-in model trained on sequences only. Generate k-mer features ... ")
             # Construct sequence kmer graphs.
             for kmer in kmer_list:
-                feat_list = gp2lib.string_vectorizer(kmer, custom_alphabet=['A','C','G','U'])
-                edge_index_1 = []
-                edge_index_2 = []
-                for ni in range(args.kmer_size - 1):
-                    edge_index_1.append(ni)
-                    edge_index_2.append(ni+1)
-                    if args.undirected:
-                        edge_index_1.append(ni+1)
-                        edge_index_2.append(ni)
-                edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-                x = torch.tensor(feat_list, dtype=torch.float)
-                data = Data(x=x, edge_index=edge_index, y=1)
-                kmer_graphs.append(data)
+                feat_list = rplib.string_vectorizer(kmer, custom_alphabet=['A','C','G','U'])
+                kmer_feat.append(torch.tensor(feat_list, dtype=torch.float))
             # Score kmers.
-            predict_dataset = MyDataset(kmer_graphs)
-            predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
+            c_kmer_feat = len(kmer_feat)
+            kmer_feat_labels = [1]*c_kmer_feat
+            predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
+            predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+
             print("Score k-mers present in sequences ... ")
-            kmer_scores = model_util.get_scores(predict_loader, device, model,
-                                                min_max_norm=True)
-            assert len(kmer_graphs) == len(kmer_scores), "len(kmer_graphs) != len(kmer_scores)"
+
+            kmer_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                              min_max_norm=min_max_norm)
+
+            assert c_kmer_feat == len(kmer_scores), "size k-mer features list != # k-mer scores"
             for i,kmer in enumerate(kmer_list):
                 kmer_score = kmer_scores[i]
                 kmer2sc_dic[kmer] = kmer_score
@@ -2151,16 +2090,17 @@ def main_eval(args):
                     if re.search(kmer, seq):
                         kmer2seqids_dic[kmer].append(seq_id)
                         kmerseqid = "%s,%s" %(kmer,seq_id)
-                        hit_list = gp2lib.get_kmer_hit_ends(seq, kmer)
+                        hit_list = rplib.get_kmer_hit_ends(seq, kmer)
                         kmerseqid2hits_dic[kmerseqid] = hit_list
 
             c_kmers_higher_zero = len(kmer2seqids_dic)
             print("# k-mers with scores >= %s:  %i" %(str(min_kmer_score), c_kmers_higher_zero))
 
         else:
+
             # More features comin at ya.
-            print("--train-in model trained on sequences + additional features. Generate k-mer graphs ... ")
-            for feat_list in all_features:
+            print("--train-in model trained on sequences + additional features. Generate k-mer features ... ")
+            for feat_list in all_feat_tens:
                 # For each position in feat_list.
                 l_feat = len(feat_list)
                 for wi in range(l_feat):
@@ -2169,29 +2109,20 @@ def main_eval(args):
                     if reg_e > l_feat:
                         break
                     feat_list_win = feat_list[reg_s:reg_e]
-                    l_feat_win = len(feat_list_win)
-                    # Construct window graph.
-                    edge_index_1 = []
-                    edge_index_2 = []
-                    for ni in range(l_feat_win - 1):
-                        edge_index_1.append(ni)
-                        edge_index_2.append(ni+1)
-                        if args.undirected:
-                            edge_index_1.append(ni+1)
-                            edge_index_2.append(ni)
-                    edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-                    x = torch.tensor(feat_list_win, dtype=torch.float)
-                    data = Data(x=x, edge_index=edge_index, y=1)
-                    kmer_graphs.append(data)
-            # Score kmers.
-            predict_dataset = MyDataset(kmer_graphs)
-            predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
-            print("Score k-mers ... ")
-            kmer_scores = model_util.get_scores(predict_loader, device, model,
-                                                min_max_norm=True)
-            assert len(kmer_graphs) == len(kmer_scores), "len(kmer_graphs) != len(kmer_scores)"
+                    kmer_feat.append(feat_list[reg_s:reg_e])
 
-            # For additional features, get average kmer
+
+            # Score kmers.
+            c_kmer_feat = len(kmer_feat)
+            kmer_feat_labels = [1]*c_kmer_feat
+            predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
+            predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+
+            print("Score k-mers ... ")
+
+            kmer_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                              min_max_norm=min_max_norm)
+            assert len(kmer_feat) == len(kmer_scores), "len(kmer_feat) != len(kmer_scores)"
 
             """
             kmer2matrix_dic = {}
@@ -2236,8 +2167,8 @@ def main_eval(args):
             # Go over all sequence windows.
             sc_i = 0
             kmer2sclist_dic = {}
-            for gi,feat_list in enumerate(all_features):
-                seq_id = idx2id_dic[gi]
+            for si,feat_list in enumerate(all_features):
+                seq_id = idx2id_dic[si]
                 seq = seqs_dic[seq_id]
                 # For each position in feat_list.
                 l_feat = len(feat_list)
@@ -2264,7 +2195,7 @@ def main_eval(args):
                         # Get hit end positions.
                         kmerseqid = "%s,%s" %(win_kmer,seq_id)
                         if kmerseqid not in kmerseqid2hits_dic:
-                            hit_list = gp2lib.get_kmer_hit_ends(seq,win_kmer)
+                            hit_list = rplib.get_kmer_hit_ends(seq,win_kmer)
                             kmerseqid2hits_dic[kmerseqid] = hit_list
                     # Record score for average score calculation later.
                     if win_kmer not in kmer2sclist_dic:
@@ -2386,7 +2317,7 @@ def main_eval(args):
                 for seq_id in intersects:
                     kmer1sid = "%s,%s" %(kmer1,seq_id)
                     kmer2sid = "%s,%s" %(kmer2,seq_id)
-                    min_dist = gp2lib.get_min_hit_end_distance(kmerseqid2hits_dic[kmer1sid],kmerseqid2hits_dic[kmer2sid])
+                    min_dist = rplib.get_min_hit_end_distance(kmerseqid2hits_dic[kmer1sid],kmerseqid2hits_dic[kmer2sid])
                     min_dist_list.append(min_dist)
 
                 # Checks.
@@ -2481,44 +2412,43 @@ def main_eval(args):
         if lookup_kmer and not onlyseq:
             lookup_plot_file = motif_plots_folder + "/" "lookup_" + lookup_kmer + "." + plot_format
             print("Plotting %s ... " %(lookup_plot_file))
-            gp2lib.make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, lookup_plot_file,
+            rplib.make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, lookup_plot_file,
                                    fid2stdev_dic=kmer_stdev_dic[kmer])
 
         # HTML report output file.
-        html_report_out = args.out_folder + "/" + "report.graphprot2_eval.html"
+        html_report_out = args.out_folder + "/" + "report.rnaprot_eval.html"
         # Plots subfolder.
         plots_subfolder = "html_plots"
         # Get library and logo path.
-        gp2lib_path = os.path.dirname(gp2lib.__file__)
+        rplib_path = os.path.dirname(rplib.__file__)
         # Generate report.
-        gp2lib.gp2_eval_generate_html_report(ws_scores, neg_ws_scores,
-                                             args.out_folder, gp2lib_path,
-                                             html_report_out=html_report_out,
-                                             kmer2rank_dic=kmer2rank_dic,
-                                             kmer2sc_dic=kmer2sc_dic,
-                                             kmer2scstdev_dic=kmer2scstdev_dic,
-                                             kmer2bestsc_dic=kmer2bestsc_dic,
-                                             kmer2scrank_dic=kmer2scrank_dic,
-                                             kmer2avgscrank_dic=kmer2avgscrank_dic,
-                                             kmer2mm_dic=kmer2mm_dic,
-                                             kmer_stdev_dic=kmer_stdev_dic,
-                                             kmer2bestmm_dic=kmer2bestmm_dic,
-                                             kmer2c_dic=kmer2c_dic,
-                                             min_kmer_score=min_kmer_score,
-                                             min_jacc_sc=min_jacc_sc,
-                                             kmer_size=args.kmer_size,
-                                             ch_info_dic=ch_info_dic,
-                                             top_motif_file_dic=top_motif_file_dic,
-                                             bottom_motif_file_dic=bottom_motif_file_dic,
-                                             kmer_top_n=c_top_kmers,
-                                             add_ws_scores=add_ws_scores,
-                                             onlyseq=onlyseq,
-                                             theme=args.theme,
-                                             lookup_kmer=lookup_kmer,
-                                             jacc_scores_dic=jacc_scores_dic,
-                                             jacc_stats_dic=jacc_stats_dic,
-                                             plots_subfolder=plots_subfolder)
-
+        rplib.rp_eval_generate_html_report(ws_scores, neg_ws_scores,
+                                           args.out_folder, rplib_path,
+                                           html_report_out=html_report_out,
+                                           kmer2rank_dic=kmer2rank_dic,
+                                           kmer2sc_dic=kmer2sc_dic,
+                                           kmer2scstdev_dic=kmer2scstdev_dic,
+                                           kmer2bestsc_dic=kmer2bestsc_dic,
+                                           kmer2scrank_dic=kmer2scrank_dic,
+                                           kmer2avgscrank_dic=kmer2avgscrank_dic,
+                                           kmer2mm_dic=kmer2mm_dic,
+                                           kmer_stdev_dic=kmer_stdev_dic,
+                                           kmer2bestmm_dic=kmer2bestmm_dic,
+                                           kmer2c_dic=kmer2c_dic,
+                                           min_kmer_score=min_kmer_score,
+                                           min_jacc_sc=min_jacc_sc,
+                                           kmer_size=args.kmer_size,
+                                           ch_info_dic=ch_info_dic,
+                                           top_motif_file_dic=top_motif_file_dic,
+                                           bottom_motif_file_dic=bottom_motif_file_dic,
+                                           kmer_top_n=c_top_kmers,
+                                           add_ws_scores=add_ws_scores,
+                                           onlyseq=onlyseq,
+                                           theme=args.theme,
+                                           lookup_kmer=lookup_kmer,
+                                           jacc_scores_dic=jacc_scores_dic,
+                                           jacc_stats_dic=jacc_stats_dic,
+                                           plots_subfolder=plots_subfolder)
 
     print("")
     print("EVALUATION OUTPUT FILES")
@@ -2557,10 +2487,6 @@ def main_predict(args):
     if args.mode == 2:
         print("Predicting profiles and top-scoring sites ... ")
 
-    # Silence con_ext options.
-    args.con_ext = False
-    args.bps_mode = 1
-
     # --in folder containing prediction data.
     assert os.path.isdir(args.in_folder), "--in folder does not exist"
     # --model-in folder containing trained model.
@@ -2572,79 +2498,71 @@ def main_predict(args):
     assert os.path.isfile(params_file), "missing model training parameter file %s" %(params_file)
     assert os.path.isfile(params_file), "missing model file %s" %(model_file)
     # Read in and check model parameters.
-    params_dic = gp2lib.read_settings_into_dic(params_file)
-    assert "node_hidden_dim" in params_dic, "node_hidden_dim info missing in model parameter file %s" %(params_file)
-    assert "fc_hidden_dim" in params_dic, "fc_hidden_dim info missing in model parameter file %s" %(params_file)
+    params_dic = rplib.read_settings_into_dic(params_file)
+
+    # Check parameters.
+    assert "n_hidden_dim" in params_dic, "n_hidden_dim info missing in model parameter file %s" %(params_file)
+    assert "n_hidden_layers" in params_dic, "n_hidden_layers info missing in model parameter file %s" %(params_file)
     assert "batch_size" in params_dic, "batch_size info missing in model parameter file %s" %(params_file)
     assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
-    assert "dr" in params_dic, "dr (dropout rate) info missing in model parameter file %s" %(params_file)
-    assert "incr_hidden_dim" in params_dic, "incr_hidden_dim info missing in model parameter file %s" %(params_file)
-    assert "gadd_pool" in params_dic, "gadd_pool info missing in model parameter file %s" %(params_file)
-    assert "nr_hidden_layers" in params_dic, "nr_hidden_layers info missing in model parameter file %s" %(params_file)
-    fc_hidden_dim = int(params_dic["fc_hidden_dim"])
-    node_hidden_dim	= int(params_dic["node_hidden_dim"])
+    assert "dr" in params_dic, "dropout rate info missing in model parameter file %s" %(params_file)
+
+    # Set parameters.
+    n_hidden_dim = int(params_dic["n_hidden_dim"])
+    n_hidden_layers = int(params_dic["n_hidden_layers"])
     batch_size = int(params_dic["batch_size"])
     num_features = int(params_dic["num_features"])
-    nr_hidden_layers = int(params_dic["nr_hidden_layers"])
+    args.num_features = num_features
+
     dr = float(params_dic["dr"])
-    args.undirected = False
-    if "undirected" in params_dic:
-        args.undirected = True
-    gadd_pool = True
-    if params_dic["gadd_pool"] == "False":
-        gadd_pool = False
-    incr_hidden_dim = False
-    if params_dic["incr_hidden_dim"] == "True":
-        incr_hidden_dim = True
+    onlyseq = False
+    if args.num_features == 4:
+        onlyseq = True
+    # Loss criterion.
+    criterion = nn.CrossEntropyLoss()
+    # Min-max normalization for scores.
+    min_max_norm = True
 
     """
-    Make sure --model-in and --in features.out is compatible.
+    Make sure --model-in and --in features.out are compatible.
     Features model was trained on need to be available / the same
     in --in folder.
 
     """
+
     # Get model feature infos from --model-in.
-    gp2_train_features_file = args.train_in_folder + "/features.out"
+    rp_train_features_file = args.train_in_folder + "/features.out"
     train_fid_dic = {}
-    with open(gp2_train_features_file) as f:
+    with open(rp_train_features_file) as f:
         for line in f:
             cols = line.strip().split("\t")
             cols_str = ",".join(cols)
             train_fid_dic[cols[0]] = cols_str
     f.closed
     assert train_fid_dic, "train_fid_dic empty"
-    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(gp2_train_features_file)
+    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
     # Get feature infos from prediction dataset --in.
-    gp2_gp_features_file = args.in_folder + "/features.out"
+    rp_gp_features_file = args.in_folder + "/features.out"
     gp_fid_dic = {}
-    with open(gp2_gp_features_file) as f:
+    with open(rp_gp_features_file) as f:
         for line in f:
             cols = line.strip().split("\t")
             cols_str = ",".join(cols)
             gp_fid_dic[cols[0]] = cols_str
     f.closed
     assert gp_fid_dic, "train_fid_dic empty"
-    assert "fa" in gp_fid_dic, "sequence feature \"fa\" missing in %s" %(gp2_gp_features_file)
+    assert "fa" in gp_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_gp_features_file)
     # Pairwise feature comparison.
     # assert len(train_fid_dic) == len(gp_fid_dic), "differing # of features encountered in --in and --model-in features.out (%i vs %i). --in and --model need to be compatible with each other regarding used features" %(len(gp_fid_dic), len(train_fid_dic))
     for fid in train_fid_dic:
         assert fid in gp_fid_dic, "feature ID %s found in --train-in but missing in --in features.out file. --in and --model need to be compatible with each other regarding used features" %(fid)
         assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
-    # No base pairs allowed in profile prediction mode.
-    assert "bpp.str" not in train_fid_dic, "--model-in model was trained with base pair information, but profile prediction mode (--mode 2) so far does not support base pair information. Use --mode 1 or train models without base pair information"
 
     # Generate results output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
     model_folder = args.train_in_folder
-
-    # Get graphprot2 train parameters.
-    gp2_train_param_file = model_folder + "/settings.graphprot2_train.out"
-    assert os.path.isfile(gp2_train_param_file), "missing graphprot2 train parameter file %s" %(gp2_train_param_file)
-    gp2_train_param_dic = gp2lib.read_settings_into_dic(gp2_train_param_file)
-    assert "bps_cutoff" in gp2_train_param_dic, "bps_cutoff info missing in graphprot2 train parameter file %s" %(gp2_train_param_file)
-    args.bps_cutoff = float(gp2_train_param_dic["bps_cutoff"])
 
     # Whole-site predictions output files.
     ws_scores_out = out_folder + "/" + "whole_site_scores.out"
@@ -2701,7 +2619,7 @@ def main_predict(args):
         print("WARNING: %i --in sites < window length encountered" %(c_shorties))
 
     # Output mode settings.
-    settings_file = out_folder + "/settings.graphprot2_predict.out"
+    settings_file = out_folder + "/settings.rnaprot_predict.out"
     SETOUT = open(settings_file, "w")
     for arg in vars(args):
         SETOUT.write("%s\t%s\n" %(arg, str(getattr(args, arg))))
@@ -2715,48 +2633,49 @@ def main_predict(args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # Load data as graphs.
+    print("Load prediction data ... ")
+    seqs_dic, idx2id_dic, all_features = rplib.load_predict_data(args,
+                                                        store_tensors=True)
+    # Number of features (feature vector length).
+    check_num_features = len(all_features[0][0])
+    assert check_num_features, "invalid check_num_features (%s)" %(check_num_features)
+    assert num_features == check_num_features, "num_features != check_num_features (%i != %i)" %(num_features, check_num_features)
+    print("# dataset features:  %i" %(num_features))
+    print("Dataset size:        %i" %(len(all_features)))
+
+    print("Load model ... ")
+    model = GRUModel(num_features, n_hidden_dim, n_hidden_layers,
+                     2, device, dr=dr).to(device)
+    model.load_state_dict(torch.load(model_file))
+
+
     """
     CASE 1: whole site predictions.
 
-    - Load prediction data from graphprot2 predict as graphs.
-    - Run whole site predictions on generated graph data.
-    - Output whole site scores.
+    - Run whole site predictions.
+    - Output whole site scores table (+ reference bed).
 
     """
 
     # Whole site predictions.
     if args.mode == 1:
-        # Load data as graphs.
-        print("Load prediction data as graphs ... ")
-        seqs_dic, idx2id_dic, all_graphs = gp2lib.load_predict_data(args,
-                                                       return_graphs=True)
 
-        print("# dataset features:  %i" %(num_features))
-        print("Dataset size:        %i" %(len(all_graphs)))
+        # Load whole-site dataset.
+        c_all_feat = len(all_features)
+        all_labels = [1]*c_all_feat
+        predict_dataset = RNNDataset(all_features, all_labels)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
-        # Load model.
-        print("Load model ... ")
-        model = FunnelGNN(input_dim=num_features,
-                          node_hidden_dim=node_hidden_dim,
-                          fc_hidden_dim=fc_hidden_dim,
-                          dropout_rate=dr,
-                          nr_hidden_layers=nr_hidden_layers,
-                          add_gadd=gadd_pool,
-                          incr_hidden_dim=incr_hidden_dim,
-                          out_dim=2).to(device)
-        model.load_state_dict(torch.load(model_file))
-
-        # Prepare dataset.
-        predict_dataset = MyDataset(all_graphs)
-        predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
-
-        # Get whole site scores.
-        print("Do the whole site predictions ... ")
-        ws_scores = model_util.get_scores(predict_loader, device, model,
-                                          min_max_norm=True)
+        # Predict.
+        print("Predict whole sites ... ")
+        ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                        min_max_norm=min_max_norm)
 
         # Checks.
-        assert len(ws_scores) == len(seqs_dic), "# test sequences != # whole site scores (%i != %i)" %(len(ws_scores), len(seqs_dic))
+        c_ws_scores = len(ws_scores)
+        assert c_ws_scores == c_all_feat, "# whole-site scores != size features list (%i != %i)" %(c_ws_scores, c_all_feat)
+
         # Output whole site scores.
         WSOUT = open(ws_scores_out, "w")
         for i,sc in enumerate(ws_scores):
@@ -2787,12 +2706,6 @@ def main_predict(args):
     - If genomic or transcript regions given as input, map peak regions
       and top-scoring sites to reference (update coordinates).
 
-    # Shuffle graphs.
-    random.seed(1)
-    random.shuffle(all_graphs)
-    labels = [g.y for g in all_graphs]
-
-
     """
     peaks_found = False
     wide_peaks_found = False
@@ -2802,21 +2715,13 @@ def main_predict(args):
 
         print("CALEB: I have something for you ... ")
 
-        # Load data as graphs.
-        print("Load prediction data ... ")
-        seqs_dic, bpp_dic, idx2id_dic, all_features = gp2lib.load_predict_data(args,
-                                                             return_graphs=False)
-
-        print("# dataset features:  %i" %(num_features))
-        print("Dataset size:        %i" %(len(all_features)))
-
         # Create window graphs.
-        all_win_graphs = []
+        all_win_feat = []
         seq_len_list = []
         c_all_seq_len = 0
         win_extlr = args.win_ext
 
-        print("Create window graphs ... ")
+        print("Create windows ... ")
         for feat_list in all_features:
             l_seq = len(feat_list)
             # l_seq == window graphs for sequence.
@@ -2831,49 +2736,23 @@ def main_predict(args):
                     reg_e = l_feat
                 if reg_s < 0:
                     reg_s = 0
-                feat_list_win = feat_list[reg_s:reg_e]
-                l_feat_win = len(feat_list_win)
-                # Construct window graph.
-                edge_index_1 = []
-                edge_index_2 = []
-                for ni in range(l_feat_win - 1):
-                    edge_index_1.append(ni)
-                    edge_index_2.append(ni+1)
-                    if args.undirected:
-                        edge_index_1.append(ni+1)
-                        edge_index_2.append(ni)
-
-                edge_index = torch.tensor([edge_index_1, edge_index_2], dtype=torch.long)
-                x = torch.tensor(feat_list_win, dtype=torch.float)
-                data = Data(x=x, edge_index=edge_index, y=1)
-                all_win_graphs.append(data)
+                #all_win_feat.append(torch.tensor(feat_list[reg_s:reg_e], dtype=torch.float))
+                all_win_feat.append(feat_list[reg_s:reg_e])
 
         # Checks.
-        c_all_win_graphs = len(all_win_graphs)
-        assert c_all_win_graphs, "no window graphs constructed (# window graphs == 0)"
-        assert c_all_seq_len == c_all_win_graphs, "total sequence length != # of window graphs (%i != %i)" %(c_all_seq_len, c_all_win_graphs)
-
-        # Load model.
-        print("Load model ... ")
-        model = FunnelGNN(input_dim=num_features,
-                          node_hidden_dim=node_hidden_dim,
-                          fc_hidden_dim=fc_hidden_dim,
-                          dropout_rate=dr,
-                          nr_hidden_layers=nr_hidden_layers,
-                          add_gadd=gadd_pool,
-                          incr_hidden_dim=incr_hidden_dim,
-                          out_dim=2).to(device)
-        model.load_state_dict(torch.load(model_file))
+        c_all_win_feat = len(all_win_feat)
+        assert c_all_win_feat, "no windows extracted (size of window features list == 0)"
+        assert c_all_seq_len == c_all_win_feat, "total sequence length != # of windows (%i != %i)" %(c_all_seq_len, c_all_win_feat)
 
         # Load dataset.
-        print("Load window graphs dataset ... ")
-        predict_dataset = MyDataset(all_win_graphs)
-        predict_loader = DataLoader(predict_dataset, batch_size=batch_size, shuffle=False)
+        all_win_feat_labels = [1]*c_all_win_feat
+        predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
 
         # Predict.
         print("Predict windows ... ")
-        win_scores = model_util.get_scores(predict_loader, device, model,
-                                           min_max_norm=True)
+        win_scores = rnn_util.get_scores(predict_loader, model, criterion,
+                                         min_max_norm=min_max_norm)
 
         # Checks.
         c_win_scores = len(win_scores)
@@ -2887,9 +2766,7 @@ def main_predict(args):
             profile_scores_ll.append(win_scores[si:se])
             si += l
         assert profile_scores_ll, "profile_scores_ll list empty"
-        l_all_features = len(all_features)
-        l_profile_scores_ll = len(profile_scores_ll)
-        assert l_profile_scores_ll == l_all_features, "length profile scores list != length all features list"
+        assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
 
         """
         Extract peak regions, and store peak regions and top scoring positions
@@ -2930,10 +2807,10 @@ def main_predict(args):
                 PROFOUT.write("%i\t%s\t%f\n" %(pos, nt, sc))
 
             # Get peak regions + positions.
-            peak_list = gp2lib.list_extract_peaks(profile_scores_ll[idx],
-                                                  max_merge_dist=args.max_merge_dist,
-                                                  coords="bed",
-                                                  sc_thr=args.sc_thr)
+            peak_list = rplib.list_extract_peaks(profile_scores_ll[idx],
+                                                 max_merge_dist=args.max_merge_dist,
+                                                 coords="bed",
+                                                 sc_thr=args.sc_thr)
 
             # Peak count.
             peak_i = 0
@@ -2959,8 +2836,8 @@ def main_predict(args):
                 PEAKPOSEXTOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
                 # Reference coordinates.
                 if not only_seq:
-                    new_s, new_e = gp2lib.bed_convert_coords(peak_s, peak_e, ref_s, ref_e, ref_pol)
-                    new_top_s, new_top_e = gp2lib.bed_convert_coords(top_pos-1, top_pos, ref_s, ref_e, ref_pol)
+                    new_s, new_e = rplib.bed_convert_coords(peak_s, peak_e, ref_s, ref_e, ref_pol)
+                    new_top_s, new_top_e = rplib.bed_convert_coords(top_pos-1, top_pos, ref_s, ref_e, ref_pol)
                     new_top_ext_s = new_top_s - args.win_ext
                     new_top_ext_e = new_top_e + args.win_ext
                     if new_top_ext_s < ref_s:
@@ -2992,7 +2869,7 @@ def main_predict(args):
             sys.exit()
 
         # Merge extended peaks.
-        gp2lib.bed_sort_merge_output_top_entries(peak_pos_ext_bed, peak_pos_ext_merged_bed)
+        rplib.bed_sort_merge_output_top_entries(peak_pos_ext_bed, peak_pos_ext_merged_bed)
         if only_seq:
             if os.path.exists(peak_regions_ref_bed):
                 os.remove(peak_regions_ref_bed)
@@ -3001,7 +2878,7 @@ def main_predict(args):
             if os.path.exists(peak_pos_ext_ref_bed):
                 os.remove(peak_pos_ext_ref_bed)
         else:
-            gp2lib.bed_sort_merge_output_top_entries(peak_pos_ext_ref_bed, peak_pos_ext_merged_ref_bed)
+            rplib.bed_sort_merge_output_top_entries(peak_pos_ext_ref_bed, peak_pos_ext_merged_ref_bed)
 
 
     """
@@ -3075,12 +2952,10 @@ def main_gt(args):
     pos_eia_out = args.out_folder + "/" + "positives.eia"
     neg_eia_out = args.out_folder + "/" + "negatives.eia"
     # Secondary structure annotation files.
-    pos_str_elem_p_out = args.out_folder + "/" + "positives.elem_p.str"
-    neg_str_elem_p_out = args.out_folder + "/" + "negatives.elem_p.str"
-    pos_bpp_out = args.out_folder + "/" + "positives.bpp.str"
-    neg_bpp_out = args.out_folder + "/" + "negatives.bpp.str"
+    pos_str_out = args.out_folder + "/" + "positives.str"
+    neg_str_out = args.out_folder + "/" + "negatives.str"
     # Mode settings file.
-    settings_file = args.out_folder + "/" + "/settings.graphprot2_gt.out"
+    settings_file = args.out_folder + "/" + "/settings.rnaprot_gt.out"
     # Chromosome or transcript lengths file.
     chr_lengths_file = args.out_folder + "/" + "reference_lengths.out"
     # Genes or transcript regions containing positives.
@@ -3125,15 +3000,6 @@ def main_gt(args):
     pos_transcript_to_genome_bed = args.out_folder + "/" + "positives.transcript_to_genome.bed"
     neg_transcript_to_genome_bed = args.out_folder + "/" + "negatives.transcript_to_genome.bed"
 
-    # Custom base pairs check.
-    if args.bp_in:
-        assert args.add_str, "--bp-in requires --str to be set for structure calculation"
-    else:
-        args.bp_in = False
-    # Silence con_ext options.
-    args.con_ext = False
-    args.pre_con_ext_merge = False
-
     # Write generated feature infos to table.
     FEATOUT = open(feat_table_out, "w")
 
@@ -3152,64 +3018,36 @@ def main_gt(args):
     """
 
     # Check if --in file is FASTA file.
-    if gp2lib.fasta_check_fasta_file(args.in_sites):
+    if rplib.fasta_check_fasta_file(args.in_sites):
         # Read in sequences (this also checks for unique headers + converts to RNA).
-        pos_seqs_dic = gp2lib.read_fasta_into_dic(args.in_sites)
-        # Get viewpoint region start+end dictionaries.
-        id2vpse_dic = gp2lib.extract_viewpoint_regions_from_fasta(pos_seqs_dic,
-                                                                  get_se_dic=True)
-        # Looking for lowercase context.
-        lc_context = False
-        for seq_id in id2vpse_dic:
-            seq_l = len(pos_seqs_dic[seq_id])
-            if id2vpse_dic[seq_id][1] != seq_l or id2vpse_dic[seq_id][0] != 1:
-                lc_context = True
-                break
+        pos_seqs_dic = rplib.read_fasta_into_dic(args.in_sites)
         # Sequence character counts.
-        seq_cc_dic = gp2lib.seqs_dic_count_chars(pos_seqs_dic)
-        if lc_context:
-            print("Lowercase context regions found inside --in sequences ... ")
-            allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1, 'a': 1, 'c': 1, 'g': 1, 'u': 1}
-            for nt in seq_cc_dic:
-                if nt not in allowed_nt_dic:
-                    assert False, "--in sequences contain \"%s\" character (allowed characters: A C G U a c g u)" %(nt)
-            FEATOUT.write("fa\tC\tA,C,G,U,a,c,g,u\t-\n")
-            # Get most frequenet lowercase extension.
-            major_lcl = gp2lib.get_major_lc_len_from_seqs_dic(pos_seqs_dic)
-            assert major_lcl, "no lowercase regions extracted (major_lcl evaluated to False)"
-            print("Most frequent lowercase region length found:  %i" %(major_lcl))
-            print("Set --con-ext to this length ... ")
-            # Use major_lcl as con_ext.
-            args.con_ext = major_lcl
-        else:
-            allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1}
-            for nt in seq_cc_dic:
-                if nt not in allowed_nt_dic:
-                    assert False, "--in sequences contain \"%s\" character (allowed characters: A C G U)" %(nt)
-            FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
+        seq_cc_dic = rplib.seqs_dic_count_chars(pos_seqs_dic)
+        # Allowed sequence characters.
+        allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1}
+        for nt in seq_cc_dic:
+            if nt not in allowed_nt_dic:
+                assert False, "--in sequences contain \"%s\" character (allowed characters: A C G U)" %(nt)
+        FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
 
         # If negative sequences are given, no shuffling of positive sequences necessary to produce negatives.
         if args.in_neg_sites:
             assert os.path.exists(args.in_neg_sites), "--neg-in file \"%s\" not found" %(args.in_neg_sites)
-            assert gp2lib.fasta_check_fasta_file(args.in_neg_sites), "--in FASTA requires --neg-in in same format (FASTA)"
+            assert rplib.fasta_check_fasta_file(args.in_neg_sites), "--in FASTA requires --neg-in in same format (FASTA)"
             print("Generating training set from --in and --neg-in ... ")
-            neg_seqs_dic = gp2lib.read_fasta_into_dic(args.in_neg_sites)
-            id2vpse_dic = gp2lib.extract_viewpoint_regions_from_fasta(neg_seqs_dic,
-                                                                      id2se_dic=id2vpse_dic,
-                                                                      get_se_dic=True)
-
+            neg_seqs_dic = rplib.read_fasta_into_dic(args.in_neg_sites,
+                                                     all_uc=True)
         else:
             print("Generating training set from --in (shuffling positives to get negatives) ... ")
             print("Set shuffling method: %i-nucleotide shuffling" %(args.shuffle_k))
             # Shuffle positives to generate negatives.
-            neg_seqs_dic = gp2lib.ushuffle_sequences(pos_seqs_dic,
-                                                     new_ids=True,
-                                                     id2vpse_dic=id2vpse_dic,
-                                                     id_prefix="shuff_neg",
-                                                     ushuffle_k=args.shuffle_k)
+            neg_seqs_dic = rplib.ushuffle_sequences(pos_seqs_dic,
+                                                    new_ids=True,
+                                                    id_prefix="shuff_neg",
+                                                    ushuffle_k=args.shuffle_k)
         # Output processed sequences.
-        gp2lib.fasta_output_dic(pos_seqs_dic, pos_fasta_out)
-        gp2lib.fasta_output_dic(neg_seqs_dic, neg_fasta_out)
+        rplib.fasta_output_dic(pos_seqs_dic, pos_fasta_out)
+        rplib.fasta_output_dic(neg_seqs_dic, neg_fasta_out)
 
         # Secondary structure stats dictionaries.
         pos_str_stats_dic = None
@@ -3217,55 +3055,46 @@ def main_gt(args):
 
         # If structure features should be computed.
         if args.add_str:
-            FEATOUT.write("bpp.str\tN\tbp_prob\tprob\n")
-            FEATOUT.write("elem_p.str\tN\tE,H,I,M,S\tprob\n")
+            FEATOUT.write("str\tN\tE,H,I,M,S\tprob\n")
             # If report=True, collect statistics.
             if args.report:
                 pos_str_stats_dic = {}
                 neg_str_stats_dic = {}
             # Calculate structure features for positives.
             print("Get secondary structure features for positive set ... ")
-            gp2lib.calc_str_elem_up_bpp(pos_fasta_out, pos_bpp_out, pos_str_elem_p_out,
-                                        stats_dic=pos_str_stats_dic,
-                                        plfold_u=args.plfold_u,
-                                        plfold_l=args.plfold_l,
-                                        plfold_w=args.plfold_w)
-            # If custom base pair information given.
-            if args.bp_in:
-                # Sanity check, process, and output custom base pair information file.
-                print("--bp-in file supplied. Check, process + overwrite positive base pairs ... ")
-                gp2lib.process_custom_bp_file(args.bp_in, pos_bpp_out, pos_seqs_dic,
-                                              stats_dic=pos_str_stats_dic)
+            rplib.calc_str_elem_p(pos_fasta_out, pos_str_out,
+                                  stats_dic=pos_str_stats_dic,
+                                  plfold_u=args.plfold_u,
+                                  plfold_l=args.plfold_l,
+                                  plfold_w=args.plfold_w)
             # Calculate structure features for negatives.
             print("Get secondary structure features for negative set ... ")
-            gp2lib.calc_str_elem_up_bpp(neg_fasta_out, neg_bpp_out, neg_str_elem_p_out,
-                                        stats_dic=neg_str_stats_dic,
-                                        plfold_u=args.plfold_u,
-                                        plfold_l=args.plfold_l,
-                                        plfold_w=args.plfold_w)
+            rplib.calc_str_elem_p(neg_fasta_out, neg_str_out,
+                                  stats_dic=neg_str_stats_dic,
+                                  plfold_u=args.plfold_u,
+                                  plfold_l=args.plfold_l,
+                                  plfold_w=args.plfold_w)
 
         # Sequence set stats.
         c_pos_out = len(pos_seqs_dic)
         c_neg_out = len(neg_seqs_dic)
         if args.report:
             # HTML report output file.
-            html_report_out = args.out_folder + "/" + "report.graphprot2_gt.html"
+            html_report_out = args.out_folder + "/" + "report.rnaprot_gt.html"
             # Plots subfolder.
-            plots_subfolder = "plots_graphprot2_gt"
+            plots_subfolder = "plots_rnaprot_gt"
             # Get library and logo path.
-            gp2lib_path = os.path.dirname(gp2lib.__file__)
+            rplib_path = os.path.dirname(rplib.__file__)
             # Generate report.
-            gp2lib.gp2_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, args.out_folder,
-                                               "s", gp2lib_path,
-                                               id2ucr_dic=id2vpse_dic,
-                                               plots_subfolder=plots_subfolder,
-                                               html_report_out=html_report_out,
-                                               pos_str_stats_dic=pos_str_stats_dic,
-                                               neg_str_stats_dic=neg_str_stats_dic,
-                                               theme=args.theme,
-                                               kmer_top=10,
-                                               rna=True,
-                                               uc_entropy=True)
+            rplib.rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, args.out_folder,
+                                             "s", rplib_path,
+                                             plots_subfolder=plots_subfolder,
+                                             html_report_out=html_report_out,
+                                             pos_str_stats_dic=pos_str_stats_dic,
+                                             neg_str_stats_dic=neg_str_stats_dic,
+                                             theme=args.theme,
+                                             kmer_top=10,
+                                             rna=True)
 
         # Mode settings output file.
         SETOUT = open(settings_file, "w")
@@ -3281,10 +3110,8 @@ def main_gt(args):
         print("Positives sequences .fa:\n%s" %(pos_fasta_out))
         print("Negatives sequences .fa:\n%s" %(neg_fasta_out))
         if args.add_str:
-            print("Positives base pair probabilities .bpp.str:\n%s" %(pos_bpp_out))
-            print("Negatives base pair probabilities .bpp.str:\n%s" %(neg_bpp_out))
-            print("Positives position-wise structural elements probabilities .elem_p.str:\n%s" %(pos_str_elem_p_out))
-            print("Negatives position-wise structural elements probabilities .elem_p.str:\n%s" %(neg_str_elem_p_out))
+            print("Positives position-wise structural elements probabilities .str:\n%s" %(pos_str_out))
+            print("Negatives position-wise structural elements probabilities .str:\n%s" %(neg_str_out))
         if args.report:
             print("Training set generation report .html:\n%s" %(html_report_out))
         print("")
@@ -3336,13 +3163,7 @@ def main_gt(args):
     as bedtools shuffle keeps the lengths for each shuffled region.
     Future implementations could additionally include e.g.:
     The median positive length or expected positive length (after
-    --seq-ext and --con-ext, if --mode 1)
-
-    Regarding --con-ext:
-    --con-ext site extension with lower-case context sequence is by default
-    done after merging overlapping sites.
-    If --con-ext-pre is set, --con-ext extension will be done before
-    merging of overlapping sites.
+    --seq-ext, if --mode 1)
 
     """
     # If --in are BED, require --gtf and --gen.
@@ -3367,12 +3188,6 @@ def main_gt(args):
     exp_site_length = args.seq_ext * 2 + 1
     if exp_site_length > max_site_length:
         assert False, "use reasonable site extension values (--seq-ext) (<= --max-len)"
-    if args.con_ext:
-        exp_site_length = exp_site_length + 2 * args.con_ext
-        if exp_site_length > max_site_length:
-            assert False, "use reasonable site extension values (--seq-ext + --con-ext) (<= --max-len)"
-        if args.add_str:
-            assert args.con_ext <= args.plfold_l, "--con-ext needs to be <= --plfold-l"
     if args.add_str:
         assert args.plfold_l < args.plfold_w, "--plfold-l must be smaller than --plfold-w"
 
@@ -3380,10 +3195,10 @@ def main_gt(args):
     assert os.path.exists(args.in_sites), "--in BED file \"%s\" not found" %(args.in_sites)
     assert os.path.exists(args.in_gtf), "--gtf GTF file \"%s\" not found" %(args.in_gtf)
     assert os.path.exists(args.in_2bit), "--gen .2bit file \"%s\" not found" %(args.in_2bit)
-    assert gp2lib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
+    assert rplib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
     if args.mask_bed:
         assert os.path.exists(args.mask_bed), "--mask-bed BED file \"%s\" not found" %(args.mask_bed)
-        assert gp2lib.bed_check_six_col_format(args.mask_bed), "--mask-bed BED file appears to be not in 6-column BED format"
+        assert rplib.bed_check_six_col_format(args.mask_bed), "--mask-bed BED file appears to be not in 6-column BED format"
     if args.pc_bw:
         assert os.path.exists(args.pc_bw), "--phastcons file \"%s\" not found" %(args.pc_bw)
     if args.pp_bw:
@@ -3408,7 +3223,7 @@ def main_gt(args):
     if args.feat_in_norm and not args.feat_in:
         assert False, "--feat-in-norm requires --feat-in"
     if args.feat_in:
-        assert gp2lib.bed_check_six_col_format(args.feat_in, nr_cols=4), "--feat-in table file: 4 columns (data ID, data type, BED path) expected"
+        assert rplib.bed_check_six_col_format(args.feat_in, nr_cols=4), "--feat-in table file: 4 columns (data ID, data type, BED path) expected"
         # Check feature ID lengths and BED file paths.
         max_feat_id_len = 20
         with open(args.feat_in) as f:
@@ -3423,15 +3238,15 @@ def main_gt(args):
 
     # If --in column 4 IDs should be kept, check their uniqueness.
     if args.keep_ids:
-        assert gp2lib.bed_check_unique_ids(args.in_sites), "--in BED file \"%s\" column 4 IDs not unique. Disable --keep-ids or provide unique IDs" %(args.in_sites)
+        assert rplib.bed_check_unique_ids(args.in_sites), "--in BED file \"%s\" column 4 IDs not unique. Disable --keep-ids or provide unique IDs" %(args.in_sites)
         if args.in_neg_sites:
-            assert gp2lib.bed_check_unique_ids(args.in_neg_sites), "--neg-in BED file \"%s\" column 4 IDs not unique. Disable --keep-ids or provide unique IDs" %(args.in_neg_sites)
-            assert gp2lib.bed_check_unique_ids_two_files(args.in_sites, args.in_neg_sites), "combined column 4 IDs of --neg-in BED and --in BED not unique. Disable --keep-ids or provide unique IDs"
+            assert rplib.bed_check_unique_ids(args.in_neg_sites), "--neg-in BED file \"%s\" column 4 IDs not unique. Disable --keep-ids or provide unique IDs" %(args.in_neg_sites)
+            assert rplib.bed_check_unique_ids_two_files(args.in_sites, args.in_neg_sites), "combined column 4 IDs of --neg-in BED and --in BED not unique. Disable --keep-ids or provide unique IDs"
 
     # Quick check what remains after applying score threshold.
     if args.sc_thr is not None:
-        c_rem = gp2lib.bed_get_score_filtered_count(args.in_sites, args.sc_thr,
-                                                    rev_filter=args.rev_filter)
+        c_rem = rplib.bed_get_score_filtered_count(args.in_sites, args.sc_thr,
+                                                   rev_filter=args.rev_filter)
         if not c_rem:
             print("ERROR: no remaining sites after filtering by set --thr score. Use lower score threshold or disable --thr")
             sys.exit()
@@ -3439,8 +3254,8 @@ def main_gt(args):
     # Initial --neg-in checks.
     if args.in_neg_sites:
         assert os.path.exists(args.in_neg_sites), "--neg-in file \"%s\" not found" %(args.in_neg_sites)
-        assert not gp2lib.fasta_check_fasta_file(args.in_neg_sites), "--neg-in seems to be in FASTA format, but BED format expected"
-        assert gp2lib.bed_check_six_col_format(args.in_neg_sites), "--neg-in BED file appears to be not in 6-column BED format"
+        assert not rplib.fasta_check_fasta_file(args.in_neg_sites), "--neg-in seems to be in FASTA format, but BED format expected"
+        assert rplib.bed_check_six_col_format(args.in_neg_sites), "--neg-in BED file appears to be not in 6-column BED format"
 
     # Mode settings output file.
     SETOUT = open(settings_file, "w")
@@ -3450,10 +3265,10 @@ def main_gt(args):
 
     # Get chromsome lengths from --gen.
     print("Get chromosome lengths from --gen ... ")
-    chr_len_dic = gp2lib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
+    chr_len_dic = rplib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
     # Get chromosome IDs.
     print("Get chromosome IDs from --in ... ")
-    chr_ids_dic = gp2lib.bed_get_chromosome_ids(args.in_sites)
+    chr_ids_dic = rplib.bed_get_chromosome_ids(args.in_sites)
 
     # Check whether IDs are genomic or not.
     transcript_regions = False
@@ -3468,7 +3283,7 @@ def main_gt(args):
         print("No chromosome IDs found in --in, interpret column 1 IDs as transcript IDs ... ")
     # Demand same thing for negative sites.
     if args.in_neg_sites:
-        neg_chr_ids_dic = gp2lib.bed_get_chromosome_ids(args.in_neg_sites)
+        neg_chr_ids_dic = rplib.bed_get_chromosome_ids(args.in_neg_sites)
         for chr_id in neg_chr_ids_dic:
             if transcript_regions:
                 assert chr_id not in chr_len_dic, "--in BED contains transcript sites, whereas --neg-in also contains chromosome IDs in BED column 1. Use either transcript or genomic sites for both --in and --neg-in"
@@ -3490,13 +3305,13 @@ def main_gt(args):
             sys.exit()
         # Read in transcript lengths from --gtf.
         print("Get transcript lengths from --gtf ... ")
-        tr_len_dic = gp2lib.gtf_get_transcript_lengths(args.in_gtf)
+        tr_len_dic = rplib.gtf_get_transcript_lengths(args.in_gtf)
         print("Verifying transcript IDs by checking their presence in --gtf ... ")
         for tr_id in chr_ids_dic:
             assert tr_id in tr_len_dic, "--in column 1 transcript ID \"%s\" not found in --gtf" %(tr_id)
         # Make a transcript regions .bed file.
         print("Output transcripts containing positive sites to BED ... ")
-        gp2lib.bed_sequence_lengths_to_bed(tr_len_dic, regions_with_positives_bed,
+        rplib.bed_sequence_lengths_to_bed(tr_len_dic, regions_with_positives_bed,
                                            ids_dic=chr_ids_dic)
         if args.in_neg_sites:
             for tr_id in neg_chr_ids_dic:
@@ -3504,12 +3319,12 @@ def main_gt(args):
             chr_ids_dic.update(neg_chr_ids_dic)
         # Get spliced transcript sequences from gtf+2bit.
         print("Get transcript sequences from --gtf and --gen ... ")
-        tr_seqs_dic = gp2lib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
-                                                               lc_repeats=args.rep_reg_annot,
-                                                               tr_ids_dic=chr_ids_dic)
+        tr_seqs_dic = rplib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
+                                                              lc_repeats=args.rep_reg_annot,
+                                                              tr_ids_dic=chr_ids_dic)
         # Output transcript lengths file.
         print("Output transcript lengths file ... ")
-        gp2lib.output_chromosome_lengths_file(tr_len_dic, chr_lengths_file)
+        rplib.output_chromosome_lengths_file(tr_len_dic, chr_lengths_file)
         # Make a new chr_len_dic, only with transcript IDs from --in and their lengths.
         chr_len_dic = {}
         for tr_id in chr_ids_dic:
@@ -3536,10 +3351,10 @@ def main_gt(args):
 
     # Process --in positives.
     ps_count_dic = {}
-    id2pl_dic = gp2lib.process_in_sites(args.in_sites, tmp1_bed, chr_len_dic, args,
-                                        transcript_regions=transcript_regions,
-                                        count_dic=ps_count_dic,
-                                        id_prefix="CLIP")
+    id2pl_dic = rplib.process_in_sites(args.in_sites, tmp1_bed, chr_len_dic, args,
+                                    transcript_regions=transcript_regions,
+                                    count_dic=ps_count_dic,
+                                    id_prefix="CLIP")
     print("# positive sites found in --in:             %i" %(ps_count_dic['c_in']))
     if ps_count_dic['c_filt_max_len']:
         print("# positive sites filtered by --max-len:     %i" %(ps_count_dic['c_filt_max_len']))
@@ -3553,11 +3368,11 @@ def main_gt(args):
     # If --neg-in negative sites given, process same as --in.
     if args.in_neg_sites:
         ns_count_dic = {}
-        id2pl_dic = gp2lib.process_in_sites(args.in_neg_sites, neg_tmp1_bed, chr_len_dic, args,
-                                            transcript_regions=transcript_regions,
-                                            count_dic=ns_count_dic,
-                                            id2pl_dic=id2pl_dic,
-                                            id_prefix="neg")
+        id2pl_dic = rplib.process_in_sites(args.in_neg_sites, neg_tmp1_bed, chr_len_dic, args,
+                                        transcript_regions=transcript_regions,
+                                        id2pl_dic=id2pl_dic,
+                                        count_dic=ns_count_dic,
+                                        id_prefix="neg")
 
         print("# negative sites found in --neg-in:         %i" %(ns_count_dic['c_in']))
 
@@ -3570,12 +3385,11 @@ def main_gt(args):
         assert ns_count_dic['c_out'], "no negative sites remaining after filtering and extension ... "
         print("# negative sites read in (post-filtering):  %i" %(ns_count_dic['c_out']))
 
-
     # Check whether scores work for best overlap sites selection.
     if not args.allow_overlaps:
         print("Select highest-scoring sites in case of overlaps ... ")
         # Check if scores are there.
-        sc2c_dic = gp2lib.bed_get_score_to_count_dic(tmp1_bed)
+        sc2c_dic = rplib.bed_get_score_to_count_dic(tmp1_bed)
         # Warning in case no col5 scores are present (e.g. each row with score 0).
         if len(sc2c_dic) == 1:
             print("WARNING: --in BED regions all contain the same column 5 score!")
@@ -3585,55 +3399,53 @@ def main_gt(args):
             args.allow_overlaps = True
     # If overlaps between sites allowed (should work with transcript + genomic sites).
     if args.allow_overlaps:
-        gp2lib.make_file_copy(tmp1_bed, tmp2_bed)
+        rplib.make_file_copy(tmp1_bed, tmp2_bed)
     else:
         # Merge overlapping sites, selecting best scoring site for each overlap group.
-        gp2lib.bed_sort_merge_output_top_entries(tmp1_bed, tmp2_bed,
-                                                 rev_filter=args.rev_filter)
+        rplib.bed_sort_merge_output_top_entries(tmp1_bed, tmp2_bed,
+                                                rev_filter=args.rev_filter)
 
     # For genomic sites, extract gene regions containing positives.
     if not transcript_regions:
         # Get gene regions from .gtf.
         print("Extract gene regions from --gtf ... ")
-        gp2lib.gtf_extract_gene_bed(args.in_gtf, gene_regions_gtf_tmp_bed)
+        rplib.gtf_extract_gene_bed(args.in_gtf, gene_regions_gtf_tmp_bed)
         # Get gene regions containing positives.
         params = "-u -s"
         print("Get gene regions containing positive sites ... ")
-        gp2lib.intersect_bed_files(gene_regions_gtf_tmp_bed, args.in_sites, params, regions_with_positives_bed)
+        rplib.intersect_bed_files(gene_regions_gtf_tmp_bed, args.in_sites, params, regions_with_positives_bed)
         # Filter positives by gene coverage.
         if args.no_gene_filter:
-            gp2lib.make_file_copy(tmp2_bed, tmp3_bed)
+            rplib.make_file_copy(tmp2_bed, tmp3_bed)
         else:
             # Accept only --in sites that overlap with gene regions.
             print("Filter positive sites by gene overlap ... ")
             params = "-u -s"
-            gp2lib.intersect_bed_files(tmp2_bed, gene_regions_gtf_tmp_bed, params, tmp3_bed)
-            c_out = gp2lib.count_file_rows(tmp3_bed)
+            rplib.intersect_bed_files(tmp2_bed, gene_regions_gtf_tmp_bed, params, tmp3_bed)
+            c_out = rplib.count_file_rows(tmp3_bed)
             assert c_out, "no remaining positive sites after filtering by gene overlap"
             print("# positive sites after filtering by gene coverage:  %i" %(c_out))
     else:
-        gp2lib.make_file_copy(tmp2_bed, tmp3_bed)
-
+        rplib.make_file_copy(tmp2_bed, tmp3_bed)
 
     """
     Revise positives
     ================
 
-    - Store rows with original scores in dictionary id2row_dic
+    - Store rows with original scores in dictionary id2row_dic.
     - Make BED col5 scores = 0 for sequence extraction.
-    - Apply --con-ext extension (if set) unless --con-ext-pre was enabled.
     - if --neg-in, revise --neg-in same way.
 
     """
 
-    id2row_dic = gp2lib.revise_in_sites(tmp3_bed, positives_with_context_bed,
-                                        chr_len_dic, id2pl_dic, args,
-                                        transcript_regions=transcript_regions)
+    id2row_dic = rplib.revise_in_sites(tmp3_bed, positives_with_context_bed,
+                                       chr_len_dic, id2pl_dic, args,
+                                       transcript_regions=transcript_regions)
     assert id2row_dic, "no positive sites remaining after revision"
     if args.in_neg_sites:
-        id2row_neg_dic = gp2lib.revise_in_sites(neg_tmp1_bed, negatives_with_context_bed,
-                                                chr_len_dic, id2pl_dic, args,
-                                                transcript_regions=transcript_regions)
+        id2row_neg_dic = rplib.revise_in_sites(neg_tmp1_bed, negatives_with_context_bed,
+                                               chr_len_dic, id2pl_dic, args,
+                                               transcript_regions=transcript_regions)
         assert id2row_neg_dic, "no negative sites (--neg-in) remaining after revision"
         print("# selected positive sites:  %i" %(len(id2row_dic)))
         print("# selected negative sites:  %i" %(len(id2row_neg_dic)))
@@ -3667,19 +3479,19 @@ def main_gt(args):
         mask_files_list.append(positives_with_context_bed)
         if args.mask_bed:
             mask_files_list.append(args.mask_bed)
-        gp2lib.merge_files(mask_files_list, mask_negatives_bed)
+        rplib.merge_files(mask_files_list, mask_negatives_bed)
         # Generate shuffle file.
         shuffle_list = []
         # Generate random negatives, neg_factor times number of positives.
         for i in range(args.neg_factor):
             shuffle_list.append(positives_with_context_bed)
-        gp2lib.merge_files(shuffle_list, shuffle_in_bed)
+        rplib.merge_files(shuffle_list, shuffle_in_bed)
 
         # Generate negatives.
         print("Extract random negative regions ... ")
-        check = gp2lib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
-                                                     incl_bed=regions_with_positives_bed,
-                                                     excl_bed=mask_negatives_bed)
+        check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
+                                                    incl_bed=regions_with_positives_bed,
+                                                    excl_bed=mask_negatives_bed)
         if not check:
             print("# random negatives extracted < # requested. Expand extraction space ... ")
             round_two = True
@@ -3687,50 +3499,50 @@ def main_gt(args):
                 # Get most prominent transcript regions.
                 print("Get most prominent transcripts (TSL1-5) from --gtf ... ")
                 mp_ids_dic = {}
-                gp2lib.gtf_extract_most_prominent_transcripts(args.in_gtf, "dummy",
-                                                              return_ids_dic=mp_ids_dic,
-                                                              set_ids_dic=chr_ids_dic,
-                                                              strict=True)
+                rplib.gtf_extract_most_prominent_transcripts(args.in_gtf, "dummy",
+                                                             return_ids_dic=mp_ids_dic,
+                                                             set_ids_dic=chr_ids_dic,
+                                                             strict=True)
                 assert mp_ids_dic, "no transcript IDs read into dictionary"
                 # Output most prominent transcripts to BED.
-                gp2lib.bed_sequence_lengths_to_bed(mp_ids_dic, most_prominent_transcripts_bed)
+                rplib.bed_sequence_lengths_to_bed(mp_ids_dic, most_prominent_transcripts_bed)
                 # Rerun.
                 print("Extract random negatives from most prominent transcripts ... ")
-                check = gp2lib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
-                                                     incl_bed=most_prominent_transcripts_bed,
-                                                     excl_bed=mask_negatives_bed)
+                check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
+                                                    incl_bed=most_prominent_transcripts_bed,
+                                                    excl_bed=mask_negatives_bed)
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent transcripts (try with lower --neg-factor)"
                 # Get list of transcript IDs with negative sites.
-                neg_ids_dic = gp2lib.bed_get_chromosome_ids(random_negatives_bed)
+                neg_ids_dic = rplib.bed_get_chromosome_ids(random_negatives_bed)
                 # Update transcript sequences dictionary.
                 print("Get transcript sequences containing negative sites ... ")
-                neg_tr_seqs_dic = gp2lib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
-                                                                           lc_repeats=args.rep_reg_annot,
-                                                                           tr_ids_dic=neg_ids_dic)
+                neg_tr_seqs_dic = rplib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
+                                                                          lc_repeats=args.rep_reg_annot,
+                                                                          tr_ids_dic=neg_ids_dic)
             else:
                 # Get TSL gene regions.
                 print("Get gene regions with TSL transcript support from --gtf ... ")
-                gp2lib.gtf_extract_tsl_gene_bed(args.in_gtf, most_prominent_genes_bed,
-                                                strict=True)
+                rplib.gtf_extract_tsl_gene_bed(args.in_gtf, most_prominent_genes_bed,
+                                               strict=True)
                 # Rerun.
                 print("Extract random negatives from gene regions with TSL transcript support ... ")
-                check = gp2lib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
-                                                     incl_bed=most_prominent_genes_bed,
-                                                     excl_bed=mask_negatives_bed)
+                check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
+                                                    incl_bed=most_prominent_genes_bed,
+                                                    excl_bed=mask_negatives_bed)
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent genes (try with lower --neg-factor)"
 
         # Make unique IDs for extracted random negatives.
         new2oldid_dic = {}
         print("Make random negative IDs unique ... ")
-        gp2lib.bed_process_bed_file(random_negatives_bed, random_negatives_unique_ids_bed,
-                                    new2oldid_dic=new2oldid_dic,
-                                    id_prefix="rand_neg",
-                                    generate_unique_ids=True)
+        rplib.bed_process_bed_file(random_negatives_bed, random_negatives_unique_ids_bed,
+                                new2oldid_dic=new2oldid_dic,
+                                id_prefix="rand_neg",
+                                generate_unique_ids=True)
 
         # Get negative .bed rows.
-        id2row_neg_dic = gp2lib.bed_read_rows_into_dic(random_negatives_unique_ids_bed)
+        id2row_neg_dic = rplib.bed_read_rows_into_dic(random_negatives_unique_ids_bed)
 
         # Check if negative regions were indeed selected based on incl_bed excl_bed.
         check_shuffle=True
@@ -3745,10 +3557,10 @@ def main_gt(args):
                     check_incl_bed = most_prominent_transcripts_bed
                 else:
                     check_incl_bed = most_prominent_genes_bed
-            warning = gp2lib.check_random_negatives(random_negatives_unique_ids_bed, check_incl_bed,
-                                                    mask_negatives_bed, chr_lengths_file,
-                                                    trouble_ids_dic=trouble_ids_dic,
-                                                    report=False)
+            warning = rplib.check_random_negatives(random_negatives_unique_ids_bed, check_incl_bed,
+                                                   mask_negatives_bed, chr_lengths_file,
+                                                   trouble_ids_dic=trouble_ids_dic,
+                                                   report=False)
             if warning:
                 print("WARNING: bedtools shuffle output contains such regions. Removing ...")
                 assert trouble_ids_dic, "no IDs in trouble_ids_dic (i.e. negative regions) to remove"
@@ -3759,7 +3571,7 @@ def main_gt(args):
                 print("# regions removed due to bedtools shuffle behaving badly:  %i" %(c_del))
                 print("CALEB: you behave now ... ")
                 # Overwrite random_negatives_unique_ids_bed.
-                gp2lib.bed_write_row_dic_into_file(id2row_neg_dic, random_negatives_unique_ids_bed)
+                rplib.bed_write_row_dic_into_file(id2row_neg_dic, random_negatives_unique_ids_bed)
 
     """
     Extract positive and negative sequences
@@ -3774,36 +3586,36 @@ def main_gt(args):
     """
 
     # Get region lengths.
-    pos_bed_len_dic = gp2lib.bed_get_region_lengths(positives_with_context_bed)
+    pos_bed_len_dic = rplib.bed_get_region_lengths(positives_with_context_bed)
     if not args.in_neg_sites:
         negatives_with_context_bed = random_negatives_unique_ids_bed
-    neg_bed_len_dic = gp2lib.bed_get_region_lengths(negatives_with_context_bed)
+    neg_bed_len_dic = rplib.bed_get_region_lengths(negatives_with_context_bed)
 
     if transcript_regions:
         # Get sequences for pos/neg transcript sites.
         print("Extract sequences for transcript sites ... ")
-        pos_context_seqs_dic = gp2lib.extract_transcript_sequences(id2row_dic, tr_seqs_dic)
+        pos_context_seqs_dic = rplib.extract_transcript_sequences(id2row_dic, tr_seqs_dic)
         if round_two:
-            neg_context_seqs_dic = gp2lib.extract_transcript_sequences(id2row_neg_dic, neg_tr_seqs_dic)
+            neg_context_seqs_dic = rplib.extract_transcript_sequences(id2row_neg_dic, neg_tr_seqs_dic)
         else:
-            neg_context_seqs_dic = gp2lib.extract_transcript_sequences(id2row_neg_dic, tr_seqs_dic)
+            neg_context_seqs_dic = rplib.extract_transcript_sequences(id2row_neg_dic, tr_seqs_dic)
     else:
         # Get sequences for pos/neg genomic sites.
         # Read in positive region lengths.
         print("Extract sequences for genomic sites ... ")
         # Extract positive sequences from .2bit.
-        gp2lib.bed_extract_sequences_from_2bit(positives_with_context_bed, pos_tmp_fasta, args.in_2bit,
-                                               lc_repeats=args.rep_reg_annot)
+        rplib.bed_extract_sequences_from_2bit(positives_with_context_bed, pos_tmp_fasta, args.in_2bit,
+                                              lc_repeats=args.rep_reg_annot)
         # Extract negative sequences from .2bit.
-        gp2lib.bed_extract_sequences_from_2bit(negatives_with_context_bed, neg_tmp_fasta, args.in_2bit,
-                                               lc_repeats=args.rep_reg_annot)
+        rplib.bed_extract_sequences_from_2bit(negatives_with_context_bed, neg_tmp_fasta, args.in_2bit,
+                                              lc_repeats=args.rep_reg_annot)
         # Read in sequences.
-        pos_context_seqs_dic = gp2lib.read_fasta_into_dic(pos_tmp_fasta,
-                                                          skip_data_id="positive",
-                                                          report=2)
-        neg_context_seqs_dic = gp2lib.read_fasta_into_dic(neg_tmp_fasta,
-                                                          skip_data_id="negative",
-                                                          report=2)
+        pos_context_seqs_dic = rplib.read_fasta_into_dic(pos_tmp_fasta,
+                                                         skip_data_id="positive",
+                                                         report=2)
+        neg_context_seqs_dic = rplib.read_fasta_into_dic(neg_tmp_fasta,
+                                                         skip_data_id="negative",
+                                                         report=2)
 
     # Compare region lengths with sequence lengths, delete mismatches.
     print("Compare extracted sequence lengths to site lengths ... ")
@@ -3878,27 +3690,10 @@ def main_gt(args):
         print("Remove low complexity negative sequences (--neg-comp-thr %f) ... " %(args.neg_comp_thr))
         for neg_id in neg_context_seqs_dic:
             check_seq = neg_context_seqs_dic[neg_id].upper()
-            if args.con_ext:
-                pos_id = new2oldid_dic[neg_id]
-                uslc_len = 0
-                dslc_len = 0
-                # Compare lengths.
-                pos_l = len(pos_context_seqs_dic[pos_id])
-                neg_l = len(neg_context_seqs_dic[neg_id])
-                # For now throw an error if lengths not the same.
-                assert pos_l == neg_l, "positive site length != corresponding negative site length (%i != %i)" %(pos_l, neg_l)
-                neg_seq = neg_context_seqs_dic[neg_id]
-                assert pos_id in id2pl_dic, "missing site ID \"%s\" in uppercase region length dictionary" %(pos_id)
-                uslc_len = id2pl_dic[pos_id][0]
-                uc_len = id2pl_dic[pos_id][1]
-                dslc_len = id2pl_dic[pos_id][2]
-                uc_s = uslc_len
-                uc_e = uslc_len + uc_len
-                check_seq = neg_seq[uc_s:uc_e].upper()
             # Get nt frequencies.
-            count_dic = gp2lib.seq_count_nt_freqs(check_seq, rna=True)
+            count_dic = rplib.seq_count_nt_freqs(check_seq, rna=True)
             # Calculate sequence entropy.
-            seq_entr = gp2lib.calc_seq_entropy(len(check_seq), count_dic)
+            seq_entr = rplib.calc_seq_entropy(len(check_seq), count_dic)
             if seq_entr < args.neg_comp_thr:
                 #print("Removing %s: %s (%f)" %(neg_id, check_seq, seq_entr))
                 neg_del_list.append(neg_id)
@@ -3928,7 +3723,7 @@ def main_gt(args):
     if not args.keep_add_neg and not args.in_neg_sites:
         print("Randomly select subset of negatives (# == # positives) from extracted negatives ... ")
         # Randomly select negative IDs and store in list.
-        rand_ids_list = gp2lib.random_order_dic_keys_into_list(neg_context_seqs_dic)
+        rand_ids_list = rplib.random_order_dic_keys_into_list(neg_context_seqs_dic)
         # Number of positives = number of negatives.
         c_pos = len(pos_context_seqs_dic)
         # Go over remaining negative IDs (all - c_pos) and delete them.
@@ -3967,71 +3762,22 @@ def main_gt(args):
             neg_context_seqs_dic[neg_id] = seq.upper()
             l_seq = len(seq)
 
-    if args.con_ext:
-        print("Make site sequence context (--con-ext) lowercase ... ")
-        # Process positive sequences.
-        for pos_id in pos_context_seqs_dic:
-            assert pos_id in id2pl_dic, "positive site ID \"%s\" missing in id2pl_dic" %(pos_id)
-            uslc_len = id2pl_dic[pos_id][0]
-            uc_len = id2pl_dic[pos_id][1]
-            dslc_len = id2pl_dic[pos_id][2]
-            seq = pos_context_seqs_dic[pos_id]
-            uc_s = uslc_len + 1
-            uc_e = uslc_len + uc_len
-            new_seq = gp2lib.add_lowercase_context_to_sequences(seq, uc_s, uc_e,
-                                                      convert_to_rna=True)
-            pos_context_seqs_dic[pos_id] = new_seq
-            id2ucr_dic[pos_id] = [uc_s, uc_e]
-
-        # Process negative sequences.
-        for neg_id in neg_context_seqs_dic:
-            if args.in_neg_sites:
-                assert neg_id in id2pl_dic, "negative site ID \"%s\" missing in id2pl_dic" %(neg_id)
-                uslc_len = id2pl_dic[neg_id][0]
-                uc_len = id2pl_dic[neg_id][1]
-                dslc_len = id2pl_dic[neg_id][2]
-                seq = neg_context_seqs_dic[neg_id]
-                uc_s = uslc_len + 1
-                uc_e = uslc_len + uc_len
-                new_seq = gp2lib.add_lowercase_context_to_sequences(seq, uc_s, uc_e,
-                                                          convert_to_rna=True)
-                neg_context_seqs_dic[neg_id] = new_seq
-                id2ucr_dic[neg_id] = [uc_s, uc_e]
-            else:
-                pos_id = new2oldid_dic[neg_id]
-                assert pos_id in id2pl_dic, "positive site ID \"%s\" missing in id2pl_dic" %(pos_id)
-                uslc_len = id2pl_dic[pos_id][0]
-                uc_len = id2pl_dic[pos_id][1]
-                dslc_len = id2pl_dic[pos_id][2]
-                # Compare lengths.
-                pos_l = len(pos_context_seqs_dic[pos_id])
-                neg_l = len(neg_context_seqs_dic[neg_id])
-                # For now throw an error if lengths not the same.
-                assert pos_l == neg_l, "positive site length != corresponding negative site length (%i != %i)" %(pos_l, neg_l)
-                seq = neg_context_seqs_dic[neg_id]
-                uc_s = uslc_len + 1
-                uc_e = uslc_len + uc_len
-                new_seq = gp2lib.add_lowercase_context_to_sequences(seq, uc_s, uc_e,
-                                                          convert_to_rna=True)
-                neg_context_seqs_dic[neg_id] = new_seq
-                id2ucr_dic[neg_id] = [uc_s, uc_e]
-
     # Length statistics for final positives + negatives.
     final_pos_len_list = []
     final_neg_len_list = []
-    final_pos_len_list = gp2lib.get_seq_len_list_from_dic(pos_context_seqs_dic)
-    final_neg_len_list = gp2lib.get_seq_len_list_from_dic(neg_context_seqs_dic)
+    final_pos_len_list = rplib.get_seq_len_list_from_dic(pos_context_seqs_dic)
+    final_neg_len_list = rplib.get_seq_len_list_from_dic(neg_context_seqs_dic)
     c_final_pos = len(final_pos_len_list)
     c_final_neg = len(final_neg_len_list)
 
     # Output full-length (+ context) sequences.
     print("Output selected positives + negatives to BED and FASTA ... ")
-    gp2lib.fasta_output_dic(pos_context_seqs_dic, pos_fasta_out)
-    gp2lib.fasta_output_dic(neg_context_seqs_dic, neg_fasta_out)
+    rplib.fasta_output_dic(pos_context_seqs_dic, pos_fasta_out)
+    rplib.fasta_output_dic(neg_context_seqs_dic, neg_fasta_out)
     # Output BED regions.
-    gp2lib.bed_write_row_dic_into_file(id2row_dic, pos_bed_out,
+    rplib.bed_write_row_dic_into_file(id2row_dic, pos_bed_out,
                                        id2out_dic=pos_context_seqs_dic)
-    gp2lib.bed_write_row_dic_into_file(id2row_neg_dic, neg_bed_out,
+    rplib.bed_write_row_dic_into_file(id2row_neg_dic, neg_bed_out,
                                        id2out_dic=neg_context_seqs_dic)
     # Delete negative entries not selected for final set.
     del_ids = []
@@ -4059,12 +3805,8 @@ def main_gt(args):
     repeat region information (for genomic and transcript regions)
 
     1) structure (--str):
-    To calculate probabilities of base pairs + structural elements.
-    .bpp.str: base pairs + probabilities file
-    .str_elem.str: unpaired + structural elements probabilities
-    Note that structure calculation yields same results for uppercase
-    and lowercase sequences (mixed ones too), so no separate upper-
-    lowercase sequence files necessary.
+    To calculate probabilities of structural elements.
+    .str: structural elements probabilities
 
     2) conservation scores (--phastcons, --phylop):
     Position-wise phyloP and / or phastCons scores to add for each
@@ -4133,13 +3875,9 @@ def main_gt(args):
         neg_rra_stats_dic = {}
 
     # Store feature infos.
-    if args.con_ext:
-        FEATOUT.write("fa\tC\tA,C,G,U,a,c,g,u\t-\n")
-    else:
-        FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
+    FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
     if args.add_str:
-        FEATOUT.write("bpp.str\tN\tbp_prob\tprob\n")
-        FEATOUT.write("elem_p.str\tN\tE,H,I,M,S\tprob\n")
+        FEATOUT.write("str\tN\tE,H,I,M,S\tprob\n")
     if args.pc_bw:
         FEATOUT.write("pc.con\tN\tphastcons_score\tprob\n")
     if args.pp_bw:
@@ -4175,51 +3913,27 @@ def main_gt(args):
     """
     # Secondary structure stats dictionaries.
 
+    # HALLO123 ...
+
     if args.add_str:
-        """
         # Calculate structure features for positives.
         print("Get secondary structure information for positives ... ")
-        gp2lib.calc_str_elem_up_bpp(pos_fasta_out, pos_bpp_out, pos_str_elem_p_out,
+        rplib.calc_ext_str_features(id2row_dic, chr_len_dic,
+                                    pos_str_out, args,
+                                    check_seqs_dic=pos_context_seqs_dic,
                                     stats_dic=pos_str_stats_dic,
-                                    id2ucr_dic=id2ucr_dic,
-                                    plfold_u=args.plfold_u,
-                                    plfold_l=args.plfold_l,
-                                    plfold_w=args.plfold_w)
-        # Calculate structure features for negatives.
-        print("Get secondary structure information for negatives ... ")
-        gp2lib.calc_str_elem_up_bpp(neg_fasta_out, neg_bpp_out, neg_str_elem_p_out,
-                                    stats_dic=neg_str_stats_dic,
-                                    id2ucr_dic=id2ucr_dic,
-                                    plfold_u=args.plfold_u,
-                                    plfold_l=args.plfold_l,
-                                    plfold_w=args.plfold_w)
-        """
-        # Calculate structure features for positives.
-        print("Get secondary structure information for positives ... ")
-        gp2lib.calc_ext_str_features(id2row_dic, chr_len_dic,
-                                     pos_bpp_out, pos_str_elem_p_out, args,
-                                     id2ucr_dic=id2ucr_dic,
-                                     stats_dic=pos_str_stats_dic,
-                                     bp_check_seqs_dic=pos_context_seqs_dic,
-                                     tr_regions=transcript_regions,
-                                     tr_seqs_dic=tr_seqs_dic)
-        # If custom base pair information given.
-        if args.bp_in:
-            # Sanity check, process, and output custom base pair information file.
-            print("--bp-in file supplied. Check, process + overwrite positive base pairs ... ")
-            gp2lib.process_custom_bp_file(args.bp_in, pos_bpp_out, pos_context_seqs_dic,
-                                          stats_dic=pos_str_stats_dic)
+                                    tr_regions=transcript_regions,
+                                    tr_seqs_dic=tr_seqs_dic)
         # Calculate structure features for negatives.
         if transcript_regions and round_two:
             tr_seqs_dic = neg_tr_seqs_dic
         print("Get secondary structure information for negatives ... ")
-        gp2lib.calc_ext_str_features(id2row_neg_dic, chr_len_dic,
-                                     neg_bpp_out, neg_str_elem_p_out, args,
-                                     id2ucr_dic=id2ucr_dic,
-                                     stats_dic=neg_str_stats_dic,
-                                     bp_check_seqs_dic=neg_context_seqs_dic,
-                                     tr_regions=transcript_regions,
-                                     tr_seqs_dic=tr_seqs_dic)
+        rplib.calc_ext_str_features(id2row_neg_dic, chr_len_dic,
+                                    neg_str_out, args,
+                                    check_seqs_dic=neg_context_seqs_dic,
+                                    stats_dic=neg_str_stats_dic,
+                                    tr_regions=transcript_regions,
+                                    tr_seqs_dic=tr_seqs_dic)
 
     """
     2) Conservation scores.
@@ -4232,80 +3946,72 @@ def main_gt(args):
             print("Mapping transcript sites to genome ... ")
             posid2hitc_dic = {}
             negid2hitc_dic = {}
-            gp2lib.bed_convert_transcript_to_genomic_sites(pos_bed_out, args.in_gtf,
-                                                           pos_transcript_to_genome_bed,
-                                                           site2hitc_dic=posid2hitc_dic)
-            gp2lib.bed_convert_transcript_to_genomic_sites(neg_bed_out, args.in_gtf,
-                                                           neg_transcript_to_genome_bed,
-                                                           site2hitc_dic=negid2hitc_dic)
+            rplib.bed_convert_transcript_to_genomic_sites(pos_bed_out, args.in_gtf,
+                                                          pos_transcript_to_genome_bed,
+                                                          site2hitc_dic=posid2hitc_dic)
+            rplib.bed_convert_transcript_to_genomic_sites(neg_bed_out, args.in_gtf,
+                                                          neg_transcript_to_genome_bed,
+                                                          site2hitc_dic=negid2hitc_dic)
 
     # If phastCons conservation scores (--pc-bw) are given.
     if args.pc_bw:
         if transcript_regions:
             print("Extracting phastCons conservation scores for transcript sites ... ")
             # For transcript sites.
-            gp2lib.extract_conservation_scores(pos_transcript_to_genome_bed,
-                                               pos_pc_con_out, args.pc_bw,
-                                               stats_dic=pos_phastcons_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=True,
-                                               report=False)
-            gp2lib.extract_conservation_scores(neg_transcript_to_genome_bed,
-                                               neg_pc_con_out, args.pc_bw,
-                                               stats_dic=neg_phastcons_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(pos_transcript_to_genome_bed,
+                                              pos_pc_con_out, args.pc_bw,
+                                              stats_dic=pos_phastcons_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
+            rplib.extract_conservation_scores(neg_transcript_to_genome_bed,
+                                              neg_pc_con_out, args.pc_bw,
+                                              stats_dic=neg_phastcons_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
         else:
             print("Extracting phastCons conservation scores for genomic sites ... ")
             # For genomic sites.
-            gp2lib.extract_conservation_scores(pos_bed_out,
-                                               pos_pc_con_out, args.pc_bw,
-                                               stats_dic=pos_phastcons_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=False,
-                                               report=False)
-            gp2lib.extract_conservation_scores(neg_bed_out,
-                                               neg_pc_con_out, args.pc_bw,
-                                               stats_dic=neg_phastcons_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=False,
-                                               report=False)
+            rplib.extract_conservation_scores(pos_bed_out,
+                                              pos_pc_con_out, args.pc_bw,
+                                              stats_dic=pos_phastcons_stats_dic,
+                                              merge_split_regions=False,
+                                              report=False)
+            rplib.extract_conservation_scores(neg_bed_out,
+                                              neg_pc_con_out, args.pc_bw,
+                                              stats_dic=neg_phastcons_stats_dic,
+                                              merge_split_regions=False,
+                                              report=False)
 
     # If phastCons conservation scores (--pp-bw) are given.
     if args.pp_bw:
         if transcript_regions:
             print("Extracting phyloP conservation scores for transcript sites ... ")
             # For transcript sites.
-            gp2lib.extract_conservation_scores(pos_transcript_to_genome_bed,
-                                               pos_pp_con_out, args.pp_bw,
-                                               stats_dic=pos_phylop_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=True,
-                                               report=False)
-            gp2lib.extract_conservation_scores(neg_transcript_to_genome_bed,
-                                               neg_pp_con_out, args.pp_bw,
-                                               stats_dic=neg_phylop_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(pos_transcript_to_genome_bed,
+                                              pos_pp_con_out, args.pp_bw,
+                                              stats_dic=pos_phylop_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
+            rplib.extract_conservation_scores(neg_transcript_to_genome_bed,
+                                              neg_pp_con_out, args.pp_bw,
+                                              stats_dic=neg_phylop_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
         else:
             print("Extracting phyloP conservation scores for genomic sites ... ")
             # For genomic sites.
-            gp2lib.extract_conservation_scores(pos_bed_out,
-                                               pos_pp_con_out, args.pp_bw,
-                                               stats_dic=pos_phylop_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=False,
-                                               report=False)
-            gp2lib.extract_conservation_scores(neg_bed_out,
-                                               neg_pp_con_out, args.pp_bw,
-                                               stats_dic=neg_phylop_stats_dic,
-                                               id2ucr_dic=id2ucr_dic,
-                                               merge_split_regions=False,
-                                               report=False)
+            rplib.extract_conservation_scores(pos_bed_out,
+                                              pos_pp_con_out, args.pp_bw,
+                                              stats_dic=pos_phylop_stats_dic,
+                                              merge_split_regions=False,
+                                              report=False)
+            rplib.extract_conservation_scores(neg_bed_out,
+                                              neg_pp_con_out, args.pp_bw,
+                                              stats_dic=neg_phylop_stats_dic,
+                                              merge_split_regions=False,
+                                              report=False)
         print("Normalizing phyloP scores ... ")
-        gp2lib.phylop_norm_train_scores(pos_pp_con_out, neg_pp_con_out)
+        rplib.phylop_norm_train_scores(pos_pp_con_out, neg_pp_con_out)
 
     """
     3) Transcript region annotations for transcript sites.
@@ -4320,19 +4026,17 @@ def main_gt(args):
         tr_ids_dic = chr_len_dic
         if round_two:
             tr_ids_dic = mp_ids_dic
-        gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+        rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                             pos_transcript_to_genome_bed,
                                             args.in_gtf, pos_tra_out,
                                             stats_dic=pos_tra_stats_dic,
-                                            id2ucr_dic=id2ucr_dic,
                                             codon_annot=args.tr_reg_codon_annot,
                                             border_annot=args.tr_reg_border_annot,
                                             mergepos_str_stats_dic_split_regions=True)
-        gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+        rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                             neg_transcript_to_genome_bed,
                                             args.in_gtf, neg_tra_out,
                                             stats_dic=neg_tra_stats_dic,
-                                            id2ucr_dic=id2ucr_dic,
                                             codon_annot=args.tr_reg_codon_annot,
                                             border_annot=args.tr_reg_border_annot,
                                             merge_split_regions=True)
@@ -4350,9 +4054,9 @@ def main_gt(args):
             if args.tr_list:
                 print("Using transcript list from --tr-list to define transcript regions ... ")
                 # Read in transcript IDs from --tr-list.
-                tr_ids_dic = gp2lib.read_ids_into_dic(args.tr_list)
+                tr_ids_dic = rplib.read_ids_into_dic(args.tr_list)
                 # Read in all transcript IDs in --gtf.
-                all_tr_ids_dic = gp2lib.gtf_get_transcript_ids(args.in_gtf)
+                all_tr_ids_dic = rplib.gtf_get_transcript_ids(args.in_gtf)
                 # Check if given --tr list IDs are in --gtf.
                 del_tr_l = []
                 for tr_id in tr_ids_dic:
@@ -4370,7 +4074,7 @@ def main_gt(args):
                 else:
                     print("Get most prominent transcript for each gene from --gtf ... ")
                 # Don't be strict (!= only TSL1-5 allowed).
-                tr_ids_dic = gp2lib.gtf_extract_most_prominent_transcripts(args.in_gtf,
+                tr_ids_dic = rplib.gtf_extract_most_prominent_transcripts(args.in_gtf,
                                                 "dummy",
                                                 strict=strict,
                                                 return_ids_dic=tr_ids_dic)
@@ -4383,8 +4087,8 @@ def main_gt(args):
                 random_id = uuid.uuid1()
                 all_exon_bed = str(random_id) + ".tmp.bed"
                 print("Extract all exon regions from --gtf (--eia-all-ex enabled) ... ")
-                gp2lib.gtf_extract_unique_exon_bed(args.in_gtf, all_exon_bed,
-                                                   use_ei_labels=True)
+                rplib.gtf_extract_unique_exon_bed(args.in_gtf, all_exon_bed,
+                                                  use_ei_labels=True)
 
             print("Extract exon-intron annotations for genomic sites ... ")
             if not all_exon_bed:
@@ -4397,18 +4101,16 @@ def main_gt(args):
                 if args.exon_intron_n:
                     print("Non-intron non-exon region annotation enabled ... ")
             # Positives.
-            gp2lib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, pos_bed_out,
+            rplib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, pos_bed_out,
                                         args.in_gtf, pos_eia_out,
                                         stats_dic=pos_eia_stats_dic,
-                                        id2ucr_dic=id2ucr_dic,
                                         own_exon_bed=all_exon_bed,
                                         n_labels=args.exon_intron_n,
                                         intron_border_labels=args.intron_border_annot)
             # Negatives.
-            gp2lib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, neg_bed_out,
+            rplib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, neg_bed_out,
                                         args.in_gtf, neg_eia_out,
                                         stats_dic=neg_eia_stats_dic,
-                                        id2ucr_dic=id2ucr_dic,
                                         own_exon_bed=all_exon_bed,
                                         n_labels=args.exon_intron_n,
                                         intron_border_labels=args.intron_border_annot)
@@ -4422,20 +4124,18 @@ def main_gt(args):
             if args.tr_reg_codon_annot:
                 print("Start + stop codon annotations enabled ... ")
             # Positives.
-            gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+            rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                                 pos_bed_out,
                                                 args.in_gtf, pos_tra_out,
                                                 stats_dic=pos_tra_stats_dic,
-                                                id2ucr_dic=id2ucr_dic,
                                                 codon_annot=args.tr_reg_codon_annot,
                                                 border_annot=args.tr_reg_border_annot,
                                                 merge_split_regions=False)
             # Negatives.
-            gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+            rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                                 neg_bed_out,
                                                 args.in_gtf, neg_tra_out,
                                                 stats_dic=neg_tra_stats_dic,
-                                                id2ucr_dic=id2ucr_dic,
                                                 codon_annot=args.tr_reg_codon_annot,
                                                 border_annot=args.tr_reg_border_annot,
                                                 merge_split_regions=False)
@@ -4446,13 +4146,11 @@ def main_gt(args):
     """
     if args.rep_reg_annot:
         print("Extracting repeat region annotations for positives ... ")
-        gp2lib.fasta_get_repeat_region_annotations(pos_context_seqs_rep_lc_dic, pos_rra_out,
-                                                   stats_dic=pos_rra_stats_dic,
-                                                   id2ucr_dic=id2ucr_dic)
+        rplib.fasta_get_repeat_region_annotations(pos_context_seqs_rep_lc_dic, pos_rra_out,
+                                                  stats_dic=pos_rra_stats_dic)
         print("Extracting repeat region annotations for negatives ... ")
-        gp2lib.fasta_get_repeat_region_annotations(neg_context_seqs_rep_lc_dic, neg_rra_out,
-                                                   stats_dic=neg_rra_stats_dic,
-                                                   id2ucr_dic=id2ucr_dic)
+        rplib.fasta_get_repeat_region_annotations(neg_context_seqs_rep_lc_dic, neg_rra_out,
+                                                  stats_dic=neg_rra_stats_dic)
 
 
     """
@@ -4489,7 +4187,7 @@ def main_gt(args):
                 feat_format = int(cols[2])
                 bed_path = cols[3]
                 # Convert to valid file ending.
-                new_feat_id = gp2lib.get_valid_file_ending(feat_id)
+                new_feat_id = rplib.get_valid_file_ending(feat_id)
                 if feat_id != new_feat_id:
                     print("Converted feature ID \"%s\" to \"%s\" to have valid file ending" %(feat_id, new_feat_id))
                 assert new_feat_id not in fids_dic, "non-unique feature ID \"%s\" in --feat-in table file" %(new_feat_id)
@@ -4536,20 +4234,20 @@ def main_gt(args):
 
             # Training set.
             pos_feat_out = args.out_folder + "/" + "positives." + feat_id
-            gp2lib.bed_get_feature_annotations(pos_bed_out, bed_path, pos_feat_out,
-                                               feat_type=feat_type,
-                                               stats_dic=pos_stats_dic,
-                                               disable_pol=disable_pol)
+            rplib.bed_get_feature_annotations(pos_bed_out, bed_path, pos_feat_out,
+                                              feat_type=feat_type,
+                                              stats_dic=pos_stats_dic,
+                                              disable_pol=disable_pol)
             # Add additional stats to pos_stats_dic.
             if args.report:
                 pos_stats_dic["set"] = "positives"
                 pos_stats_dic["feat_id"] = feat_id
                 add_feat_dic_list.append(pos_stats_dic)
             neg_feat_out = args.out_folder + "/" + "negatives." + feat_id
-            gp2lib.bed_get_feature_annotations(neg_bed_out, bed_path, neg_feat_out,
-                                               feat_type=feat_type,
-                                               stats_dic=neg_stats_dic,
-                                               disable_pol=disable_pol)
+            rplib.bed_get_feature_annotations(neg_bed_out, bed_path, neg_feat_out,
+                                              feat_type=feat_type,
+                                              stats_dic=neg_stats_dic,
+                                              disable_pol=disable_pol)
             # Add additional stats to neg_stats_dic.
             if args.report:
                 neg_stats_dic["set"] = "negatives"
@@ -4558,9 +4256,9 @@ def main_gt(args):
             # Normalize feature values.
             if args.feat_in_norm and feat_format and feat_type == "N":
                 print("Min-max normalizing \"%s\" feature values ... " %(feat_id))
-                gp2lib.feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
-                                                      p_values=p_values,
-                                                      int_whole_nr=True)
+                rplib.feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
+                                                     p_values=p_values,
+                                                     int_whole_nr=True)
 
     FEATOUT.close()
 
@@ -4587,60 +4285,58 @@ def main_gt(args):
             # Calculate additional stats for report.
             print("Extract additional statistics for report ... ")
             # Get count stats for gene biotypes.
-            region_ids_dic = gp2lib.bed_get_region_ids(regions_with_positives_bed)
+            region_ids_dic = rplib.bed_get_region_ids(regions_with_positives_bed)
             # Get gene biotype counts for target genes.
             if transcript_regions:
-                target_gbtc_dic = gp2lib.gtf_get_gene_biotypes_from_transcript_ids(
+                target_gbtc_dic = rplib.gtf_get_gene_biotypes_from_transcript_ids(
                                             region_ids_dic, args.in_gtf,
                                             all_gbtc_dic=all_gbtc_dic)
 
                 # Get transcript ID to hit count dictionary.
-                t2hc_dic = gp2lib.bed_get_chromosome_ids(pos_bed_out)
+                t2hc_dic = rplib.bed_get_chromosome_ids(pos_bed_out)
                 # Get transcript infos.
-                t2i_dic = gp2lib.gtf_get_transcript_infos(region_ids_dic, args.in_gtf)
+                t2i_dic = rplib.gtf_get_transcript_infos(region_ids_dic, args.in_gtf)
             else:
-                target_gbtc_dic = gp2lib.gtf_get_gene_biotypes(
+                target_gbtc_dic = rplib.gtf_get_gene_biotypes(
                                             region_ids_dic, args.in_gtf,
                                             all_gbtc_dic=all_gbtc_dic)
                 # Get overlapping site counts for each gene.
-                t2hc_dic = gp2lib.bed_intersect_count_region_overlaps(gene_regions_gtf_tmp_bed, pos_bed_out)
+                t2hc_dic = rplib.bed_intersect_count_region_overlaps(gene_regions_gtf_tmp_bed, pos_bed_out)
                 # Get gene infos.
-                t2i_dic = gp2lib.gtf_get_gene_infos(region_ids_dic, args.in_gtf)
+                t2i_dic = rplib.gtf_get_gene_infos(region_ids_dic, args.in_gtf)
 
         # HTML report output file.
-        html_report_out = args.out_folder + "/" + "report.graphprot2_gt.html"
+        html_report_out = args.out_folder + "/" + "report.rnaprot_gt.html"
         # Plots subfolder.
-        plots_subfolder = "plots_graphprot2_gt"
+        plots_subfolder = "plots_rnaprot_gt"
         # Get library and logo path.
-        gp2lib_path = os.path.dirname(gp2lib.__file__)
+        rplib_path = os.path.dirname(rplib.__file__)
         # Generate report.
-        gp2lib.gp2_gt_generate_html_report(pos_context_seqs_dic, neg_context_seqs_dic,
-                                           args.out_folder, dataset_type, gp2lib_path,
-                                           html_report_out=html_report_out,
-                                           id2ucr_dic=id2ucr_dic,
-                                           plots_subfolder=plots_subfolder,
-                                           pos_str_stats_dic=pos_str_stats_dic,
-                                           neg_str_stats_dic=neg_str_stats_dic,
-                                           pos_phastcons_stats_dic=pos_phastcons_stats_dic,
-                                           neg_phastcons_stats_dic=neg_phastcons_stats_dic,
-                                           pos_phylop_stats_dic=pos_phylop_stats_dic,
-                                           neg_phylop_stats_dic=neg_phylop_stats_dic,
-                                           pos_eia_stats_dic=pos_eia_stats_dic,
-                                           neg_eia_stats_dic=neg_eia_stats_dic,
-                                           pos_tra_stats_dic=pos_tra_stats_dic,
-                                           neg_tra_stats_dic=neg_tra_stats_dic,
-                                           pos_rra_stats_dic=pos_rra_stats_dic,
-                                           neg_rra_stats_dic=neg_rra_stats_dic,
-                                           add_feat_dic_list=add_feat_dic_list,
-                                           target_gbtc_dic=target_gbtc_dic,
-                                           all_gbtc_dic=all_gbtc_dic,
-                                           t2hc_dic=t2hc_dic,
-                                           t2i_dic=t2i_dic,
-                                           kmer_top=10,
-                                           target_top=20,
-                                           theme=args.theme,
-                                           rna=True,
-                                           uc_entropy=True)
+        rplib.rp_gt_generate_html_report(pos_context_seqs_dic, neg_context_seqs_dic,
+                                         args.out_folder, dataset_type, rplib_path,
+                                         html_report_out=html_report_out,
+                                         plots_subfolder=plots_subfolder,
+                                         pos_str_stats_dic=pos_str_stats_dic,
+                                         neg_str_stats_dic=neg_str_stats_dic,
+                                         pos_phastcons_stats_dic=pos_phastcons_stats_dic,
+                                         neg_phastcons_stats_dic=neg_phastcons_stats_dic,
+                                         pos_phylop_stats_dic=pos_phylop_stats_dic,
+                                         neg_phylop_stats_dic=neg_phylop_stats_dic,
+                                         pos_eia_stats_dic=pos_eia_stats_dic,
+                                         neg_eia_stats_dic=neg_eia_stats_dic,
+                                         pos_tra_stats_dic=pos_tra_stats_dic,
+                                         neg_tra_stats_dic=neg_tra_stats_dic,
+                                         pos_rra_stats_dic=pos_rra_stats_dic,
+                                         neg_rra_stats_dic=neg_rra_stats_dic,
+                                         add_feat_dic_list=add_feat_dic_list,
+                                         target_gbtc_dic=target_gbtc_dic,
+                                         all_gbtc_dic=all_gbtc_dic,
+                                         t2hc_dic=t2hc_dic,
+                                         t2i_dic=t2i_dic,
+                                         kmer_top=10,
+                                         target_top=20,
+                                         theme=args.theme,
+                                         rna=True)
 
     """
     Take out the trash.
@@ -4701,10 +4397,8 @@ def main_gt(args):
     print("Positives sites .bed:\n%s" %(pos_bed_out))
     print("Negatives sites .bed:\n%s" %(neg_bed_out))
     if args.add_str:
-        print("Positives base pair probabilities .bpp.str:\n%s" %(pos_bpp_out))
-        print("Negatives base pair probabilities .bpp.str:\n%s" %(neg_bpp_out))
-        print("Positives position-wise structural elements probabilities .elem_p.str:\n%s" %(pos_str_elem_p_out))
-        print("Negatives position-wise structural elements probabilities .elem_p.str:\n%s" %(neg_str_elem_p_out))
+        print("Positives structural elements probabilities .str:\n%s" %(pos_str_out))
+        print("Negatives structural elements probabilities .str:\n%s" %(neg_str_out))
     if args.pc_bw:
         print("Positives phastCons conservation scores .pc.con:\n%s" %(pos_pc_con_out))
         print("Negatives phastCons conservation scores .pc.con:\n%s" %(neg_pc_con_out))
@@ -4751,10 +4445,9 @@ def main_gp(args):
     test_tra_out = args.out_folder + "/" + "test.tra"
     test_rra_out = args.out_folder + "/" + "test.rra"
     test_eia_out = args.out_folder + "/" + "test.eia"
-    test_str_elem_p_out = args.out_folder + "/" + "test.elem_p.str"
-    test_bpp_out = args.out_folder + "/" + "test.bpp.str"
+    test_str_out = args.out_folder + "/" + "test.str"
     # Mode settings file.
-    settings_file = args.out_folder + "/" + "/settings.graphprot2_gp.out"
+    settings_file = args.out_folder + "/" + "/settings.rnaprot_gp.out"
     # Chromosome or transcript lengths file.
     chr_lengths_file = args.out_folder + "/" + "reference_lengths.out"
     # Genes or transcript regions containing --in sites.
@@ -4771,11 +4464,11 @@ def main_gp(args):
     assert os.path.exists(check_model_file), "--train-in contains no .model file (final.model missing). Please train model without --gen-cv option"
     assert os.path.exists(check_params_file), "--train-in contains no .params file (final.params missing). Please train model without --gen-cv option"
 
-    # Get infos from graphprot2 train settings (partly ported over from gt).
-    gp2_train_settings_file = args.train_in_folder + "/settings.graphprot2_train.out"
-    assert os.path.exists(gp2_train_settings_file), "graphprot2 train settings file %s not found" %(gp2_train_settings_file)
+    # Get infos from rnaprot train settings (partly ported over from gt).
+    rp_train_settings_file = args.train_in_folder + "/settings.rnaprot_train.out"
+    assert os.path.exists(rp_train_settings_file), "rnaprot train settings file %s not found" %(rp_train_settings_file)
     train_settings_dic = {}
-    with open(gp2_train_settings_file) as f:
+    with open(rp_train_settings_file) as f:
         for line in f:
             cols = line.strip().split("\t")
             train_settings_dic[cols[0]] = cols[1]
@@ -4783,15 +4476,15 @@ def main_gp(args):
     assert train_settings_dic, "train_settings_dic empty"
 
     # Get used model features.
-    gp2_train_features_file = args.train_in_folder + "/features.out"
+    rp_train_features_file = args.train_in_folder + "/features.out"
     train_fid_dic = {}
-    with open(gp2_train_features_file) as f:
+    with open(rp_train_features_file) as f:
         for line in f:
             cols = line.strip().split("\t")
             train_fid_dic[cols[0]] = cols[2]
     f.closed
     assert train_fid_dic, "train_fid_dic empty"
-    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(gp2_train_features_file)
+    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
 
     # Additional feature file.
     feat_in_file = False
@@ -4829,11 +4522,9 @@ def main_gp(args):
     args.plfold_l = None
     args.plfold_w = None
     args.add_str = False
-    # Disable con_ext.
-    args.con_ext = False
 
     in_file_fasta = False
-    if gp2lib.fasta_check_fasta_file(args.in_sites):
+    if rplib.fasta_check_fasta_file(args.in_sites):
         in_file_fasta = True
 
     onlyseq = False
@@ -4902,8 +4593,8 @@ def main_gp(args):
                     print("WARNING: --model-in model was trained with --eia-all-ex which is currently disabled!")
                     print("         Please set --eia-all-ex if desired for exon-intron annotation ... ")
             if args.eia_all_ex:
-                assert not args.intron_border_annot, "--eia-all-ex incompatible with --eia-ib setting from --model-in model. Please unset --eia-all-ex or train model without --eia-ib or use --eia-all-ex setting in graphprot2 gt"
-                assert not args.exon_intron_n, "--eia-all-ex incompatible with --eia-n setting from --model-in model. Please unset --eia-all-ex or train model without --eia-n or use --eia-all-ex setting in graphprot2 gt"
+                assert not args.intron_border_annot, "--eia-all-ex incompatible with --eia-ib setting from --model-in model. Please unset --eia-all-ex or train model without --eia-ib or use --eia-all-ex setting in rnaprot gt"
+                assert not args.exon_intron_n, "--eia-all-ex incompatible with --eia-n setting from --model-in model. Please unset --eia-all-ex or train model without --eia-n or use --eia-all-ex setting in rnaprot gt"
 
         elif fid == "tra":
             std_feat_found = True
@@ -4924,7 +4615,7 @@ def main_gp(args):
         elif fid == "rra":
             std_feat_found = True
             args.rep_reg_annot = True
-        elif fid == "elem_p.str" or fid == "bpp.str":
+        elif fid == "str":
             args.add_str = True
             args.plfold_u = int(train_settings_dic["plfold_u"])
             args.plfold_l = int(train_settings_dic["plfold_l"])
@@ -4971,63 +4662,49 @@ def main_gp(args):
         # Read in sequences (this also checks for unique headers + converts to RNA).
         print("Processing --in FASTA sequences ... ")
         print("Read in --in FASTA sequences and convert to RNA ... ")
-        test_seqs_dic = gp2lib.read_fasta_into_dic(args.in_sites)
-        id2vpse_dic = gp2lib.extract_viewpoint_regions_from_fasta(test_seqs_dic,
-                                                                  get_se_dic=True)
+        test_seqs_dic = rplib.read_fasta_into_dic(args.in_sites)
         # Output sequences.
-        gp2lib.fasta_output_dic(test_seqs_dic, test_fasta_out)
+        rplib.fasta_output_dic(test_seqs_dic, test_fasta_out)
 
         # Sequence character counts.
-        seq_cc_dic = gp2lib.seqs_dic_count_chars(test_seqs_dic)
+        seq_cc_dic = rplib.seqs_dic_count_chars(test_seqs_dic)
         allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1}
         for nt in seq_cc_dic:
             if nt not in allowed_nt_dic:
                 assert False, "--in sequences contain \"%s\" character (allowed characters: A C G U)" %(nt)
         FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
 
-        # Secondary structure stats dictionaries.
-        test_str_stats_dic = None
-        if args.add_str or args.bp_in:
-            FEATOUT.write("bpp.str\tN\tbp_prob\tprob\n")
-            if args.report:
-                test_str_stats_dic = {}
-
         # If structure features should be computed.
         if args.add_str:
-            FEATOUT.write("elem_p.str\tN\tE,H,I,M,S\tprob\n")
+            if args.report:
+                test_str_stats_dic = {}
+            FEATOUT.write("str\tN\tE,H,I,M,S\tprob\n")
             # Calculate structure features for positives.
             print("Get secondary structure features ... ")
-            gp2lib.calc_str_elem_up_bpp(test_fasta_out, test_bpp_out, test_str_elem_p_out,
-                                        stats_dic=test_str_stats_dic,
-                                        plfold_u=args.plfold_u,
-                                        plfold_l=args.plfold_l,
-                                        plfold_w=args.plfold_w)
-        # If custom base pair information given.
-        if args.bp_in:
-            # Sanity check, process, and output custom base pair information file.
-            print("--bp-in file supplied. Check, process + overwrite calculated base pairs ... ")
-            gp2lib.process_custom_bp_file(args.bp_in, test_bpp_out, test_seqs_dic,
-                                          stats_dic=test_str_stats_dic)
+            rplib.calc_str_elem_p(test_fasta_out, test_str_out,
+                                  stats_dic=test_str_stats_dic,
+                                  plfold_u=args.plfold_u,
+                                  plfold_l=args.plfold_l,
+                                  plfold_w=args.plfold_w)
 
         # Sequence set stats.
         c_test_out = len(test_seqs_dic)
         if args.report:
             # HTML report output file.
-            html_report_out = args.out_folder + "/" + "report.graphprot2_gp.html"
+            html_report_out = args.out_folder + "/" + "report.rnaprot_gp.html"
             # Plots subfolder.
-            plots_subfolder = "plots_graphprot2_gp"
+            plots_subfolder = "plots_rnaprot_gp"
             # Get library and logo path.
-            gp2lib_path = os.path.dirname(gp2lib.__file__)
+            rplib_path = os.path.dirname(rplib.__file__)
             # Generate report.
-            gp2lib.gp2_gp_generate_html_report(test_seqs_dic, args.out_folder,
-                                               "s", gp2lib_path,
-                                               id2ucr_dic=id2vpse_dic,
-                                               plots_subfolder=plots_subfolder,
-                                               html_report_out=html_report_out,
-                                               test_str_stats_dic=test_str_stats_dic,
-                                               theme=args.theme,
-                                               kmer_top=10,
-                                               rna=True)
+            rplib.rp_gp_generate_html_report(test_seqs_dic, args.out_folder,
+                                             "s", rplib_path,
+                                             plots_subfolder=plots_subfolder,
+                                             html_report_out=html_report_out,
+                                             test_str_stats_dic=test_str_stats_dic,
+                                             theme=args.theme,
+                                             kmer_top=10,
+                                             rna=True)
 
         # Mode settings output file.
         SETOUT = open(settings_file, "w")
@@ -5041,8 +4718,7 @@ def main_gp(args):
         print("===========================")
         print("Sequences .fa:\n%s" %(test_fasta_out))
         if args.add_str:
-            print("Base pair probabilities .bpp.str:\n%s" %(test_bpp_out))
-            print("Position-wise structural elements probabilities .elem_p.str:\n%s" %(test_str_elem_p_out))
+            print("Structural elements probabilities .elem_p.str:\n%s" %(test_str_out))
         if args.bp_in and not args.add_str:
             print("Base pair probabilities .bpp.str (from --bp-in):\n%s" %(test_bpp_out))
         if args.report:
@@ -5086,7 +4762,7 @@ def main_gp(args):
     assert os.path.exists(args.in_sites), "--in BED file \"%s\" not found" %(args.in_sites)
     assert os.path.exists(args.in_gtf), "--gtf GTF file \"%s\" not found" %(args.in_gtf)
     assert os.path.exists(args.in_2bit), "--gen .2bit file \"%s\" not found" %(args.in_2bit)
-    assert gp2lib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
+    assert rplib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
     if args.pc_bw:
         assert os.path.exists(args.pc_bw), "--phastcons file \"%s\" not found" %(args.pc_bw)
     if args.pp_bw:
@@ -5100,7 +4776,7 @@ def main_gp(args):
     if args.exon_intron_n:
         assert args.exon_intron_annot, "--eia-n requires --eia to be effective"
     # Check uniqueness of IDs.
-    assert gp2lib.bed_check_unique_ids(args.in_sites), "--in BED file \"%s\" column 4 IDs not unique. Please provide BED entries with unique column 4 IDs" %(args.in_sites)
+    assert rplib.bed_check_unique_ids(args.in_sites), "--in BED file \"%s\" column 4 IDs not unique. Please provide BED entries with unique column 4 IDs" %(args.in_sites)
 
     # Mode settings output file.
     SETOUT = open(settings_file, "w")
@@ -5110,10 +4786,10 @@ def main_gp(args):
 
     # Get chromsome lengths from --gen.
     print("Get chromosome lengths from --gen ... ")
-    chr_len_dic = gp2lib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
+    chr_len_dic = rplib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
     # Get chromosome IDs.
     print("Get chromosome IDs from --in ... ")
-    chr_ids_dic = gp2lib.bed_get_chromosome_ids(args.in_sites)
+    chr_ids_dic = rplib.bed_get_chromosome_ids(args.in_sites)
 
     # Check whether IDs are genomic or not.
     transcript_regions = False
@@ -5143,23 +4819,23 @@ def main_gp(args):
             sys.exit()
         # Read in transcript lengths from --gtf.
         print("Get transcript lengths from --gtf ... ")
-        tr_len_dic = gp2lib.gtf_get_transcript_lengths(args.in_gtf)
+        tr_len_dic = rplib.gtf_get_transcript_lengths(args.in_gtf)
         print("Verifying transcript IDs by checking their presence in --gtf ... ")
         for tr_id in chr_ids_dic:
             assert tr_id in tr_len_dic, "--in column 1 transcript ID \"%s\" not found in --gtf" %(tr_id)
         # Make a transcript regions .bed file.
         print("Output transcripts containing test sites to BED ... ")
-        gp2lib.bed_sequence_lengths_to_bed(tr_len_dic, regions_with_sites_bed,
+        rplib.bed_sequence_lengths_to_bed(tr_len_dic, regions_with_sites_bed,
                                            ids_dic=chr_ids_dic)
 
         # Get spliced transcript sequences from gtf+2bit.
         print("Get transcript sequences from --gtf and --gen ... ")
-        tr_seqs_dic = gp2lib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
-                                                               lc_repeats=args.rep_reg_annot,
-                                                               tr_ids_dic=chr_ids_dic)
+        tr_seqs_dic = rplib.get_transcript_sequences_from_gtf(args.in_gtf, args.in_2bit,
+                                                              lc_repeats=args.rep_reg_annot,
+                                                              tr_ids_dic=chr_ids_dic)
         # Output transcript lengths file.
         print("Output transcript lengths file ... ")
-        gp2lib.output_chromosome_lengths_file(tr_len_dic, chr_lengths_file)
+        rplib.output_chromosome_lengths_file(tr_len_dic, chr_lengths_file)
         # Make a new chr_len_dic, only with transcript IDs from --in and their lengths.
         chr_len_dic = {}
         for tr_id in chr_ids_dic:
@@ -5171,9 +4847,9 @@ def main_gp(args):
             print("ERROR: setting --tra-borders only supported for transcript sites. Please disable or provide transcript input sites.")
             sys.exit()
         # Check for genomic region _e or _p (split) IDs (exon regions).
-        in_reg_ids_dic = gp2lib.bed_get_region_ids(args.in_sites)
-        core_ids_dic = gp2lib.get_core_id_to_part_counts_dic(in_reg_ids_dic,
-                                                             label_dic=core_ids_label_dic)
+        in_reg_ids_dic = rplib.bed_get_region_ids(args.in_sites)
+        core_ids_dic = rplib.get_core_id_to_part_counts_dic(in_reg_ids_dic,
+                                                            label_dic=core_ids_label_dic)
         if args.exon_intron_annot:
             print("Genomic regions and --eia enabled: check for split IDs ... ")
             for core_id in core_ids_dic:
@@ -5193,11 +4869,11 @@ def main_gp(args):
     # Lowercase uppercase lowercase part lengths.
     id2pl_dic = {}
 
-    id2row_dic = gp2lib.process_test_sites(args.in_sites, tmp_bed, chr_len_dic,
-                                           id2pl_dic, args,
-                                           check_ids=True,
-                                           transcript_regions=transcript_regions,
-                                           count_dic=count_stats_dic)
+    id2row_dic = rplib.process_test_sites(args.in_sites, tmp_bed, chr_len_dic,
+                                          id2pl_dic, args,
+                                          check_ids=True,
+                                          transcript_regions=transcript_regions,
+                                          count_dic=count_stats_dic)
     print("# sites found in --in:               %i" %(count_stats_dic['c_in']))
     if count_stats_dic['c_filt_ref']:
         print("# sites removed (reference ID):      %i" %(count_stats_dic['c_filt_ref']))
@@ -5209,24 +4885,24 @@ def main_gp(args):
     if not transcript_regions:
         # Get gene regions from .gtf.
         print("Extract gene regions from --gtf ... ")
-        gp2lib.gtf_extract_gene_bed(args.in_gtf, gene_regions_gtf_tmp_bed)
+        rplib.gtf_extract_gene_bed(args.in_gtf, gene_regions_gtf_tmp_bed)
         # Get gene regions containing positives.
         params = "-u -s"
         print("Get gene regions containing --in sites ... ")
-        gp2lib.intersect_bed_files(gene_regions_gtf_tmp_bed, args.in_sites, params, regions_with_sites_bed)
+        rplib.intersect_bed_files(gene_regions_gtf_tmp_bed, args.in_sites, params, regions_with_sites_bed)
         # Filter positives by gene coverage.
         if not args.gene_filter:
-            gp2lib.make_file_copy(tmp_bed, processed_in_sites_bed)
+            rplib.make_file_copy(tmp_bed, processed_in_sites_bed)
         else:
             # Accept only --in sites that overlap with gene regions.
             print("Filter --in sites by gene overlap ... ")
             params = "-u -s"
-            gp2lib.intersect_bed_files(tmp_bed, gene_regions_gtf_tmp_bed, params, processed_in_sites_bed)
-            c_out = gp2lib.count_file_rows(processed_in_sites_bed)
+            rplib.intersect_bed_files(tmp_bed, gene_regions_gtf_tmp_bed, params, processed_in_sites_bed)
+            c_out = rplib.count_file_rows(processed_in_sites_bed)
             assert c_out, "no remaining --in sites after filtering by gene overlap"
             print("# --in sites after filtering by gene coverage:  %i" %(c_out))
     else:
-        gp2lib.make_file_copy(tmp_bed, processed_in_sites_bed)
+        rplib.make_file_copy(tmp_bed, processed_in_sites_bed)
 
     """
     Extract site sequences + filter
@@ -5240,20 +4916,20 @@ def main_gp(args):
     """
 
     # Get region lengths.
-    test_bed_len_dic = gp2lib.bed_get_region_lengths(processed_in_sites_bed)
+    test_bed_len_dic = rplib.bed_get_region_lengths(processed_in_sites_bed)
 
     if transcript_regions:
         # Get sequences for transcript sites.
         print("Extract sequences for transcript sites ... ")
-        test_seqs_dic = gp2lib.extract_transcript_sequences(id2row_dic, tr_seqs_dic)
+        test_seqs_dic = rplib.extract_transcript_sequences(id2row_dic, tr_seqs_dic)
     else:
         # Get sequences for genomic sites.
         print("Extract sequences for genomic sites ... ")
         # Extract positive sequences from .2bit.
-        gp2lib.bed_extract_sequences_from_2bit(processed_in_sites_bed, tmp_fasta, args.in_2bit,
+        rplib.bed_extract_sequences_from_2bit(processed_in_sites_bed, tmp_fasta, args.in_2bit,
                                                lc_repeats=args.rep_reg_annot)
         # Read in sequences.
-        test_seqs_dic = gp2lib.read_fasta_into_dic(tmp_fasta)
+        test_seqs_dic = rplib.read_fasta_into_dic(tmp_fasta)
 
     # Compare region lengths with sequence lengths, delete mismatches.
     print("Compare extracted sequence lengths to site lengths ... ")
@@ -5320,7 +4996,7 @@ def main_gp(args):
 
     # Length statistics for final positives + negatives.
     final_len_list = []
-    final_len_list = gp2lib.get_seq_len_list_from_dic(test_seqs_dic)
+    final_len_list = rplib.get_seq_len_list_from_dic(test_seqs_dic)
     c_final_test = len(final_len_list)
 
     test_ids_output_dic = {}
@@ -5356,10 +5032,10 @@ def main_gp(args):
 
     # Output full-length (+ context) sequences.
     print("Output selected sites to BED and FASTA ... ")
-    gp2lib.fasta_output_dic(test_seqs_dic, test_fasta_out)
+    rplib.fasta_output_dic(test_seqs_dic, test_fasta_out)
 
     # Output BED regions.
-    gp2lib.bed_write_row_dic_into_file(id2row_dic, test_bed_out,
+    rplib.bed_write_row_dic_into_file(id2row_dic, test_bed_out,
                                        id2out_dic=test_ids_output_dic)
     print("# prediction sites output:  %i" %(c_final_test))
 
@@ -5375,12 +5051,8 @@ def main_gp(args):
     repeat region information (for genomic and transcript regions)
 
     1) structure (--str):
-    To calculate probabilities of base pairs + structural elements.
-    .bpp.str: base pairs + probabilities file
-    .str_elem.str: unpaired + structural elements probabilities
-    Note that structure calculation yields same results for uppercase
-    and lowercase sequences (mixed ones too), so no separate upper-
-    lowercase sequence files necessary.
+    To calculate probabilities of structural elements.
+    .str: unpaired + structural elements probabilities
 
     2) conservation scores (--phastcons, --phylop):
     Position-wise phyloP and / or phastCons scores to add for each
@@ -5422,7 +5094,7 @@ def main_gp(args):
     test_eia_stats_dic = None
     test_tra_stats_dic = None
     test_rra_stats_dic = None
-    if args.report and (args.add_str or args.bp_in):
+    if args.report and args.add_str:
         test_str_stats_dic = {}
     if args.report and args.pc_bw:
         test_phastcons_stats_dic = {}
@@ -5438,9 +5110,7 @@ def main_gp(args):
     # Store feature infos.
     FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
     if args.add_str:
-        FEATOUT.write("elem_p.str\tN\tE,H,I,M,S\tprob\n")
-    if args.add_str or args.bp_in:
-        FEATOUT.write("bpp.str\tN\tbp_prob\tprob\n")
+        FEATOUT.write("str\tN\tE,H,I,M,S\tprob\n")
     if args.pc_bw:
         FEATOUT.write("pc.con\tN\tphastcons_score\tprob\n")
     if args.pp_bw:
@@ -5479,29 +5149,14 @@ def main_gp(args):
 
     if args.add_str:
 
-        # Calculate structure features for prediction set.
-        #print("Get secondary structure information ... ")
-        #gp2lib.calc_str_elem_up_bpp(test_fasta_out, test_bpp_out, test_str_elem_p_out,
-        #                            stats_dic=test_str_stats_dic,
-        #                            plfold_u=args.plfold_u,
-        #                            plfold_l=args.plfold_l,
-        #                            plfold_w=args.plfold_w)
         # Calculate structure features for test set.
         print("Get secondary structure information ... ")
-        gp2lib.calc_ext_str_features(id2row_dic, chr_len_dic,
-                                     test_bpp_out, test_str_elem_p_out, args,
-                                     id2ucr_dic=False,
-                                     stats_dic=test_str_stats_dic,
-                                     bp_check_seqs_dic=test_seqs_dic,
-                                     tr_regions=transcript_regions,
-                                     tr_seqs_dic=tr_seqs_dic)
-
-    # If custom base pair information given.
-    if args.bp_in:
-        # Sanity check, process, and output custom base pair information file.
-        print("--bp-in file supplied. Check, process + overwrite calculated base pairs ... ")
-        gp2lib.process_custom_bp_file(args.bp_in, test_bpp_out, test_seqs_dic,
-                                      stats_dic=test_str_stats_dic)
+        rplib.calc_ext_str_features(id2row_dic, chr_len_dic,
+                                    test_str_out, args,
+                                    stats_dic=test_str_stats_dic,
+                                    check_seqs_dic=test_seqs_dic,
+                                    tr_regions=transcript_regions,
+                                    tr_seqs_dic=tr_seqs_dic)
 
     """
     2) Conservation scores.
@@ -5513,49 +5168,49 @@ def main_gp(args):
             print("Additional annotations for transcript sites require mapping to genome ... ")
             print("Mapping transcript sites to genome ... ")
             id2hitc_dic = {}
-            gp2lib.bed_convert_transcript_to_genomic_sites(test_bed_out, args.in_gtf,
-                                                           test_transcript_to_genome_bed,
-                                                           site2hitc_dic=id2hitc_dic)
+            rplib.bed_convert_transcript_to_genomic_sites(test_bed_out, args.in_gtf,
+                                                          test_transcript_to_genome_bed,
+                                                          site2hitc_dic=id2hitc_dic)
 
     # If phastCons conservation scores (--pc-bw) are given.
     if args.pc_bw:
         if transcript_regions:
             print("Extracting phastCons conservation scores for transcript sites ... ")
             # For transcript sites.
-            gp2lib.extract_conservation_scores(test_transcript_to_genome_bed,
-                                               test_pc_con_out, args.pc_bw,
-                                               stats_dic=test_phastcons_stats_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(test_transcript_to_genome_bed,
+                                              test_pc_con_out, args.pc_bw,
+                                              stats_dic=test_phastcons_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
         else:
             print("Extracting phastCons conservation scores for genomic sites ... ")
             # For genomic sites.
-            gp2lib.extract_conservation_scores(test_bed_out,
-                                               test_pc_con_out, args.pc_bw,
-                                               stats_dic=test_phastcons_stats_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(test_bed_out,
+                                              test_pc_con_out, args.pc_bw,
+                                              stats_dic=test_phastcons_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
 
     # If phastCons conservation scores (--pp-bw) are given.
     if args.pp_bw:
         if transcript_regions:
             print("Extracting phyloP conservation scores for transcript sites ... ")
             # For transcript sites.
-            gp2lib.extract_conservation_scores(test_transcript_to_genome_bed,
-                                               test_pp_con_out, args.pp_bw,
-                                               stats_dic=test_phylop_stats_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(test_transcript_to_genome_bed,
+                                              test_pp_con_out, args.pp_bw,
+                                              stats_dic=test_phylop_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
         else:
             print("Extracting phyloP conservation scores for genomic sites ... ")
             # For genomic sites.
-            gp2lib.extract_conservation_scores(test_bed_out,
-                                               test_pp_con_out, args.pp_bw,
-                                               stats_dic=test_phylop_stats_dic,
-                                               merge_split_regions=True,
-                                               report=False)
+            rplib.extract_conservation_scores(test_bed_out,
+                                              test_pp_con_out, args.pp_bw,
+                                              stats_dic=test_phylop_stats_dic,
+                                              merge_split_regions=True,
+                                              report=False)
         print("Normalizing phyloP scores ... ")
-        gp2lib.phylop_norm_test_scores(test_pp_con_out)
+        rplib.phylop_norm_test_scores(test_pp_con_out)
 
     """
     3) Transcript region annotations for transcript sites.
@@ -5568,7 +5223,7 @@ def main_gp(args):
         if args.tr_reg_border_annot:
             print("Transcript + exon border annotations enabled ... ")
         tr_ids_dic = chr_len_dic
-        gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+        rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                             test_transcript_to_genome_bed,
                                             args.in_gtf, test_tra_out,
                                             stats_dic=test_tra_stats_dic,
@@ -5589,9 +5244,9 @@ def main_gp(args):
             if args.tr_list:
                 print("Using transcript list from --tr-list to define transcript regions ... ")
                 # Read in transcript IDs from --tr-list.
-                tr_ids_dic = gp2lib.read_ids_into_dic(args.tr_list)
+                tr_ids_dic = rplib.read_ids_into_dic(args.tr_list)
                 # Read in all transcript IDs in --gtf.
-                all_tr_ids_dic = gp2lib.gtf_get_transcript_ids(args.in_gtf)
+                all_tr_ids_dic = rplib.gtf_get_transcript_ids(args.in_gtf)
                 # Check if given --tr list IDs are in --gtf.
                 del_tr_l = []
                 for tr_id in tr_ids_dic:
@@ -5603,24 +5258,16 @@ def main_gp(args):
                 assert tr_ids_dic, "no transcript IDs from --tr-list remain after removing IDs not found in --gtf"
             else:
                 # Create exon BED file from most prominent transcripts.
-                strict=False
+                strict = False
                 if strict:
                     print("Get most prominent transcript for each gene from --gtf (TSL1-5 only)... ")
                 else:
                     print("Get most prominent transcript for each gene from --gtf ... ")
                 # Don't be strict (!= only TSL1-5 allowed).
-                tr_ids_dic = gp2lib.gtf_extract_most_prominent_transcripts(args.in_gtf,
+                tr_ids_dic = rplib.gtf_extract_most_prominent_transcripts(args.in_gtf,
                                                 "dummy",
                                                 strict=strict,
                                                 return_ids_dic=tr_ids_dic)
-
-
-
-
-
-
-
-
 
         # Exon-intron annotations for genomic sites.
         if args.exon_intron_annot:
@@ -5631,8 +5278,8 @@ def main_gp(args):
                 random_id = uuid.uuid1()
                 all_exon_bed = str(random_id) + ".tmp.bed"
                 print("Extract all exon regions from --gtf (--eia-all-ex enabled) ... ")
-                gp2lib.gtf_extract_unique_exon_bed(args.in_gtf, all_exon_bed,
-                                                   use_ei_labels=True)
+                rplib.gtf_extract_unique_exon_bed(args.in_gtf, all_exon_bed,
+                                                  use_ei_labels=True)
 
             print("Extract exon-intron annotations for genomic sites ... ")
             if not all_exon_bed:
@@ -5645,7 +5292,7 @@ def main_gp(args):
                 if args.exon_intron_n:
                     print("Non-intron non-exon region annotation enabled ... ")
 
-            gp2lib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, test_bed_out,
+            rplib.bed_get_exon_intron_annotations_from_gtf(tr_ids_dic, test_bed_out,
                                         args.in_gtf, test_eia_out,
                                         stats_dic=test_eia_stats_dic,
                                         own_exon_bed=all_exon_bed,
@@ -5661,7 +5308,7 @@ def main_gp(args):
             print("Extracting transcript region annotations for genomic sites ... ")
             if args.tr_reg_codon_annot:
                 print("Start + stop codon annotations enabled ... ")
-            gp2lib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
+            rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                                 test_bed_out,
                                                 args.in_gtf, test_tra_out,
                                                 stats_dic=test_tra_stats_dic,
@@ -5675,8 +5322,8 @@ def main_gp(args):
     """
     if args.rep_reg_annot:
         print("Extracting repeat region annotations ... ")
-        gp2lib.fasta_get_repeat_region_annotations(test_seqs_rep_lc_dic, test_rra_out,
-                                                   stats_dic=test_rra_stats_dic)
+        rplib.fasta_get_repeat_region_annotations(test_seqs_rep_lc_dic, test_rra_out,
+                                                  stats_dic=test_rra_stats_dic)
 
     """
     Generate HTML report including various training dataset statistics.
@@ -5701,52 +5348,51 @@ def main_gp(args):
             # Calculate additional stats for report.
             print("Extract additional statistics for report ... ")
             # Get count stats for gene biotypes.
-            region_ids_dic = gp2lib.bed_get_region_ids(regions_with_sites_bed)
+            region_ids_dic = rplib.bed_get_region_ids(regions_with_sites_bed)
             # Get gene biotype counts for target genes.
             if transcript_regions:
-                target_gbtc_dic = gp2lib.gtf_get_gene_biotypes_from_transcript_ids(
+                target_gbtc_dic = rplib.gtf_get_gene_biotypes_from_transcript_ids(
                                             region_ids_dic, args.in_gtf,
                                             all_gbtc_dic=all_gbtc_dic)
 
                 # Get transcript ID to hit count dictionary.
-                t2hc_dic = gp2lib.bed_get_chromosome_ids(test_bed_out)
+                t2hc_dic = rplib.bed_get_chromosome_ids(test_bed_out)
                 # Get transcript infos.
-                t2i_dic = gp2lib.gtf_get_transcript_infos(region_ids_dic, args.in_gtf)
+                t2i_dic = rplib.gtf_get_transcript_infos(region_ids_dic, args.in_gtf)
             else:
-                target_gbtc_dic = gp2lib.gtf_get_gene_biotypes(
+                target_gbtc_dic = rplib.gtf_get_gene_biotypes(
                                             region_ids_dic, args.in_gtf,
                                             all_gbtc_dic=all_gbtc_dic)
                 # Get overlapping site counts for each gene.
-                t2hc_dic = gp2lib.bed_intersect_count_region_overlaps(gene_regions_gtf_tmp_bed, test_bed_out)
+                t2hc_dic = rplib.bed_intersect_count_region_overlaps(gene_regions_gtf_tmp_bed, test_bed_out)
                 # Get gene infos.
-                t2i_dic = gp2lib.gtf_get_gene_infos(region_ids_dic, args.in_gtf)
+                t2i_dic = rplib.gtf_get_gene_infos(region_ids_dic, args.in_gtf)
 
         # HTML report output file.
-        html_report_out = args.out_folder + "/" + "report.graphprot2_gp.html"
+        html_report_out = args.out_folder + "/" + "report.rnaprot_gp.html"
         # Plots subfolder.
-        plots_subfolder = "plots_graphprot2_gp"
+        plots_subfolder = "plots_rnaprot_gp"
         # Get library and logo path.
-        gp2lib_path = os.path.dirname(gp2lib.__file__)
+        rplib_path = os.path.dirname(rplib.__file__)
         # Generate report.
-        gp2lib.gp2_gp_generate_html_report(test_seqs_dic,
-                                           args.out_folder, dataset_type, gp2lib_path,
-                                           html_report_out=html_report_out,
-                                           id2ucr_dic=False,
-                                           plots_subfolder=plots_subfolder,
-                                           test_str_stats_dic=test_str_stats_dic,
-                                           test_phastcons_stats_dic=test_phastcons_stats_dic,
-                                           test_phylop_stats_dic=test_phylop_stats_dic,
-                                           test_eia_stats_dic=test_eia_stats_dic,
-                                           test_tra_stats_dic=test_tra_stats_dic,
-                                           test_rra_stats_dic=test_rra_stats_dic,
-                                           target_gbtc_dic=target_gbtc_dic,
-                                           all_gbtc_dic=all_gbtc_dic,
-                                           t2hc_dic=t2hc_dic,
-                                           t2i_dic=t2i_dic,
-                                           kmer_top=10,
-                                           target_top=20,
-                                           theme=args.theme,
-                                           rna=True)
+        rplib.rp_gp_generate_html_report(test_seqs_dic,
+                                         args.out_folder, dataset_type, rplib_path,
+                                         html_report_out=html_report_out,
+                                         plots_subfolder=plots_subfolder,
+                                         test_str_stats_dic=test_str_stats_dic,
+                                         test_phastcons_stats_dic=test_phastcons_stats_dic,
+                                         test_phylop_stats_dic=test_phylop_stats_dic,
+                                         test_eia_stats_dic=test_eia_stats_dic,
+                                         test_tra_stats_dic=test_tra_stats_dic,
+                                         test_rra_stats_dic=test_rra_stats_dic,
+                                         target_gbtc_dic=target_gbtc_dic,
+                                         all_gbtc_dic=all_gbtc_dic,
+                                         t2hc_dic=t2hc_dic,
+                                         t2i_dic=t2i_dic,
+                                         kmer_top=10,
+                                         target_top=20,
+                                         theme=args.theme,
+                                         rna=True)
 
     """
     Take out the trash.
@@ -5777,10 +5423,7 @@ def main_gp(args):
     print("Sequences .fa:\n%s" %(test_fasta_out))
     print("Sites .bed:\n%s" %(test_bed_out))
     if args.add_str:
-        print("Base pair probabilities .bpp.str:\n%s" %(test_bpp_out))
-        print("Position-wise structural elements probabilities .elem_p.str:\n%s" %(test_str_elem_p_out))
-    if args.bp_in and not args.add_str:
-        print("Base pair probabilities .bpp.str (from --bp-in):\n%s" %(test_bpp_out))
+        print("Structural elements probabilities .str:\n%s" %(test_str_out))
     if args.pc_bw:
         print("phastCons conservation scores .pc.con:\n%s" %(test_pc_con_out))
     if args.pp_bw:
@@ -5823,10 +5466,10 @@ if __name__ == '__main__':
     print(rplib.drop_a_line())
 
     # Are my tools ready?
-    assert gp2lib.is_tool("bedtools"), "bedtools not in PATH"
-    assert gp2lib.is_tool("twoBitToFa"), "twoBitToFa not in PATH"
-    assert gp2lib.is_tool("twoBitInfo"), "twoBitInfo not in PATH"
-    assert gp2lib.is_tool("bigWigAverageOverBed"), "bigWigAverageOverBed not in PATH"
+    assert rplib.is_tool("bedtools"), "bedtools not in PATH!"
+    assert rplib.is_tool("twoBitToFa"), "twoBitToFa not in PATH!"
+    assert rplib.is_tool("twoBitInfo"), "twoBitInfo not in PATH!"
+    assert rplib.is_tool("bigWigAverageOverBed"), "bigWigAverageOverBed not in PATH!"
 
     # Run selected mode.
     if args.which == 'train':
