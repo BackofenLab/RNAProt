@@ -10,6 +10,7 @@ import argparse
 import random
 import shutil
 import torch
+import torch.nn as nn
 import uuid
 import copy
 import sys
@@ -178,7 +179,7 @@ def setup_argument_parser():
                    metavar='int',
                    default = 40,
                    help = "Number of epochs to wait for further improvement on validation set before stopping (default: 40)")
-    p_opt.add_argument("--n-hidden-layers",
+    p_tra.add_argument("--n-hidden-layers",
                    dest="list_n_hidden_layers",
                    type=int,
                    metavar='int',
@@ -725,31 +726,29 @@ def main_train(args):
             gt_settings_dic[cols[0]] = cols[1]
     f.closed
     # Settings to port from gt to train settings file.
-    assert "in_gtf" in gt_settings_dic, "in_gtf info missing in --in settings file %s" %(gt_settings_dic)
-    assert "in_2bit" in gt_settings_dic, "in_2bit info missing in --in settings file %s" %(gt_settings_dic)
-    assert "tr_list" in gt_settings_dic, "tr_list info missing in --in settings file %s" %(gt_settings_dic)
-    assert "pc_bw" in gt_settings_dic, "pc_bw info missing in --in settings file %s" %(gt_settings_dic)
-    assert "pp_bw" in gt_settings_dic, "pp_bw info missing in --in settings file %s" %(gt_settings_dic)
-    assert "bp_in" in gt_settings_dic, "bp_in info missing in --in settings file %s" %(gt_settings_dic)
-    assert "feat_in" in gt_settings_dic, "feat_in info missing in --in settings file %s" %(gt_settings_dic)
-    assert "feat_in_1h" in gt_settings_dic, "feat_in_1h info missing in --in settings file %s" %(gt_settings_dic)
-    assert "feat_in_norm" in gt_settings_dic, "feat_in_norm info missing in --in settings file %s" %(gt_settings_dic)
-    assert "plfold_u" in gt_settings_dic, "plfold_u info missing in --in settings file %s" %(gt_settings_dic)
-    assert "plfold_l" in gt_settings_dic, "plfold_l info missing in --in settings file %s" %(gt_settings_dic)
-    assert "plfold_w" in gt_settings_dic, "plfold_w info missing in --in settings file %s" %(gt_settings_dic)
-    assert "exon_intron_annot" in gt_settings_dic, "exon_intron_annot info missing in --in settings file %s" %(gt_settings_dic)
-    assert "intron_border_annot" in gt_settings_dic, "intron_border_annot info missing in --in settings file %s" %(gt_settings_dic)
-    assert "exon_intron_n" in gt_settings_dic, "exon_intron_n info missing in --in settings file %s" %(gt_settings_dic)
-    assert "eia_all_ex" in gt_settings_dic, "eia_all_ex info missing in --in settings file %s" %(gt_settings_dic)
-    assert "tr_reg_annot" in gt_settings_dic, "tr_reg_annot info missing in --in settings file %s" %(gt_settings_dic)
-    assert "tr_reg_codon_annot" in gt_settings_dic, "tr_reg_codon_annot info missing in --in settings file %s" %(gt_settings_dic)
-    assert "tr_reg_border_annot" in gt_settings_dic, "tr_reg_border_annot info missing in --in settings file %s" %(gt_settings_dic)
+    assert "in_gtf" in gt_settings_dic, "in_gtf info missing in --in settings file %s" %(gt_settings_file)
+    assert "in_2bit" in gt_settings_dic, "in_2bit info missing in --in settings file %s" %(gt_settings_file)
+    assert "tr_list" in gt_settings_dic, "tr_list info missing in --in settings file %s" %(gt_settings_file)
+    assert "pc_bw" in gt_settings_dic, "pc_bw info missing in --in settings file %s" %(gt_settings_file)
+    assert "pp_bw" in gt_settings_dic, "pp_bw info missing in --in settings file %s" %(gt_settings_file)
+    assert "feat_in" in gt_settings_dic, "feat_in info missing in --in settings file %s" %(gt_settings_file)
+    assert "feat_in_1h" in gt_settings_dic, "feat_in_1h info missing in --in settings file %s" %(gt_settings_file)
+    assert "feat_in_norm" in gt_settings_dic, "feat_in_norm info missing in --in settings file %s" %(gt_settings_file)
+    assert "plfold_u" in gt_settings_dic, "plfold_u info missing in --in settings file %s" %(gt_settings_file)
+    assert "plfold_l" in gt_settings_dic, "plfold_l info missing in --in settings file %s" %(gt_settings_file)
+    assert "plfold_w" in gt_settings_dic, "plfold_w info missing in --in settings file %s" %(gt_settings_file)
+    assert "exon_intron_annot" in gt_settings_dic, "exon_intron_annot info missing in --in settings file %s" %(gt_settings_file)
+    assert "intron_border_annot" in gt_settings_dic, "intron_border_annot info missing in --in settings file %s" %(gt_settings_file)
+    assert "exon_intron_n" in gt_settings_dic, "exon_intron_n info missing in --in settings file %s" %(gt_settings_file)
+    assert "eia_all_ex" in gt_settings_dic, "eia_all_ex info missing in --in settings file %s" %(gt_settings_file)
+    assert "tr_reg_annot" in gt_settings_dic, "tr_reg_annot info missing in --in settings file %s" %(gt_settings_file)
+    assert "tr_reg_codon_annot" in gt_settings_dic, "tr_reg_codon_annot info missing in --in settings file %s" %(gt_settings_file)
+    assert "tr_reg_border_annot" in gt_settings_dic, "tr_reg_border_annot info missing in --in settings file %s" %(gt_settings_file)
     args.in_gtf = gt_settings_dic["in_gtf"]
     args.in_2bit = gt_settings_dic["in_2bit"]
     args.tr_list = gt_settings_dic["tr_list"]
     args.pc_bw = gt_settings_dic["pc_bw"]
     args.pp_bw = gt_settings_dic["pp_bw"]
-    args.bp_in = gt_settings_dic["bp_in"]
     args.feat_in = gt_settings_dic["feat_in"]
     args.feat_in_1h = gt_settings_dic["feat_in_1h"]
     args.feat_in_norm = gt_settings_dic["feat_in_norm"]
@@ -4719,8 +4718,6 @@ def main_gp(args):
         print("Sequences .fa:\n%s" %(test_fasta_out))
         if args.add_str:
             print("Structural elements probabilities .elem_p.str:\n%s" %(test_str_out))
-        if args.bp_in and not args.add_str:
-            print("Base pair probabilities .bpp.str (from --bp-in):\n%s" %(test_bpp_out))
         if args.report:
             print("Prediction set generation report .html:\n%s" %(html_report_out))
         print("")
@@ -5453,12 +5450,11 @@ if __name__ == '__main__':
 
     # Show some banner.
     banner = """
-     ____  _   _____    ____  ____  ____  ______
-    / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
-   / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
-  / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
- /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
-
+      ____  _   _____    ____  ____  ____  ______
+     / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
+    / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
+   / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
+  /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
 """
     print(banner)
 

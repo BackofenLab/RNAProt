@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from distutils.spawn import find_executable
-from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
@@ -111,7 +110,7 @@ def read_fasta_into_dic(fasta_file,
 
 ################################################################################
 
-    def read_cat_feat_into_dic(feat_file,
+def read_cat_feat_into_dic(feat_file,
                            feat_dic=False,
                            ids_dic=False,
                            all_uc=False):
@@ -145,7 +144,6 @@ def read_fasta_into_dic(fasta_file,
                 else:
                     feat_dic[feat_id] = ""
             else:
-                feat_seq =
                 if feat_id in feat_dic:
                     if all_uc:
                         feat_dic[feat_id] += line.strip().upper()
@@ -160,19 +158,22 @@ def read_fasta_into_dic(fasta_file,
 ################################################################################
 
 def string_vectorizer(seq,
-                      s=False,
-                      e=False,
-                      convert_to_uc=False,
                       empty_vectors=False,
+                      embed_numbers=False,
+                      embed_one_vec=False,
                       custom_alphabet=False):
     """
     Take string sequence, look at each letter and convert to one-hot-encoded
-    vector. Optionally define start and end index (1-based) for extracting
-    sub-sequences.
+    vector.
     Return array of one-hot encoded vectors.
-    If empty_vectors=True, return list of empty vectors.
-    Enable convert_to_uc to convert characters to uppercase before string
-    vectorization. Good if context regions are part of given subsequence.
+
+    empty_vectors:
+        If empty_vectors=True, return list of empty vectors.
+    custom alphabet:
+        Supply custom alphabet list. By default RNA alphabet is used.
+    embed_numbers:
+        Instead of one-hot, print numbers in order of dictionary (1-based).
+        So e.g. ACGU becomes [[1], [2], [3], [4]].
 
     >>> string_vectorizer("ACGU")
     [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
@@ -182,29 +183,34 @@ def string_vectorizer(seq,
     [[0, 0, 0, 0], [0, 0, 0, 0]]
     >>> string_vectorizer("ABC", empty_vectors=True)
     [[], [], []]
-    >>> string_vectorizer("aCGu", convert_to_uc=False)
-    [[0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]
-    >>> string_vectorizer("aCGu", convert_to_uc=True)
-    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    >>> string_vectorizer("ACGU", embed_numbers=True)
+    [[1], [2], [3], [4]]
+    >>> string_vectorizer("ACGU", embed_numbers=True, embed_one_vec=True)
+    [1, 2, 3, 4]
+
 
     """
     alphabet=['A','C','G','U']
     if custom_alphabet:
         alphabet = custom_alphabet
-    seq_l = len(seq)
-    if convert_to_uc:
-        seq = seq.upper()
     if empty_vectors:
         vector = []
         for letter in seq:
             vector.append([])
     else:
-        vector = [[1 if char == letter else 0 for char in alphabet] for letter in seq]
-    if s and e:
-        if len(seq) < e or s < 1:
-            print ("ERROR: invalid indices passed to string_vectorizer (s:\"%s\", e:\"%s\")" % (s, e))
-            sys.exit()
-        vector = vector[s-1:e]
+        if embed_numbers:
+            vector = []
+            ab2nr_dic = {}
+            for idx,c in enumerate(alphabet):
+                ab2nr_dic[c] = idx+1
+            for letter in seq:
+                idx = ab2nr_dic[letter]
+                if embed_one_vec:
+                    vector.append(idx)
+                else:
+                    vector.append([idx])
+        else:
+            vector = [[1 if char == letter else 0 for char in alphabet] for letter in seq]
     return vector
 
 
@@ -9366,7 +9372,41 @@ def generate_top_kmer_md_table(pos_kmer_dic, neg_kmer_dic,
 
 ################################################################################
 
+def convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic):
+    """
+    Convert RNA sequence to k-mer embedding (mapping k-mers to numbers). Returns
+    k-mer index list with length LL = ((LS - k) / s) + 1
+    So e.g. s = 1 (stride), k = 3, LS = 5 (sequence length),
+    LL (returned list length)
+    LL = 5-3+1 = 3
+
+    >>> seq = "ACGUA"
+    >>> kmer2idx_dic = {'AA': 1, 'AC': 2, 'AG': 3, 'AU': 4, 'CA': 5, 'CC': 6, 'CG': 7, 'CU': 8, 'GA': 9, 'GC': 10, 'GG': 11, 'GU': 12, 'UA': 13, 'UC': 14, 'UG': 15, 'UU': 16}
+    >>> k = 2
+    >>> convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic)
+    [2, 7, 12, 13]
+
+    """
+    assert seq, "invalid seq given"
+    kmer_idx_list = []
+    l_seq = len(seq)
+    for ki in range(l_seq):
+        win_s = ki
+        win_e = ki + k
+        if win_e > l_seq:
+            break
+        kmer = seq[win_s:win_e]
+        assert kmer in kmer2idx_dic, "k-mer %s not in kmer2idx_dic" %(kmer)
+        k_idx = kmer2idx_dic[kmer]
+        kmer_idx_list.append(k_idx)
+    assert kmer_idx_list, "kmer_idx_list empty"
+    return kmer_idx_list
+
+
+################################################################################
+
 def get_kmer_dic(k,
+                 fill_idx=False,
                  rna=False):
     """
     Return a dictionary of k-mers. By default, DNA alphabet is used (ACGT).
@@ -9379,6 +9419,10 @@ def get_kmer_dic(k,
     {'A': 0, 'C': 0, 'G': 0, 'T': 0}
     >>> get_kmer_dic(2, rna=True)
     {'AA': 0, 'AC': 0, 'AG': 0, 'AU': 0, 'CA': 0, 'CC': 0, 'CG': 0, 'CU': 0, 'GA': 0, 'GC': 0, 'GG': 0, 'GU': 0, 'UA': 0, 'UC': 0, 'UG': 0, 'UU': 0}
+    >>> get_kmer_dic(1, fill_idx=True)
+    {'A': 1, 'C': 2, 'G': 3, 'T': 4}
+    >>> get_kmer_dic(2, rna=True, fill_idx=True)
+    {'AA': 1, 'AC': 2, 'AG': 3, 'AU': 4, 'CA': 5, 'CC': 6, 'CG': 7, 'CU': 8, 'GA': 9, 'GC': 10, 'GG': 11, 'GU': 12, 'UA': 13, 'UC': 14, 'UG': 15, 'UU': 16}
 
     """
     # Check.
@@ -9398,6 +9442,11 @@ def get_kmer_dic(k,
         else:
             mer2c_dic[seq] = 0
     fill(k, "", mer2c_dic)
+    if fill_idx:
+        idx = 0
+        for kmer,c in sorted(mer2c_dic.items()):
+            idx += 1
+            mer2c_dic[kmer] = idx
     return mer2c_dic
 
 
@@ -10652,6 +10701,16 @@ def load_training_data(args,
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
 
+    """
+    fa	C	A,C,G,U	-
+    str	N	E,H,I,M,S	prob
+    pc.con	N	phastcons_score	prob
+    pp.con	N	phylop_score	minmax2
+    tra	C	C,F,N,T	-
+    eia	C	E,I	-
+    rra	C	N,R	-
+    """
+
     # Channel info output file.
     channel_infos_out = args.out_folder + "/" + "channel_infos.out"
     channel_info_list = []
@@ -11000,7 +11059,7 @@ def shuffle_idx_feat_labels(labels, features,
     features, labels_add = zip(*features_labels)
     idx2id_dic_new = {}
     new_labels = []
-    for idx,lst in enumerate(label_list_add):
+    for idx,lst in enumerate(labels_add):
         label = lst[0]
         old_idx = lst[1]
         new_labels.append(label)
@@ -11854,9 +11913,10 @@ def read_feat_into_dic(feat_file, feat_type,
             f.closed
         else:
             # Read in feature sequences into dic.
-            feat_dic = read_cat_feat_into_dic(feat_file)
-            for seq_id in feat_dic:
-                seq = feat_dic[seq_id]
+            id2featstr_dic = read_cat_feat_into_dic(feat_file)
+            #{'site1': 'EEIIIIIIIIIIIIIIEEEE', 'site2': 'EEEEIIII'}
+            for seq_id in id2featstr_dic:
+                seq = id2featstr_dic[seq_id]
                 if seq_id not in feat_dic:
                     feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=label_list)
                 else:
@@ -14822,23 +14882,127 @@ def drop_a_line():
     Drop a line.
 
     """
+    ref = """
+
+ /$$$$$$$  /$$   /$$  /$$$$$$  /$$$$$$$  /$$$$$$$   /$$$$$$  /$$$$$$$$
+| $$__  $$| $$$ | $$ /$$__  $$| $$__  $$| $$__  $$ /$$__  $$|__  $$__/
+| $$  \ $$| $$$$| $$| $$  \ $$| $$  \ $$| $$  \ $$| $$  \ $$   | $$
+| $$$$$$$/| $$ $$ $$| $$$$$$$$| $$$$$$$/| $$$$$$$/| $$  | $$   | $$
+| $$__  $$| $$  $$$$| $$__  $$| $$____/ | $$__  $$| $$  | $$   | $$
+| $$  \ $$| $$\  $$$| $$  | $$| $$      | $$  \ $$| $$  | $$   | $$
+| $$  | $$| $$ \  $$| $$  | $$| $$      | $$  | $$|  $$$$$$/   | $$
+|__/  |__/|__/  \__/|__/  |__/|__/      |__/  |__/ \______/    |__/
+
+    ____  _   _____    ____  ____  ____  ______
+   / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
+  / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
+ / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
+/_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
+
+   ___  _  _____   ___  ___  ____  ______
+  / _ \/ |/ / _ | / _ \/ _ \/ __ \/_  __/
+ / , _/    / __ |/ ___/ , _/ /_/ / / /
+/_/|_/_/|_/_/ |_/_/  /_/|_|\____/ /_/
+
+  ___ _  _   _   ___ ___  ___ _____
+ | _ \ \| | /_\ | _ \ _ \/ _ \_   _|
+ |   / .` |/ _ \|  _/   / (_) || |
+ |_|_\_|\_/_/ \_\_| |_|_\\___/ |_|
+
+  ____  _   _    _    ____  ____   ___ _____
+ |  _ \| \ | |  / \  |  _ \|  _ \ / _ \_   _|
+ | |_) |  \| | / _ \ | |_) | |_) | | | || |
+ |  _ <| |\  |/ ___ \|  __/|  _ <| |_| || |
+ |_| \_\_| \_/_/   \_\_|   |_| \_\\___/ |_|
+
+
+██████  ███    ██  █████  ██████  ██████   ██████  ████████ 
+██   ██ ████   ██ ██   ██ ██   ██ ██   ██ ██    ██    ██    
+██████  ██ ██  ██ ███████ ██████  ██████  ██    ██    ██ 
+██   ██ ██  ██ ██ ██   ██ ██      ██   ██ ██    ██    ██ 
+██   ██ ██   ████ ██   ██ ██      ██   ██  ██████     ██ 
+                                                         
+
+
+██████╗ ███╗   ██╗ █████╗ ██████╗ ██████╗  ██████╗ ████████╗
+██╔══██╗████╗  ██║██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
+██████╔╝██╔██╗ ██║███████║██████╔╝██████╔╝██║   ██║   ██║
+██╔══██╗██║╚██╗██║██╔══██║██╔═══╝ ██╔══██╗██║   ██║   ██║
+██║  ██║██║ ╚████║██║  ██║██║     ██║  ██║╚██████╔╝   ██║
+╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝
+
+
+╦═╗╔╗╔╔═╗╔═╗╦═╗╔═╗╔╦╗
+╠╦╝║║║╠═╣╠═╝╠╦╝║ ║ ║
+╩╚═╝╚╝╩ ╩╩  ╩╚═╚═╝ ╩
+
+
+:::::::::  ::::    :::     :::     :::::::::  :::::::::   :::::::: :::::::::::
+:+:    :+: :+:+:   :+:   :+: :+:   :+:    :+: :+:    :+: :+:    :+:    :+:
++:+    +:+ :+:+:+  +:+  +:+   +:+  +:+    +:+ +:+    +:+ +:+    +:+    +:+
++#++:++#:  +#+ +:+ +#+ +#++:++#++: +#++:++#+  +#++:++#:  +#+    +:+    +#+
++#+    +#+ +#+  +#+#+# +#+     +#+ +#+        +#+    +#+ +#+    +#+    +#+
+#+#    #+# #+#   #+#+# #+#     #+# #+#        #+#    #+# #+#    #+#    #+#
+###    ### ###    #### ###     ### ###        ###    ###  ########     ###
+
+
+
+      :::::::::  ::::    :::     :::     :::::::::  :::::::::   :::::::: :::::::::::
+     :+:    :+: :+:+:   :+:   :+: :+:   :+:    :+: :+:    :+: :+:    :+:    :+:
+    +:+    +:+ :+:+:+  +:+  +:+   +:+  +:+    +:+ +:+    +:+ +:+    +:+    +:+
+   +#++:++#:  +#+ +:+ +#+ +#++:++#++: +#++:++#+  +#++:++#:  +#+    +:+    +#+
+  +#+    +#+ +#+  +#+#+# +#+     +#+ +#+        +#+    +#+ +#+    +#+    +#+
+ #+#    #+# #+#   #+#+# #+#     #+# #+#        #+#    #+# #+#    #+#    #+#
+###    ### ###    #### ###     ### ###        ###    ###  ########     ###
+
+
+
+     oooooooooo  oooo   oooo     o
+      888    888  8888o  88     888
+      888oooo88   88 888o88    8  88
+      888  88o    88   8888   8oooo88
+     o888o  88o8 o88o    88 o88o  o888o
+
+oooooooooo oooooooooo    ooooooo   ooooooooooo
+ 888    888 888    888 o888   888o 88  888  88
+ 888oooo88  888oooo88  888     888     888
+ 888        888  88o   888o   o888     888
+o888o      o888o  88o8   88ooo88      o888o
+
+
+   dBBBBBb    dBBBBb dBBBBBb   dBBBBBb dBBBBBb    dBBBBP  dBBBBBBP
+       dBP       dBP      BB       dB'     dBP   dB'.BP
+   dBBBBK'  dBP dBP   dBP BB   dBBBP'  dBBBBK'  dB'.BP     dBP
+  dBP  BB  dBP dBP   dBP  BB  dBP     dBP  BB  dB'.BP     dBP
+ dBP  dB' dBP dBP   dBBBBBBB dBP     dBP  dB' dBBBBP     dBP
+
+
+     ____  _   _____    ____  ____  ____  ______
+    / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
+   / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
+  / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
+ /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
+
+"""
+
     lines = []
     a = """
-                     \"Let's Party!\"
+                \"Let's Party!\"
 """
     b = """
-          \"I eat Green Berets for breakfast.\"
+      \"I eat Green Berets for breakfast.\"
 """
     c = """
-           \"There's always barber college.\"
+        \"There's always barber college.\"
 """
     d = """
-             \"Yo, Steve! You're history.\"
+          \"Yo, Steve! You're history.\"
 """
 
     lines.append(a)
     lines.append(b)
     lines.append(c)
+    lines.append(d)
     return(random.choice(lines))
 
 
@@ -14847,9 +15011,11 @@ def drop_a_line():
 
 """
 
-"We could not understand because we were too far and could not remember
- because we were travelling in the night of first ages, of those ages
- that are gone, leaving hardly a sign - and no memories." J.C.
+
+   "We could not understand because we were too far and could not remember
+    because we were travelling in the night of first ages, of those ages
+    that are gone, leaving hardly a sign - and no memories." J.C.
+
 
 
                  ^OMQQOO6|^OQQM6MOMMMOQQQQMMMMOMIQMQMQOOO6QO6O6QQMQQQMO6QMMOOQMMQQMQQOI66IOOQQMMM|QQO66
