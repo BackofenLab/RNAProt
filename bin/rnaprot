@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from rnaprot.RNNNets import GRUModel,RNNDataset
+from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from rnaprot import rnn_util
 from rnaprot import rplib
@@ -177,8 +178,8 @@ def setup_argument_parser():
                    dest="patience",
                    type = int,
                    metavar='int',
-                   default = 40,
-                   help = "Number of epochs to wait for further improvement on validation set before stopping (default: 40)")
+                   default = 30,
+                   help = "Number of epochs to wait for further improvement on validation set before stopping (default: 30)")
     p_tra.add_argument("--n-hidden-layers",
                    dest="list_n_hidden_layers",
                    type=int,
@@ -879,15 +880,15 @@ def main_train(args):
             i_cv += 1
             print("Starting --gen-cv fold %i ... " %(i_cv))
 
-            test_dataset = RNNDataset([all_features[idx] for idx in list_te_idx])
+            test_dataset = RNNDataset([all_features[idx] for idx in list_te_idx], [labels[idx] for idx in list_te_idx])
             if run_hpo_gen_cv:
                 # Further split up train portion into train + validation.
                 # Training set == all list entries except last length(test_set).
-                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[:-len(list_te_idx)]])
+                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[:-len(list_te_idx)]], [labels[idx] for idx in list_tr_idx[:-len(list_te_idx)]])
                 # Validation set == last length(test_set) entries.
-                val_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[-len(list_te_idx):]])
+                val_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[-len(list_te_idx):]], [labels[idx] for idx in list_tr_idx[-len(list_te_idx):]])
             else:
-                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx])
+                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx], [labels[idx] for idx in list_tr_idx])
 
             if run_hpo_gen_cv:
 
@@ -1152,8 +1153,8 @@ def main_train(args):
 
     for list_tr_idx, list_val_idx in sss.split(np.zeros(len(labels)), labels):
 
-        train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx])
-        val_dataset = RNNDataset([all_features[idx] for idx in list_val_idx])
+        train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx], [labels[idx] for idx in list_tr_idx])
+        val_dataset = RNNDataset([all_features[idx] for idx in list_val_idx], [labels[idx] for idx in list_val_idx])
 
         # Report set sizes.
         c_train = len(list_tr_idx)
@@ -3045,8 +3046,8 @@ def main_gt(args):
                                                     id_prefix="shuff_neg",
                                                     ushuffle_k=args.shuffle_k)
         # Output processed sequences.
-        rplib.fasta_output_dic(pos_seqs_dic, pos_fasta_out)
-        rplib.fasta_output_dic(neg_seqs_dic, neg_fasta_out)
+        rplib.fasta_output_dic(pos_seqs_dic, pos_fasta_out, split=True)
+        rplib.fasta_output_dic(neg_seqs_dic, neg_fasta_out, split=True)
 
         # Secondary structure stats dictionaries.
         pos_str_stats_dic = None
@@ -3771,8 +3772,8 @@ def main_gt(args):
 
     # Output full-length (+ context) sequences.
     print("Output selected positives + negatives to BED and FASTA ... ")
-    rplib.fasta_output_dic(pos_context_seqs_dic, pos_fasta_out)
-    rplib.fasta_output_dic(neg_context_seqs_dic, neg_fasta_out)
+    rplib.fasta_output_dic(pos_context_seqs_dic, pos_fasta_out, split=True)
+    rplib.fasta_output_dic(neg_context_seqs_dic, neg_fasta_out, split=True)
     # Output BED regions.
     rplib.bed_write_row_dic_into_file(id2row_dic, pos_bed_out,
                                        id2out_dic=pos_context_seqs_dic)
@@ -4663,7 +4664,7 @@ def main_gp(args):
         print("Read in --in FASTA sequences and convert to RNA ... ")
         test_seqs_dic = rplib.read_fasta_into_dic(args.in_sites)
         # Output sequences.
-        rplib.fasta_output_dic(test_seqs_dic, test_fasta_out)
+        rplib.fasta_output_dic(test_seqs_dic, test_fasta_out, split=True)
 
         # Sequence character counts.
         seq_cc_dic = rplib.seqs_dic_count_chars(test_seqs_dic)
@@ -5029,7 +5030,7 @@ def main_gp(args):
 
     # Output full-length (+ context) sequences.
     print("Output selected sites to BED and FASTA ... ")
-    rplib.fasta_output_dic(test_seqs_dic, test_fasta_out)
+    rplib.fasta_output_dic(test_seqs_dic, test_fasta_out, split=True)
 
     # Output BED regions.
     rplib.bed_write_row_dic_into_file(id2row_dic, test_bed_out,
@@ -5454,7 +5455,7 @@ if __name__ == '__main__':
      / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
     / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
    / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
-  /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
+  /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/                                                     
 """
     print(banner)
 

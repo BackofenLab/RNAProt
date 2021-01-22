@@ -193,9 +193,7 @@ def min_max_normalize_probs(x, max_x, min_x,
 def select_model(args, n_features, train_dataset, val_dataset,
                  model_folder, device, criterion,
                  plot_lc_folder=False,
-                 verbose=False,
-                 hps2auc_dic=None,
-                 hps2epo_dic=None):
+                 verbose=False):
     """
     Run hyperparameter optimization to select optimal parameters / model.
 
@@ -234,8 +232,9 @@ def select_model(args, n_features, train_dataset, val_dataset,
                             model_path = model_folder + "/" + hp_str
                             if verbose:
                                 print("Round %i with %s" %(i_round, hp_str))
+                                print("Reporting: (train_loss, val_loss, val_acc, val_auc)")
                             model = GRUModel(n_features, n_hidden_dim, n_hidden_layers,
-                                             args.n_class, device,
+                                             2, device,
                                              dr=dr).to(device)
                             optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
                             # optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -248,9 +247,9 @@ def select_model(args, n_features, train_dataset, val_dataset,
                             tll = [] # train loss list.
                             vll = [] # validation loss list.
 
-                            for epoch in range(0, args.epochs):
+                            for epoch in range(1, args.epochs+1):
                                 c_epochs += 1
-                                if elapsed_patience > args.patience:
+                                if elapsed_patience >= args.patience:
                                     break
                                 train_loss = train(model, optimizer, train_loader, criterion)
                                 val_loss, val_acc, val_auc = test(val_loader, model, criterion)
@@ -275,20 +274,6 @@ def select_model(args, n_features, train_dataset, val_dataset,
                                 assert tll, "tll empty"
                                 assert vll, "vll empty"
                                 create_lc_loss_plot(tll, vll, lc_plot)
-
-                            # Store used epochs and best accuarcy for this HP combination.
-                            if hps2auc_dic is not None:
-                                if hp_str not in hps2auc_dic:
-                                    hps2auc_dic[hp_str] = []
-                                    hps2auc_dic[hp_str].append(best_val_auc)
-                                else:
-                                    hps2auc_dic[hp_str].append(best_val_auc)
-                            if hps2epo_dic is not None:
-                                if hp_str not in hps2epo_dic:
-                                    hps2epo_dic[hp_str] = []
-                                    hps2epo_dic[hp_str].append(c_epochs)
-                                else:
-                                    hps2epo_dic[hp_str].append(c_epochs)
 
                             if best_val_loss < opt_val_loss:
                                 opt_val_loss = best_val_loss

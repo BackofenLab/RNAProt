@@ -1,9 +1,21 @@
 
+python -m pip install . --ignore-installed --no-deps -vv
+
 
 # Train some full model.
 rnaprot gt --in  gp_train_sets_gp2_orig_extlr40_in/RBFOX2_K562.positives.bed --out RBFOX2_K562_gp2_orig_extlr40_gt_out --neg-in gp_train_sets_gp2_orig_extlr40_in/RBFOX2_K562.negatives.bed --seq-ext 40 --keep-ids --gtf /home/malong/Data/Ensembl_gtf/Homo_sapiens.GRCh38.101.gtf.gz --gen /home/malong/Data/genome_2bit/hg38.2bit --str --eia --eia-all-ex --tra --phastcons /home/malong/Data/evo_con/hg38.phastCons100way.bw --phylop /home/malong/Data/evo_con/hg38.phyloP100way.bw --rra
 
 
-rnaprot train --in RBFOX2_K562_gp2_orig_extlr40_gt_out --out RBFOX2_K562_gp2_orig_extlr40_onlseq_train_out
+rnaprot train --in RBFOX2_K562_gp2_orig_extlr40_gt_out --out RBFOX2_K562_gp2_orig_extlr40_onlseq_train_out --only-seq
 
 --verbose-train
+
+
+
+
+    # Load whole-site dataset.
+    c_all_feat = len(all_feat_tens)
+    all_labels = [1]*c_all_feat
+    predict_dataset = RNNDataset(all_feat_tens, all_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+
