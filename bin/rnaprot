@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from rnaprot.RNNNets import GRUModel,RNNDataset
+from rnaprot.RNNNets import RNNModel, RNNDataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from rnaprot import rnn_util
@@ -140,7 +140,7 @@ def setup_argument_parser():
                    dest = "gen_cv",
                    default = False,
                    action = "store_true",
-                   help = "Run cross validation in combination with hyperparameter optimization to evaluate model generalization performance (default: False)")
+                   help = "Run cross validation in combination with set hyperparameters to evaluate model generalization performance (default: False)")
     p_tra.add_argument("--gen-cv-k",
                    dest="gen_cv_k",
                    type = int,
@@ -152,12 +152,22 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Treat data as generic model data (positive IDs with specific format required). This turns on generic model data cross validation, with every fold leaving one RBP set out for testing (ignoring --gen-cv and --gen-cv-k) (default: False)")
-    p_tra.add_argument("--train-vs",
-                   dest = "train_vs",
+    p_tra.add_argument("--val-size",
+                   dest = "val_size",
                    type = float,
                    metavar='float',
                    default = 0.2,
-                   help = "Validation set size for training final model as percentage of all training sites (default: 0.2)")
+                   help = "Validation set size for training final model as percentage of all training sites. NOTE that if --test is set, the test set will have the same size (so if --val-size 0.2, train on 60%, validate on 20%, and test on 20%) (default: 0.2)")
+    p_tra.add_argument("--test",
+                   dest="test_set",
+                   type=str,
+                   required = True,
+                   help = "Use a part of the training set as a test set to evaluate final model. Test set size is controlled by --val-size (default: False)")
+    p_tra.add_argument("--keep-order",
+                   dest="keep_order",
+                   default = False,
+                   action = "store_true",
+                   help = "Use same train / validation (/ test) split for each call to train final model. Test split only if --test (default: False)")
     p_tra.add_argument("--plot-lc",
                    dest = "plot_lc",
                    default = False,
@@ -180,48 +190,59 @@ def setup_argument_parser():
                    metavar='int',
                    default = 30,
                    help = "Number of epochs to wait for further improvement on validation set before stopping (default: 30)")
-    p_tra.add_argument("--n-hidden-layers",
-                   dest="list_n_hidden_layers",
+    p_tra.add_argument("--batch-size",
+                   dest="batch_size",
+                   type = int,
+                   metavar='int',
+                   default=50,
+                   help = "Gradient descent batch size (default: 50)")
+    p_tra.add_argument("--lr",
+                   dest="learn_rate",
+                   type=float,
+                   metavar='float',
+                   default=0.001,
+                   help="Learning rate of optimizer (default: 0.001)")
+    p_tra.add_argument("--weight-decay",
+                   dest="weight_decay",
+                   type=float,
+                   metavar='float',
+                   default=0.0005,
+                   help="Weight decay of optimizer (default: 0.0005)")
+    p_tra.add_argument("--n-rnn-layers",
+                   dest="n_rnn_layers",
                    type=int,
                    metavar='int',
-                   nargs='+',
-                   default=[2],
-                   help="Number of hidden layers. Can also be provided as list for hyperparameter optimzation (e.g. --n-hidden-layers 2 3) (default: 2)")
-    p_tra.add_argument("--batch-size",
-                   dest="list_batch_size",
-                   type = int,
-                   metavar='int',
-                   nargs='+',
-                   default=[50],
-                   help = "Gradient descent batch size. Can also be provided as list for hyperparameter optimzation (e.g. --batch-size 30 50) (default: 50)")
+                   default=2,
+                   help="Number of RNN layers (default: 2)")
     p_tra.add_argument("--n-hidden-dim",
-                   dest="list_n_hidden_dim",
+                   dest="n_rnn_dim",
                    type = int,
                    metavar='int',
-                   nargs='+',
-                   default=[32],
-                   help = "Number of hidden layer dimensions. Can also be provided as list for hyperparameter optimzation (e.g. --n-hidden-dim 32 64) (default: 32)")
-    p_tra.add_argument("--lr",
-                   dest="list_lr",
-                   type=float,
-                   metavar='float',
-                   nargs='+',
-                   default=[0.001],
-                   help="Learning rate of optimizer. Can also be provided as list for hyperparameter optimzation (e.g. --lr 0.01 0.001 0.0001) (default: 0.001)")
-    p_tra.add_argument("--weight-decay",
-                   dest="list_weight_decay",
-                   type=float,
-                   metavar='float',
-                   nargs='+',
-                   default=[0.0005],
-                   help="Weight decay of optimizer. Can also be provided as list for hyperparameter optimzation (e.g. --weight-decay 0.0 0.0005) (default: 0.0005)")
+                   default=32,
+                   help = "Number of RNN layer dimensions (default: 32)")
     p_tra.add_argument("--dr",
-                   dest="list_dr",
+                   dest="dropout_rate",
                    type=float,
                    metavar='float',
-                   nargs='+',
-                   default=[0.5],
-                   help="Dropout rate for RNN model. Can also be provided as list for hyperparameter optimzation (e.g. --dr 0.3 0.5) (default: 0.5)")
+                   default=0.5,
+                   help="Rate of dropout applied after RNN layers (default: 0.5)")
+    p_tra.add_argument("--n-fc-layers",
+                   dest="n_fc_layers",
+                   type = int,
+                   default = 2,
+                   choices = [1,2],
+                   help = "Number of fully connected layers following RNN layers (default: 2)")
+    p_tra.add_argument("--model-type",
+                   dest="model_type",
+                   type = int,
+                   default = 2,
+                   choices = [1,2,3,4],
+                   help = "RNN model type to use. 1: biGRU, 2: biLSTM, 3: GRU, 4: LSTM (default: 1)")
+    p_tra.add_argument("--run-bohb",
+                   dest = "run_bohb",
+                   default = False,
+                   action = "store_true",
+                   help = "Use BOHB to run a hyperparameter optimization. NOTE that this will overwrite set hyperparameters, and trains the final model with the found best hyperparameter setting. ALSO NOTE that this will take some time (!) (default: False)")
 
     """
     Model evaluation mode.
@@ -711,10 +732,20 @@ def main_train(args):
     indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
     if indiv_feat_check and args.only_seq:
         assert False, "--only-seq useless in combination with individually selected features (--use-xxx)"
-    assert args.train_vs >= 0.1 and args.train_vs <= 0.5, "Use reasonable values for --train-vs (>= 0.1 and <= 0.5)"
+    if args.test_set:
+        assert args.val_size >= 0.1 and args.val_size <= 0.3, "use reasonable values for --val-size in combination with --test (>= 0.1 and <= 0.3)"
+    else:
+        assert args.val_size >= 0.1 and args.val_size <= 0.5, "use reasonable values for --val-size (>= 0.1 and <= 0.5)"
     if args.gm_cv and args.gen_cv:
         assert False, "use either --gen-cv to estimate single model generalization performance, or --gm-cv to estimate generic model generalization performance"
-    assert args.epochs >= 10 and args.epochs <= 500, "use reasonable number for --epochs (>= 10 and <= 500)"
+    if args.gen_cv:
+        assert not args.run_bohb, "incompatible options --run-bohb and --gen-cv. Use either --run-bohb to optimize hyperparameters, or --gen-cv to use the set of optimized parameters (provided as command line arguments) to estimate generalization performance via cross validation"
+        assert not args.keep_order, "incompatible options --keep-order and --gen-cv. --keep-order is only effective for final model training (--gen-cv disabled)"
+    if args.gm_cv:
+        assert not args.run_bohb, "incompatible options --run-bohb and --gm-cv. Use either --run-bohb to optimize hyperparameters, or --gm-cv to apply the set of optimized parameters (provided as command line arguments) to estimate generic model performance via cross validation"
+        assert not args.keep_order, "incompatible options --keep-order and --gm-cv. --keep-order is only effective for final model training (--gm-cv disabled)"
+
+    assert args.epochs >= 5 and args.epochs <= 500, "use reasonable number for --epochs (>= 5 and <= 500)"
     assert args.patience > 0 and args.patience <= 100, "use reasonable number for --patience (> 0 and <= 100)"
 
     # Get additional infos from rnaprot gt settings.
@@ -764,6 +795,34 @@ def main_train(args):
     args.tr_reg_codon_annot = gt_settings_dic["tr_reg_codon_annot"]
     args.tr_reg_border_annot = gt_settings_dic["tr_reg_border_annot"]
 
+    # Embedding (by default True).
+    args.embed = True
+    args.embed_k = 1
+    args.embed_vocab_size = 4**args.embed_k + 1
+    args.embed_dim = 10
+    kmer2idx_dic = False
+    if args.embed:
+        kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
+    args.add_feat = False
+    if indiv_feat_check:
+        args.add_feat = True
+
+    # Number of classes.
+    args.n_class = 1
+
+    # RNN type + bidirectional switch.
+    args.bidirect = False
+    args.rnn_type = 1
+    if args.model_type == 2 or args.model_type == 4:
+        args.rnn_type = 2
+    if args.model_type == 1 or args.model_type == 2:
+        args.bidirect = True
+
+    # Additional FC layer.
+    args.add_fc_layer = False
+    if args.n_fc_layers == 2:
+        args.add_fc_layer = True
+
     # Generate results output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
@@ -785,12 +844,14 @@ def main_train(args):
 
     # Load training data.
     seqs_dic, idx2id_dic, label_list, all_features = rplib.load_training_data(args,
+                                                           kmer2idx_dic=kmer2idx_dic,
                                                            store_tensors=True,
                                                            li2label_dic=li2label_dic)
 
     # Number of features (feature vector length).
-    num_features = len(all_features[0][0])
-    assert num_features, "invalid num_features (%s)" %(num_features)
+    n_feat = len(all_features[0][0])
+    assert n_feat, "invalid number of features (%s)" %(n_feat)
+    args.n_feat = n_feat
 
     # Check for CUDA support.
     if torch.cuda.is_available():
@@ -800,41 +861,11 @@ def main_train(args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    print("# dataset features:  %i" %(num_features))
+    print("# dataset features:  %i" %(n_feat))
     print("Dataset size:        %i" %(len(all_features)))
 
-    # Shuffle features.
-    random.seed(1)
-    labels, all_features = rplib.shuffle_idx_feat_labels(label_list, all_features,
-                                                         idx2id_dic=idx2id_dic)
-
-    """
-    list_nr_hidden_layers
-    list_batch_size
-    list_nr_hidden_dim
-    list_lr = 0.001
-    list_weight_decay = 0.0005
-    list_dr = 0.5
-
-    """
-
-    # Get HPO combinations.
-    c_lr = len(args.list_lr)
-    c_nhl = len(args.list_n_hidden_layers)
-    c_nhd = len(args.list_n_hidden_dim)
-    c_wd = len(args.list_weight_decay)
-    c_bs = len(args.list_batch_size)
-    c_dr = len(args.list_dr)
-
-    criterion = nn.CrossEntropyLoss()
-
-    # Number of HP combinations.
-    nr_hp_comb = c_lr*c_nhl*c_nhd*c_wd*c_bs*c_dr
-    run_hpo = True
-    print("Number of hyperparameter (HP) combinations:  %i" %(nr_hp_comb))
-    if nr_hp_comb == 1:
-        run_hpo = False
-        print("# HP combinations to test == 1. No HP optimization needed ...")
+    # Loss criterion.
+    criterion = nn.BCEWithLogitsLoss()
 
     """
     Run cross validation (--gen-cv, --gen-cv-k) to estimate generalization
@@ -856,10 +887,10 @@ def main_train(args):
         if os.path.exists(cv_results_file):
             os.remove(cv_results_file)
 
-        # Chosen hyperparameters + CV results per fold output file.
-        opt_cv_hps_file = out_folder + "/cv_opt_hp.out"
-        OPTHP = open(opt_cv_hps_file, "w")
-        OPTHP.write("fold\topt_batch_size\topt_n_hidden_layers\topt_n_hidden_dim\topt_weight_decay\topt_lr\topt_dr\tacc\tauc\n")
+        # Shuffle.
+        random.seed(1)
+        labels, all_features = rplib.shuffle_idx_feat_labels(label_list, all_features,
+                                                             idx2id_dic=idx2id_dic)
 
         # Split datasets into folds.
         skf = StratifiedKFold(n_splits=args.gen_cv_k, shuffle=False)
@@ -890,66 +921,58 @@ def main_train(args):
             else:
                 train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx], [labels[idx] for idx in list_tr_idx])
 
-            if run_hpo_gen_cv:
+            # Batch loaders.
+            train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+            val_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+            test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
-                # Report set sizes.
-                c_train = len(list_tr_idx) - len(list_te_idx)
-                c_test = len(list_te_idx)
-                c_val = len(list_te_idx)
-                print("# training instances:    %i" %(c_train))
-                print("# validation instances:  %i" %(c_val))
-                print("# test instances:        %i" %(c_test))
+            # Report set sizes.
+            c_train = len(list_tr_idx) - len(list_te_idx)
+            c_test = len(list_te_idx)
+            c_val = len(list_te_idx)
+            print("# training instances:    %i" %(c_train))
+            print("# validation instances:  %i" %(c_val))
+            print("# test instances:        %i" %(c_test))
 
-                # Plot learning curves.
-                plot_lc_folder = False
-                if args.plot_lc:
-                    plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
+            # Plot learning curves.
+            plot_lc_folder = False
+            if args.plot_lc:
+                plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
 
-                # Get optimal parameters for this CV split.
-                opt_dic = rnn_util.select_model(args, num_features, train_dataset,
-                                                val_dataset, model_folder,
-                                                device, criterion,
-                                                verbose=args.verbose_train,
-                                                plot_lc_folder=plot_lc_folder)
+            # Model path.
+            model_path = model_folder + "/gen_cv.model"
 
-                opt_batch_size = opt_dic["opt_batch_size"]
-                opt_n_hidden_dim = opt_dic["opt_n_hidden_dim"]
-                opt_n_hidden_layers = opt_dic["opt_n_hidden_layers"]
-                opt_weight_decay = opt_dic["opt_weight_decay"]
-                opt_lr = opt_dic["opt_lr"]
-                opt_dr = opt_dic["opt_dr"]
-                opt_acc = opt_dic["opt_acc"]
-                opt_auc = opt_dic["opt_auc"]
-                opt_epochs = opt_dic["opt_epochs"]
+            # Train model on fold dataset.
+            val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
+                                                              val_loader, model_path,
+                                                              device, criterion,
+                                                              fold_i=i_cv,
+                                                              verbose=args.verbose_train,
+                                                              plot_lc_folder=plot_lc_folder)
 
-                model = GRUModel(num_features, opt_n_hidden_dim, opt_n_hidden_layers,
-                                 2, device, dr=opt_dr).to(device)
+            # Get model test set performance.
+            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path
+                                                     device, criterion)
 
-                model_path = model_folder + "/" + str(opt_batch_size) + "_" + str(opt_n_hidden_layers) + "_" + str(opt_n_hidden_dim) + "_" + str(opt_weight_decay) + "_" + str(opt_lr) + "_" + str(opt_dr)
-                model.load_state_dict(torch.load(model_path))
-
-                # Get test error of optimized model.
-                test_loader = DataLoader(dataset=test_dataset, batch_size=opt_batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
-                loss, acc, auc = rnn_util.test(test_loader, model, criterion)
-
-            else:
-                # Do not use this option anymore.
-                assert False, "invalid option"
-
-            # Store test accuracy and AUC.
+            # Store test ACC and AUC.
             acc_list.append(acc)
             auc_list.append(auc)
-            with open(cv_results_file, 'a+') as f:
-                f.write(str(acc) + "\t" + str(auc) + "\n")
-            print("Selected model accuracy:  %f" %(acc))
-            print("Selected model AUC:       %f" %(auc))
 
-            # Output model state dictionary and optimized hyperparameters.
-            OPTHP.write("%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" %(i_cv, str(opt_batch_size), str(opt_n_hidden_layers), str(opt_n_hidden_dim), str(opt_weight_decay), str(opt_lr), str(opt_dr), str(acc), str(auc) ))
+            # Report fold ACC+AUC.
+            print("Model test accuracy:  %f" %(acc))
+            print("Model test AUC:       %f" %(auc))
 
-        OPTHP.close()
+        # Output CV results by round.
+        CVROUT = open(cv_results_file, "w")
+        CVROUT.write("fold\tACC\tAUC\n")
+        for idx in range(0, i_cv):
+            cv_round = idx + 1
+            round_acc = acc_list[cv_round]
+            round_auc = auc_list[cv_round]
+            CVROUT.write("%i\t%f\t%f\n" %(cv_round, round_acc, round_auc))
+        CVROUT.close()
 
-        # Report average accuracy / AUC with stdev.
+        # Report average ACC / AUC with stdev.
         avg_acc = statistics.mean(acc_list)
         stdev_acc = statistics.stdev(acc_list)
         avg_auc = statistics.mean(auc_list)
@@ -987,19 +1010,14 @@ def main_train(args):
         if os.path.exists(cv_results_file):
             os.remove(cv_results_file)
 
-        # Chosen hyperparameters + CV results per fold output file.
-        opt_cv_hps_file = out_folder + "/generic_cv_opt_hp.out"
-        OPTHP = open(opt_cv_hps_file, "w")
-        OPTHP.write("fold\topt_batch_size\topt_n_hidden_layers\topt_n_hidden_dim\topt_weight_decay\topt_lr\topt_dr\tacc\tauc\n")
-
         acc_list = []
         auc_list = []
+        rbp_label_list = []
         i_cv = 0
 
         all_pos_feat = []
         all_neg_feat = []
         all_pos_feat_labels = []
-
 
         for idx,feat in enumerate(all_features):
             feat_label = labels[idx]
@@ -1056,50 +1074,50 @@ def main_train(args):
             test_dataset = RNNDataset(test_feat, test_feat_labels)
             val_dataset = RNNDataset(val_feat, val_feat_labels)
 
-            # Plot learning curves.
+            # B*tch loaders.
+            train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+            val_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+            test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+
+            # Plot learning curves: yes [] no [] maybe [].
             plot_lc_folder = False
             if args.plot_lc:
                 plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
 
-            # Get optimal parameters for this CV split.
-            opt_dic = rnn_util.select_model(args, num_features, train_dataset,
-                                            val_dataset, model_folder,
-                                            device, criterion,
-                                            verbose=args.verbose_train,
-                                            plot_lc_folder=plot_lc_folder)
+            # Model path to luck.
+            model_path = model_folder + "/gen_cv.model"
 
-            opt_batch_size = opt_dic["opt_batch_size"]
-            opt_n_hidden_dim = opt_dic["opt_n_hidden_dim"]
-            opt_n_hidden_layers = opt_dic["opt_n_hidden_layers"]
-            opt_weight_decay = opt_dic["opt_weight_decay"]
-            opt_lr = opt_dic["opt_lr"]
-            opt_dr = opt_dic["opt_dr"]
-            opt_acc = opt_dic["opt_acc"]
-            opt_auc = opt_dic["opt_auc"]
-            opt_epochs = opt_dic["opt_epochs"]
+            # Train model on fold dataset.
+            val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
+                                                              val_loader, model_path,
+                                                              device, criterion,
+                                                              fold_i=i_cv,
+                                                              verbose=args.verbose_train,
+                                                              plot_lc_folder=plot_lc_folder)
 
-            model = GRUModel(num_features, opt_n_hidden_dim, opt_n_hidden_layers,
-                             2, device, dr=opt_dr).to(device)
+            # Get model test set performance.
+            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path
+                                                     device, criterion)
 
-            model_path = model_folder + "/" + str(opt_batch_size) + "_" + str(opt_n_hidden_layers) + "_" + str(opt_n_hidden_dim) + "_" + str(opt_weight_decay) + "_" + str(opt_lr) + "_" + str(opt_dr)
-            model.load_state_dict(torch.load(model_path))
-
-            # Get test error of optimized model.
-            test_loader = DataLoader(dataset=test_dataset, batch_size=opt_batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
-            loss, acc, auc = rnn_util.test(test_loader, model, criterion)
-
-            # Store test accuracy and AUC.
+            # Store test ACC and AUC.
             acc_list.append(acc)
             auc_list.append(auc)
-            with open(cv_results_file, 'a+') as f:
-                f.write(str(acc) + "\t" + str(auc) + "\n")
-            print("Generic model accuracy:  %f" %(acc))
-            print("Generic model AUC:       %f" %(auc))
+            rbp_label_list.append(rbp_label)
 
-            # Output model state dictionary and optimized hyperparameters.
-            OPTHP.write("%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" %(i_cv, rbp_label, str(opt_batch_size), str(opt_n_hidden_layers), str(opt_n_hidden_dim), str(opt_weight_decay), str(opt_lr), str(opt_dr), str(acc), str(auc) ))
+            # Report fold ACC+AUC.
+            print("Generic model test accuracy:  %f" %(acc))
+            print("Generic model test AUC:       %f" %(auc))
 
-        OPTHP.close()
+        # Output CV results by round.
+        CVROUT = open(cv_results_file, "w")
+        CVROUT.write("fold\tRBP\tACC\tAUC\n")
+        for idx in range(0, i_cv):
+            cv_round = idx + 1
+            rbp_label = rbp_label_list[cv_round]
+            round_acc = acc_list[cv_round]
+            round_auc = auc_list[cv_round]
+            CVROUT.write("%i\t%s\t%f\t%f\n" %(cv_round, rbp_label, round_acc, round_auc))
+        CVROUT.close()
 
         # Report average accuracy with stdev.
         avg_acc = statistics.mean(acc_list)
@@ -1122,11 +1140,12 @@ def main_train(args):
     Train final model.
 
     Do this by taking the whole training set, then split into train and
-    validation set (validation set size can be set by --train-vs).
-    Do hyperparameter optimization on the train set, and evaluate each
-    combination on the validation set. Select the best combination, and
-    output the respective model as final model. By default there is
-    only one combination, so this happens only once.
+    validation set (validation set size can be set by --val-size).
+    Use either the specified hyperparameters (via command line), or
+    run BOHB hyperparameter optimization with --run-bohb. If --run-bohb
+    is set, the final model will be trained using the optimized
+    hyperparameters returned by Mr BOHB himself.
+    NOTE that if --test, --val-size determines size of extra test set.
 
     """
 
@@ -1138,29 +1157,163 @@ def main_train(args):
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
 
-    print("")
+    # Keep order of splits?
+    random_state = None
+    if args.keep_order:
+        random_state = 1
 
-    if run_hpo:
-        print("Train final model (HPO enabled, 1 split only) ... ")
+    val_set_perc = args.val_size * 100
+    if args.test_set:
+        print("Using %.1f" %(val_set_perc) + '% ' + " for validation and testing ... ")
+
     else:
-        print("Train final model (1 split only) ... ")
-
-    val_set_perc = args.train_vs * 100
-    print("Using %.1f" %(val_set_perc) + '% ' + "of training instances for validation ... ")
+        print("Using %.1f" %(val_set_perc) + '% ' + " for validation ... ")
 
     # Make one train-validation split.
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=args.train_vs)
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=args.val_size, random_state=random_state)
+
+    list_train_features = []
+    list_train_labels = []
+    list_test_features = []
+    list_test_labels = []
+    list_val_features = []
+    list_val_labels = []
 
     for list_tr_idx, list_val_idx in sss.split(np.zeros(len(labels)), labels):
+        list_test_idx = []
+        n_val_idx = len(list_val_idx)
+        list_new_tr_idx = list_tr_idx
+        if args.test_set:
+            list_test_idx = list_tr_idx[-n_val_idx:]
+            list_new_tr_idx = list_tr_idx[:-n_val_idx]
+        for idx,label in enumerate(labels):
+            if idx in list_test_idx:
+                list_test_features.append(all_features[idx])
+                list_test_labels.append(labels[idx])
+            elif idx in list_val_idx:
+                list_val_features.append(all_features[idx])
+                list_val_labels.append(labels[idx])
+            else:
+                list_train_features.append(all_features[idx])
+                list_train_labels.append(labels[idx])
 
-        train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx], [labels[idx] for idx in list_tr_idx])
-        val_dataset = RNNDataset([all_features[idx] for idx in list_val_idx], [labels[idx] for idx in list_val_idx])
+    # Joint shuffle label + feature lists.
+    list_train_labels, list_train_features = rplib.shuffle_idx_feat_labels(list_train_labels, list_train_features)
+    list_val_labels, list_val_features = rplib.shuffle_idx_feat_labels(list_val_labels, list_val_features)
+    train_dataset = RNNDataset(list_train_features, list_train_labels)
+    val_dataset = RNNDataset(list_val_features, list_val_labels)
+    c_train = len(list_train_labels)
+    c_val = len(list_val_labels)
+    print("# training instances:    %i" %(c_train))
+    print("# validation instances:  %i" %(c_val))
+    if args.test_set:
+        list_test_labels, list_test_features = rplib.shuffle_idx_feat_labels(list_test_labels, list_test_features)
+        test_dataset = RNNDataset(list_test_features, list_test_labels)
+        c_test = len(list_test_labels)
+        print("# test instances:        %i" %(c_test))
 
-        # Report set sizes.
-        c_train = len(list_tr_idx)
-        c_val = len(list_val_idx)
-        print("# training instances:    %i" %(c_train))
-        print("# validation instances:  %i" %(c_val))
+    """
+    If --run-bohb is set, run BOHB (part of HpBandSter package) to get
+    optimized parameters.
+    Otherwise, train final model with default parameters found in args.
+
+    """
+
+    # To store HPs for final model.
+    opt_dic = {}
+    opt_dic["batch_size"] = args.batch_size
+    opt_dic["n_rnn_dim"] = args.n_rnn_dim
+    opt_dic["n_rnn_layers"] = args.n_rnn_layers
+    opt_dic["weight_decay"] = args.weight_decay
+    opt_dic["learn_rate"] = args.learn_rate
+    opt_dic["dropout_rate"] = args.dropout_rate
+    opt_dic["bidirect"] = args.bidirect
+    opt_dic["add_fc_layer"] = args.add_fc_layer
+    opt_dic["rnn_type"] = args.rnn_type
+    opt_dic["embed_dim"] = args.embed_dim
+
+    if args.run_bohb:
+
+        # BOHB output folder.
+        bohb_out_folder = out_folder + "/bohb_out"
+        if not os.path.exists(bohb_out_folder):
+            os.makedirs(bohb_out_folder)
+
+        print("Starting BOHB (!) ... ")
+        best_hp_dic, best_acc, best_auc  = rnn_util.run_BOHB(args, train_dataset,
+                                                    val_dataset, bohb_out_folder,
+                                                    n_bohb_iter=10,
+                                                    min_budget=3,
+                                                    max_budget=27)
+
+        # Get keys.
+        opt_keys = []
+        for key in res_dic:
+            opt_keys.append(key)
+            assert key in opt_dic, "optimized HP key %s not in opt_dic HP dictionary" %(key)
+            opt_dic[key] = res_dic[key]
+        print("HPs optimized by BOHB:\n")
+        print(opt_keys)
+        print("Optimal HPs:")
+        # report AUC /ACC
+
+        #write new HPs to params file, test on test_dataset if exists.
+
+    # Train final model, with or without BOHB.
+
+
+
+
+
+
+
+"""
+run_BOHB(n_bohb_iter=10, min_budget=5, max_budget=50, train_loader=train_loader, val_loader=val_loader, dataset_name=dataset_name)
+print('Done run Bohb')
+eval_BOHB(working_dir='hpo_results', result_file=dataset_name + "_bohb_result.pkl", save=True, dataset_name=dataset_name)
+
+returns:
+dropout_rate: 0.0856596584322409
+lr: 0.0004564820428559883
+wd: 0.0036776377522071343
+
+"""
+
+
+    # Embedding (by default True).
+    args.embed = True
+    args.embed_k = 1
+    args.embed_vocab_size = 4**args.embed_k + 1
+    args.embed_dim = 10
+    kmer2idx_dic = False
+    if args.embed:
+        kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
+    args.add_feat = False
+    if indiv_feat_check:
+        args.add_feat = True
+
+    # Number of classes.
+    args.n_class = 1
+
+    # Bidirectional.
+    args.bidirect = False
+    if args.rnn_type == 1 or args.rnn_type == 2:
+        args.bidirect = True
+
+    # Additional FC layer.
+    args.add_fc_layer = False
+    if args.n_fc_layers == 2:
+        args.add_fc_layer = True
+
+
+
+
+
+
+
+
+    else:
+
 
         # Plot learning curves.
         plot_lc_folder = False
@@ -1188,6 +1341,21 @@ def main_train(args):
         model_path = model_folder + "/" + str(opt_batch_size) + "_" + str(opt_n_hidden_layers) + "_" + str(opt_n_hidden_dim) + "_" + str(opt_weight_decay) + "_" + str(opt_lr) + "_" + str(opt_dr)
         assert os.path.exists(model_path), "missing model file (path: %s)" %(model_path)
         rplib.move_rename_file(model_path, final_model_path)
+
+        # If hold-out set prediction should be done with final model.
+        if ho_idx_dic:
+            # Load final model.
+            model = GRUModel(num_features, opt_n_hidden_dim, opt_n_hidden_layers,
+                             2, device, dr=opt_dr).to(device)
+            model.load_state_dict(torch.load(final_model_path))
+
+            # Get test error of final model.
+            assert test_dataset, "--hold-out-ids given but test_dataset empty"
+            test_loader = DataLoader(dataset=test_dataset, batch_size=opt_batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+            loss, acc, auc = rnn_util.test(test_loader, model, criterion)
+
+            print("Final model accuracy on --hold-out-ids:  %f" %(acc))
+            print("Final model AUC on --hold-out-ids:       %f" %(auc))
 
         # Write model params file.
         PAROUT = open(final_params_path, "w")

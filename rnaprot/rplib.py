@@ -51,6 +51,7 @@ def read_fasta_into_dic(fasta_file,
                         skip_n_seqs=True):
     """
     Read in FASTA sequences, store in dictionary and return dictionary.
+    FASTA file can be plain text or gzipped (watch out for .gz ending).
 
     >>> test_fasta = "test_data/test.fa"
     >>> read_fasta_into_dic(test_fasta)
@@ -60,32 +61,37 @@ def read_fasta_into_dic(fasta_file,
     if not seqs_dic:
         seqs_dic = {}
     seq_id = ""
-    # Go through FASTA file, extract sequences.
-    with open(fasta_file) as f:
-        for line in f:
-            if re.search(">.+", line):
-                m = re.search(">(.+)", line)
-                seq_id = m.group(1)
-                assert seq_id not in seqs_dic, "non-unique FASTA header \"%s\" in \"%s\"" % (seq_id, fasta_file)
-                if ids_dic:
-                    if seq_id in ids_dic:
-                        seqs_dic[seq_id] = ""
-                else:
+
+    # Open FASTA either as .gz or as text file.
+    if re.search(".+\.gz$", fasta_file):
+        f = gzip.open(fasta_file, 'rt')
+    else:
+        f = open(fasta_file, "r")
+    for line in f:
+        if re.search(">.+", line):
+            m = re.search(">(.+)", line)
+            seq_id = m.group(1)
+            assert seq_id not in seqs_dic, "non-unique FASTA header \"%s\" in \"%s\"" % (seq_id, fasta_file)
+            if ids_dic:
+                if seq_id in ids_dic:
                     seqs_dic[seq_id] = ""
-            elif re.search("[ACGTUN]+", line, re.I):
-                m = re.search("([ACGTUN]+)", line, re.I)
-                seq = m.group(1)
-                if seq_id in seqs_dic:
-                    if dna:
-                        # Convert to DNA, concatenate sequence.
-                        seq = seq.replace("U","T").replace("u","t")
-                    else:
-                        # Convert to RNA, concatenate sequence.
-                        seq = seq.replace("T","U").replace("t","u")
-                    if all_uc:
-                        seq = seq.upper()
-                    seqs_dic[seq_id] += seq
-    f.closed
+            else:
+                seqs_dic[seq_id] = ""
+        elif re.search("[ACGTUN]+", line, re.I):
+            m = re.search("([ACGTUN]+)", line, re.I)
+            seq = m.group(1)
+            if seq_id in seqs_dic:
+                if dna:
+                    # Convert to DNA, concatenate sequence.
+                    seq = seq.replace("U","T").replace("u","t")
+                else:
+                    # Convert to RNA, concatenate sequence.
+                    seq = seq.replace("T","U").replace("t","u")
+                if all_uc:
+                    seq = seq.upper()
+                seqs_dic[seq_id] += seq
+    f.close()
+
     # Check if sequences read in.
     assert seqs_dic, "no sequences read in (input FASTA file \"%s\" empty or mal-formatted?)" %(fasta_file)
     # If sequences with N nucleotides should be skipped.
@@ -301,140 +307,6 @@ def update_sequence_viewpoint(seq, vp_s, vp_e):
     ds_seq = seq[vp_e:].lower()
     new_seq = us_seq + vp_seq + ds_seq
     return new_seq
-
-
-################################################################################
-
-def extract_viewpoint_regions_from_fasta(seqs_dic,
-                                         vp_s_dic=False,
-                                         vp_e_dic=False,
-                                         center_vp=False,
-                                         id2se_dic=None,
-                                         get_se_dic=False,
-                                         vp_ext=False):
-    """
-    Extract viewpoint start and end positions from FASTA dictionary.
-    Return dictionaries for start+end (1-based indices, key:fasta_id).
-    Set center_vp to center the extracted viewpoints, and vp_ext to
-    bring all viewpoints to same length 1+2*vp_ext
-
-    get_se_dic:
-        Store viewpoint starts and ends for each ID in dictionary with
-        format: ID -> [start, end], return this dictionary instead of
-        two vp dics.
-
-    >>> seqs_dic = {"id1": "acguACGUacgu", "id2": "ACGUacgu"}
-    >>> vp_s, vp_e = extract_viewpoint_regions_from_fasta(seqs_dic)
-    >>> vp_s["id1"] == 5
-    True
-    >>> vp_e["id1"] == 8
-    True
-    >>> vp_s["id2"] == 1
-    True
-    >>> vp_e["id2"] == 4
-    True
-    >>> vp_s, vp_e = extract_viewpoint_regions_from_fasta(seqs_dic, center_vp=True)
-    >>> vp_s["id1"] == 7
-    True
-    >>> vp_e["id1"] == 7
-    True
-    >>> vp_s, vp_e = extract_viewpoint_regions_from_fasta(seqs_dic, center_vp=True, vp_ext=2)
-    >>> vp_s["id1"] == 5
-    True
-    >>> vp_e["id1"] == 9
-    True
-    >>> vp_s, vp_e = extract_viewpoint_regions_from_fasta(seqs_dic, center_vp=True, vp_ext=3)
-    >>> vp_s["id2"] == 1
-    True
-    >>> vp_e["id2"] == 6
-    True
-    >>> extract_viewpoint_regions_from_fasta(seqs_dic, get_se_dic=True)
-    {'id1': [5, 8], 'id2': [1, 4]}
-
-    """
-    if not vp_s_dic:
-        vp_s_dic = {}
-    if not vp_e_dic:
-        vp_e_dic = {}
-    if id2se_dic is None:
-        id2se_dic = {}
-    # Sanity check vp_ext.
-    if vp_ext:
-        if vp_ext < 0 or vp_ext > 100:
-            print ("ERROR: vp_ext set too high (vp_ext=%i) Set vp_ext between 0 and 100." % (vp_ext))
-            sys.exit()
-    # Get viewpoint starts+ends (= uppercase nucleotide labels) for each sequence.
-    for seq_id, seq in sorted(seqs_dic.items()):
-        l_seq = len(seq)
-        m = re.search("([acgun]*)([ACGUN]+)", seq)
-        if m:
-            l_us = len(m.group(1))
-            l_vp = len(m.group(2))
-            # If viewpoint length 0.
-            if not l_vp:
-                print ("ERROR: no viewpoint found for \"%s\"" % (seq_id))
-                sys.exit()
-            vp_s = l_us+1
-            vp_e = l_us+l_vp
-            # If center_vp, center viewpoint region.
-            if center_vp:
-                 vp_s = round(vp_s + (l_vp/2))
-                 vp_e = vp_s
-            # If vp_ext, extend vp region by vp_ext (new vp region).
-            if vp_ext:
-                vp_s = vp_s - vp_ext
-                if vp_s < 1:
-                    vp_s = 1
-                vp_e = vp_e + vp_ext
-                if vp_e > l_seq:
-                    vp_e = l_seq
-            # Store coordinates in hash.
-            if get_se_dic:
-                id2se_dic[seq_id] = [vp_s, vp_e]
-            else:
-                vp_s_dic[seq_id] = vp_s
-                vp_e_dic[seq_id] = vp_e
-        else:
-            print ("ERROR: viewpoint extraction failed for \"%s\"" % (seq_id))
-            sys.exit()
-    if get_se_dic:
-        assert id2se_dic, "id2se_dic empty"
-        return id2se_dic
-    else:
-        return vp_s_dic, vp_e_dic
-
-
-################################################################################
-
-def extract_uc_region_coords_from_fasta(seqs_dic,
-                                        uc_coords_dic=False):
-    """
-    Extract uppercase (viewpoint) start + end positions from FASTA dictionary.
-    Return dictionary with vectors [start,end] (1-based indices, key:fasta_id).
-
-    >>> seqs_dic = {"id1": "acguACGUacgu", "id2": "ACGUacgu"}
-    >>> extract_uc_region_coords_from_fasta(seqs_dic)
-    {'id1': [5, 8], 'id2': [1, 4]}
-
-    """
-    assert seqs_dic, "given seqs_dic empty"
-    if not uc_coords_dic:
-        uc_coords_dic = {}
-    # Get uppercase region coordinates for each sequence.
-    for seq_id, seq in sorted(seqs_dic.items()):
-        l_seq = len(seq)
-        m = re.search("([acgun]*)([ACGUN]+)", seq)
-        if m:
-            l_us = len(m.group(1))
-            l_vp = len(m.group(2))
-            # If viewpoint length 0.
-            assert l_vp, "no viewpoint found for \"%s\"" % (seq_id)
-            vp_s = l_us+1
-            vp_e = l_us+l_vp
-            uc_coords_dic[seq_id] = [vp_s, vp_e]
-        else:
-            assert False, "viewpoint extraction failed for ID \"%s\" with sequence \"%s\"" % (seq_id, seq)
-    return uc_coords_dic
 
 
 ################################################################################
@@ -3756,7 +3628,7 @@ def gtf_extract_gene_bed(in_gtf, out_bed,
             if not gene_id in gene_ids_dic:
                 continue
 
-        # Output genomic exon region.
+        # Output gene region.
         c_out += 1
         OUTBED.write("%s\t%i\t%i\t%s\t0\t%s\n" % (chr_id,feat_s,feat_e,gene_id,feat_pol))
 
@@ -9372,7 +9244,8 @@ def generate_top_kmer_md_table(pos_kmer_dic, neg_kmer_dic,
 
 ################################################################################
 
-def convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic):
+def convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic,
+                                  l2d=False):
     """
     Convert RNA sequence to k-mer embedding (mapping k-mers to numbers). Returns
     k-mer index list with length LL = ((LS - k) / s) + 1
@@ -9380,11 +9253,17 @@ def convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic):
     LL (returned list length)
     LL = 5-3+1 = 3
 
+    l2d:
+        Instead of returning list of indices, return list of lists of indices.
+
     >>> seq = "ACGUA"
     >>> kmer2idx_dic = {'AA': 1, 'AC': 2, 'AG': 3, 'AU': 4, 'CA': 5, 'CC': 6, 'CG': 7, 'CU': 8, 'GA': 9, 'GC': 10, 'GG': 11, 'GU': 12, 'UA': 13, 'UC': 14, 'UG': 15, 'UU': 16}
     >>> k = 2
     >>> convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic)
     [2, 7, 12, 13]
+    >>> convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic, l2d=True)
+    [[2], [7], [12], [13]]
+
 
     """
     assert seq, "invalid seq given"
@@ -9398,7 +9277,10 @@ def convert_seq_to_kmer_embedding(seq, k, kmer2idx_dic):
         kmer = seq[win_s:win_e]
         assert kmer in kmer2idx_dic, "k-mer %s not in kmer2idx_dic" %(kmer)
         k_idx = kmer2idx_dic[kmer]
-        kmer_idx_list.append(k_idx)
+        if l2d:
+            kmer_idx_list.append([k_idx])
+        else:
+            kmer_idx_list.append(k_idx)
     assert kmer_idx_list, "kmer_idx_list empty"
     return kmer_idx_list
 
@@ -10674,6 +10556,7 @@ def read_str_feat_into_dic(str_feat_file,
 
 def load_training_data(args,
                        store_tensors=True,
+                       kmer2idx_dic=False,
                        li2label_dic=None):
 
     """
@@ -10681,6 +10564,8 @@ def load_training_data(args,
     return training data as:
     seqs_dic, idx2id_dic, label_list, all_fatures
 
+    kmer2idx_dic:
+        Provide k-mer to index mapping dictionary for k-mer embedding.
     store_tensors:
         Store data as tensors in returned all_features.
     li2label_dic:
@@ -10692,6 +10577,9 @@ def load_training_data(args,
 
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
+    if args.embed:
+        assert kmer2idx_dic, "embed enabled but missing kmer2idx_dic"
+        assert args.embed_k, "embed enabled but missing embed_k"
 
     # Feature file containing info for features inside --in folder.
     feat_file = args.in_folder + "/" + "features.out"
@@ -10821,14 +10709,20 @@ def load_training_data(args,
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
     for seq_id in seqs_dic:
         seq = seqs_dic[seq_id]
-        feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
-
-    # Add sequence one-hot channels.
-    for c in fid2cat_dic["fa"]:
-        channel_nr += 1
-        channel_id = c
-        channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
-        channel_info_list.append(channel_info)
+        if args.embed:
+            feat_id[seq_id] = convert_seq_to_kmer_embedding(seq, args.embed_k, kmer2idx_dic,
+                                                            l2d=True)
+            # Add sequence embedding channel.
+            channel_info = "%i\t%s\tfa\tC\tembedding" %(channel_nr, channel_id)
+            channel_info_list.append(channel_info)
+        else:
+            feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
+            # Add sequence one-hot channels.
+            for c in fid2cat_dic["fa"]:
+                channel_nr += 1
+                channel_id = c
+                channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+                channel_info_list.append(channel_info)
 
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
@@ -11071,691 +10965,6 @@ def shuffle_idx_feat_labels(labels, features,
     if idx2id_dic:
         idx2id_dic = idx2id_dic_new
     return new_labels, features
-
-
-################################################################################
-
-def load_geo_training_data(args,
-                           data_id="data",
-                           li2label_dic=None,
-                           add_info_out=True):
-
-    """
-    Load training data from data folder generated by rnaprot gt and
-    store data in PyG format.
-
-    features.out example:
-    fa	C	A,C,G,U	-
-    bpp.str	N	bp_prob	prob
-    elem_p.str	N	p_u,p_e,p_h,p_i,p_m,p_s	prob
-    pc.con	N	phastcons_score	prob
-    pp.con	N	phylop_score	mean
-    tra	C	A,B,C,E,F,S,T,Z	-
-    rra	C	N,R	-
-
-    """
-
-    # Checks.
-    assert os.path.exists(args.in_folder), "--in folder does not exist"
-
-    # Feature file containing info for features inside --in folder.
-    feat_file = args.in_folder + "/" + "features.out"
-    assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
-
-    # Data ID.
-    data_id = data_id
-    # rnaprot train output folder.
-    out_folder = args.out_folder
-    if not os.path.exists(out_folder):
-        os.makedirs(out_folder)
-    # PyTorch geometric data output folder.
-    data_out_folder = args.out_folder + "/" + data_id
-    if not os.path.exists(data_out_folder):
-        os.makedirs(data_out_folder)
-
-    # Raw and processed data subfolders (structure dictated by PTG).
-    raw_out_folder = data_out_folder + "/raw"
-    proc_out_folder = data_out_folder + "/processed"
-    if not os.path.exists(raw_out_folder):
-        os.makedirs(raw_out_folder)
-    if not os.path.exists(proc_out_folder):
-        os.makedirs(proc_out_folder)
-
-    # Output additional infos (sequences + IDs)?
-    add_out_folder = data_out_folder + "/add_info"
-    pos_add_ids_out_file = False
-    neg_add_ids_out_file = False
-    pos_add_seqs_out_file = False
-    neg_add_seqs_out_file = False
-    if add_info_out:
-        if not os.path.exists(add_out_folder):
-            os.makedirs(add_out_folder)
-        pos_add_ids_out_file = add_out_folder + "/positives.add_info.ids"
-        neg_add_ids_out_file = add_out_folder + "/negatives.add_info.ids"
-        pos_add_seqs_out_file = add_out_folder + "/positives.add_info.fa"
-        neg_add_seqs_out_file = add_out_folder + "/negatives.add_info.fa"
-
-    # Delete old .pt files.
-    processed_file = proc_out_folder + "/data.pt"
-    if os.path.exists(processed_file):
-        print("Remove existing data.pt file ... ")
-        os.remove(processed_file)
-
-    # Channel info output file.
-    channel_infos_out = out_folder + "/" + "channel_infos.out"
-    channel_info_list = []
-    channel_nr = 0
-
-    # Read in feature info.
-    fid2type_dic = {}
-    fid2cat_dic = {} # Store category labels or numerical score IDs in list.
-    fid2norm_dic = {}
-    print("Read in feature infos from %s ... " %(feat_file))
-    with open(feat_file) as f:
-        for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            feat_id = cols[0]
-            feat_type = cols[1]
-            feat_cat_list = cols[2].split(",")
-            feat_cat_list.sort()
-            feat_norm = cols[3]
-            assert feat_id not in fid2type_dic, "feature ID \"%s\" found twice in feature file" %(feat_id)
-            fid2type_dic[feat_id] = feat_type
-            fid2cat_dic[feat_id] = feat_cat_list
-            fid2norm_dic[feat_id] = feat_norm
-    f.closed
-    assert fid2type_dic, "no feature IDs read in from feature file %s" %(feat_file)
-
-    # Read in FASTA sequences.
-    pos_fa_in = args.in_folder + "/" + "positives.fa"
-    neg_fa_in = args.in_folder + "/" + "negatives.fa"
-    assert os.path.exists(pos_fa_in), "--in folder does not contain %s"  %(pos_fa_in)
-    assert os.path.exists(neg_fa_in), "--in folder does not contain %s"  %(neg_fa_in)
-
-    # Check sequence feature.
-    assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
-    seqs_all_uc = False
-    if fid2cat_dic["fa"] == ["A", "C", "G", "U"]:
-        seqs_all_uc = True
-    elif fid2cat_dic["fa"] == ["A", "C", "G", "U", "a", "c", "g", "u"]:
-        if args.uc_context:
-            seqs_all_uc = True
-    else:
-        assert False, "sequence feature alphabet != A,C,G,U(,a,c,g,u)"
-
-    # Read in sequences.
-    pos_seqs_dic = read_fasta_into_dic(pos_fa_in, all_uc=seqs_all_uc)
-    neg_seqs_dic = read_fasta_into_dic(neg_fa_in, all_uc=seqs_all_uc)
-    assert pos_seqs_dic, "no sequences read in from FASTA file \"%s\"" %(pos_fa_in)
-    assert neg_seqs_dic, "no sequences read in from FASTA file \"%s\"" %(neg_fa_in)
-
-    # Check for 4 (8) distinct nucleotides.
-    pos_cc_dic = seqs_dic_count_chars(pos_seqs_dic)
-    neg_cc_dic = seqs_dic_count_chars(neg_seqs_dic)
-    allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1}
-    c_nts = 4
-    if not seqs_all_uc:
-        allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1, 'a': 1, 'c': 1, 'g': 1, 'u': 1}
-        c_nts = 8
-    for nt in pos_cc_dic:
-        if nt not in allowed_nt_dic:
-            assert False, "positive sequences with invalid character \"%s\" encountered (allowed characters: ACGU(acgu)" %(nt)
-    assert len(pos_cc_dic) == c_nts, "# of distinct nucleotide characters in positive set != expected # (%i != %i)" %(len(pos_cc_dic), c_nts)
-    for nt in neg_cc_dic:
-        if nt not in allowed_nt_dic:
-            assert False, "negative sequences with invalid character \"%s\" encountered (allowed characters: ACGU(acgu)" %(nt)
-    assert len(neg_cc_dic) == c_nts, "# of distinct nucleotide characters in negative set != expected # (%i != %i)" %(len(neg_cc_dic), c_nts)
-
-    # Get con_ext info used to create dataset.
-    con_ext_str = "False"
-    gt_settings_file = args.in_folder + "/settings.rnaprot_gt.out"
-    assert os.path.exists(gt_settings_file), "rnaprot gt settings file %s not found" %(gt_settings_file)
-    with open(gt_settings_file) as f:
-        for line in f:
-            cols = line.strip().split("\t")
-            if cols[0] == "con_ext":
-                if cols[1] != "False":
-                    con_ext_str = cols[1]
-    f.closed
-    if seqs_all_uc:
-        con_ext_str = "False"
-    # Add info to train settings file.
-    train_settings_file = args.out_folder + "/settings.rnaprot_train.out"
-    SETOUT = open(train_settings_file, "a")
-    SETOUT.write("con_ext\t%s\n" %(con_ext_str))
-    SETOUT.close()
-
-    # Get uppercase (viewpoint) region start and ends for each sequence.
-    pos_vp_dic = extract_uc_region_coords_from_fasta(pos_seqs_dic)
-    neg_vp_dic = extract_uc_region_coords_from_fasta(neg_seqs_dic)
-
-    # Additional features.
-    pos_pc_con_in = args.in_folder + "/" + "positives.pc.con"
-    neg_pc_con_in = args.in_folder + "/" + "negatives.pc.con"
-    pos_pp_con_in = args.in_folder + "/" + "positives.pp.con"
-    neg_pp_con_in = args.in_folder + "/" + "negatives.pp.con"
-    pos_tra_in = args.in_folder + "/" + "positives.tra"
-    neg_tra_in = args.in_folder + "/" + "negatives.tra"
-    pos_rra_in = args.in_folder + "/" + "positives.rra"
-    neg_rra_in = args.in_folder + "/" + "negatives.rra"
-    pos_eia_in = args.in_folder + "/" + "positives.eia"
-    neg_eia_in = args.in_folder + "/" + "negatives.eia"
-    pos_str_elem_p_in = args.in_folder + "/" + "positives.elem_p.str"
-    neg_str_elem_p_in = args.in_folder + "/" + "negatives.elem_p.str"
-    pos_bpp_in = args.in_folder + "/" + "positives.bpp.str"
-    neg_bpp_in = args.in_folder + "/" + "negatives.bpp.str"
-
-    # Check for individually selected features.
-    indiv_feat_dic = {}
-    if args.use_pc_con:
-        indiv_feat_dic["pc.con"] = 1
-    if args.use_pp_con:
-        indiv_feat_dic["pp.con"] = 1
-    if args.use_eia:
-        indiv_feat_dic["eia"] = 1
-    if args.use_tra:
-        indiv_feat_dic["tra"] = 1
-    if args.use_rra:
-        indiv_feat_dic["rra"] = 1
-    if args.use_str_elem_p:
-        indiv_feat_dic["elem_p.str"] = 1
-    if args.use_bps:
-        indiv_feat_dic["bpp.str"] = 1
-
-
-    # Remove features from fid2type_dic.
-    if indiv_feat_dic:
-        del_feat_list = []
-        for fid in fid2type_dic:
-            if fid == "fa":
-                continue
-            if fid not in indiv_feat_dic:
-                del_feat_list.append(fid)
-        for fid in del_feat_list:
-            del fid2type_dic[fid]
-
-    if args.only_seq:
-        fid2type_dic = {}
-        fid2type_dic["fa"] = "C"
-
-    # Dictionaries.
-    pos_pc_con_dic = False
-    neg_pc_con_dic = False
-    pos_pp_con_dic = False
-    neg_pp_con_dic = False
-    pos_tra_dic = False
-    neg_tra_dic = False
-    pos_rra_dic = False
-    neg_rra_dic = False
-    pos_eia_dic = False
-    neg_eia_dic = False
-    pos_str_elem_p_dic = False
-    neg_str_elem_p_dic = False
-    pos_bpp_dic = False
-    neg_bpp_dic = False
-
-    # Check and read in data.
-    for fid, ftype in sorted(fid2type_dic.items()):
-        if fid == "fa":
-            continue
-        if fid == "bpp.str":
-            assert os.path.exists(pos_bpp_in), "--in folder does not contain %s"  %(pos_bpp_in)
-            assert os.path.exists(neg_bpp_in), "--in folder does not contain %s"  %(neg_bpp_in)
-            print("Read in base pair data ... ")
-            pos_bpp_dic = read_bpp_into_dic(pos_bpp_in, pos_vp_dic,
-                                            bps_mode=args.bps_mode)
-            neg_bpp_dic = read_bpp_into_dic(neg_bpp_in, neg_vp_dic,
-                                            bps_mode=args.bps_mode)
-        if fid == "eia":
-            feat_id = "eia"
-            eia_alphabet = fid2cat_dic[feat_id]
-            assert os.path.exists(pos_eia_in), "--in folder does not contain %s"  %(pos_eia_in)
-            assert os.path.exists(neg_eia_in), "--in folder does not contain %s"  %(neg_eia_in)
-            print("Read in exon-intron annotations ... ")
-            pos_eia_dic = read_feat_into_dic(pos_eia_in, "C",
-                                             label_list=eia_alphabet)
-            neg_eia_dic = read_feat_into_dic(neg_eia_in, "C",
-                                             label_list=eia_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-        if fid == "elem_p.str":
-            feat_id = "elem_p.str"
-            assert os.path.exists(pos_str_elem_p_in), "--in folder does not contain %s"  %(pos_str_elem_p_in)
-            assert os.path.exists(neg_str_elem_p_in), "--in folder does not contain %s"  %(neg_str_elem_p_in)
-            print("Read structural elements probabilities ... ")
-            pos_str_elem_p_dic = read_str_elem_p_into_dic(pos_str_elem_p_in)
-            neg_str_elem_p_dic = read_str_elem_p_into_dic(neg_str_elem_p_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "pc.con":
-            feat_id = "pc.con"
-            assert os.path.exists(pos_pc_con_in), "--in folder does not contain %s"  %(pos_pc_con_in)
-            assert os.path.exists(neg_pc_con_in), "--in folder does not contain %s"  %(neg_pc_con_in)
-            print("Read in phastCons scores ... ")
-            pos_pc_con_dic = read_con_into_dic(pos_pc_con_in)
-            neg_pc_con_dic = read_con_into_dic(neg_pc_con_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "pp.con":
-            feat_id = "pp.con"
-            assert os.path.exists(pos_pp_con_in), "--in folder does not contain %s"  %(pos_pp_con_in)
-            assert os.path.exists(neg_pp_con_in), "--in folder does not contain %s"  %(neg_pp_con_in)
-            print("Read in phyloP scores ... ")
-            pos_pp_con_dic = read_con_into_dic(pos_pp_con_in)
-            neg_pp_con_dic = read_con_into_dic(neg_pp_con_in)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = c
-                encoding = fid2norm_dic[feat_id]
-                channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, feat_id, encoding)
-                channel_info_list.append(channel_info)
-
-        if fid == "rra":
-            feat_id = "rra"
-            rra_alphabet = fid2cat_dic["rra"]
-            assert os.path.exists(pos_rra_in), "--in folder does not contain %s"  %(pos_rra_in)
-            assert os.path.exists(neg_rra_in), "--in folder does not contain %s"  %(neg_rra_in)
-            print("Read in repeat region annotations ... ")
-            pos_rra_dic = read_feat_into_dic(pos_rra_in, "C",
-                                             label_list=rra_alphabet)
-            neg_rra_dic = read_feat_into_dic(neg_rra_in, "C",
-                                             label_list=rra_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-        if fid == "tra":
-            feat_id = "tra"
-            tra_alphabet = fid2cat_dic["tra"]
-            assert os.path.exists(pos_tra_in), "--in folder does not contain %s"  %(pos_tra_in)
-            assert os.path.exists(neg_tra_in), "--in folder does not contain %s"  %(neg_tra_in)
-            print("Read in transcript region annotations ... ")
-            pos_tra_dic = read_feat_into_dic(pos_tra_in, "C",
-                                             label_list=tra_alphabet)
-            neg_tra_dic = read_feat_into_dic(neg_tra_in, "C",
-                                             label_list=tra_alphabet)
-            for c in fid2cat_dic[feat_id]:
-                channel_nr += 1
-                channel_id = feat_id + "_" + c
-                channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, feat_id)
-                channel_info_list.append(channel_info)
-
-    # Write used features.out file to rnaprot train output folder.
-    feat_table_out = args.out_folder + "/" + "features.out"
-    FEATOUT = open(feat_table_out, "w")
-    with open(feat_file) as f:
-        for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            feat_id = cols[0]
-            if feat_id in fid2type_dic:
-                if feat_id == "fa":
-                    if seqs_all_uc:
-                        FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
-                    else:
-                        FEATOUT.write("fa\tC\tA,C,G,U,a,c,g,u\t-\n")
-                else:
-                    FEATOUT.write("%s\n" %(row))
-    f.closed
-    FEATOUT.close()
-
-    # Output channel infos.
-    CIOUT = open(channel_infos_out, "w")
-    CIOUT.write("ch\tch_id\tfeat_id\tfeat_type\tencoding\n")
-    for ch_info in channel_info_list:
-        CIOUT.write("%s\n" %(ch_info))
-    CIOUT.close()
-
-    print("Convert data to PyG format ... ")
-
-    # Convert data to PyTorch geometric format.
-    pos_anl, pos_agi, pos_ae, pos_ana, g_idx, n_idx = generate_geometric_data(pos_seqs_dic,
-                                                                pos_vp_dic,
-                                                                pc_con_dic=pos_pc_con_dic,
-                                                                pp_con_dic=pos_pp_con_dic,
-                                                                eia_dic=pos_eia_dic,
-                                                                rra_dic=pos_rra_dic,
-                                                                tra_dic=pos_tra_dic,
-                                                                str_elem_p_dic=pos_str_elem_p_dic,
-                                                                bpp_dic=pos_bpp_dic,
-                                                                add_ids_out_file=pos_add_ids_out_file,
-                                                                add_seqs_out_file=pos_add_seqs_out_file,
-                                                                bps_mode=args.bps_mode,
-                                                                plfold_bpp_cutoff=args.bps_cutoff)
-    neg_anl, neg_agi, neg_ae, neg_ana, g_idx, n_idx = generate_geometric_data(neg_seqs_dic,
-                                                                neg_vp_dic,
-                                                                pc_con_dic=neg_pc_con_dic,
-                                                                pp_con_dic=neg_pp_con_dic,
-                                                                eia_dic=neg_eia_dic,
-                                                                rra_dic=neg_rra_dic,
-                                                                tra_dic=neg_tra_dic,
-                                                                str_elem_p_dic=neg_str_elem_p_dic,
-                                                                bpp_dic=neg_bpp_dic,
-                                                                add_ids_out_file=neg_add_ids_out_file,
-                                                                add_seqs_out_file=neg_add_seqs_out_file,
-                                                                bps_mode=args.bps_mode,
-                                                                g_idx=g_idx,
-                                                                n_idx=n_idx,
-                                                                plfold_bpp_cutoff=args.bps_cutoff)
-
-    # Create labels.
-    labels = [1]*len(pos_seqs_dic) + [0]*len(neg_seqs_dic)
-
-   # If --gm-cv, use n labels for n RBPs + + "0" label for negatives.
-    if args.gm_cv:
-        # Seen labels dictionary.
-        label_dic = {}
-        # Site ID to label dictionary.
-        id2l_dic = {}
-        # Label index.
-        li = 0
-        for seq_id, seq in sorted(pos_seqs_dic.items()):
-            # Get RBP ID from seq_id.
-                m = re.search("(.+?)_", seq_id)
-                if m:
-                    label = m.group(1)
-                    if not label in label_dic:
-                        li += 1
-                    label_dic[label] = li
-                    id2l_dic[seq_id] = li
-                    if li2label_dic is not None:
-                        li2label_dic[li] = label
-                else:
-                    assert False, "Generic data RBP label extraction failed for \"%s\"" % (seq_id)
-        # Construct positives label vector.
-        labels = []
-        for seq_id, seq in sorted(pos_seqs_dic.items()):
-            label = id2l_dic[seq_id]
-            labels.append(label)
-        # Add negatives to label vector.
-        labels = labels + [0]*len(neg_seqs_dic)
-
-    # Concatenate geometric lists.
-    anl = pos_anl + neg_anl # node (nucleotide) labels.
-    agi = pos_agi + neg_agi # graph indicators.
-    ae = pos_ae + neg_ae # graph edges.
-    ana = pos_ana + neg_ana # node attributes.
-
-    print("Store PyG data on HD ... ")
-
-    # RAW output files.
-    agi_file = raw_out_folder + "/" + data_id + "_graph_indicator.txt"
-    agl_file = raw_out_folder + "/" + data_id + "_graph_labels.txt"
-    anl_file = raw_out_folder + "/" + data_id + "_node_labels.txt"
-    ana_file = raw_out_folder + "/" + data_id + "_node_attributes.txt"
-    ae_file = raw_out_folder + "/" + data_id + "_A.txt"
-    # Write to files.
-    f = open(agi_file, 'w')
-    f.writelines([str(e) + "\n" for e in agi])
-    f.close()
-    f = open(agl_file, 'w')
-    f.writelines([str(e) + "\n" for e in labels])
-    f.close()
-    f = open(anl_file, 'w')
-    f.writelines([str(e) + "\n" for e in anl])
-    f.close()
-    if ana:
-        f = open(ana_file, 'w')
-        f.writelines([s + "\n" for s in ana])
-        f.close()
-    else:
-        if os.path.exists(ana_file):
-            os.remove(ana_file)
-    f = open(ae_file, 'w')
-    f.writelines([str(e[0]) + ", " + str(e[1]) + "\n" for e in ae])
-    f.close()
-
-
-################################################################################
-
-def generate_geometric_data(seqs_dic, vp_dic,
-                            pc_con_dic=False,
-                            pp_con_dic=False,
-                            eia_dic=False,
-                            rra_dic=False,
-                            tra_dic=False,
-                            str_elem_p_dic=False,
-                            bpp_dic=False,
-                            plfold_bpp_cutoff=0.2,
-                            g_idx=False,
-                            n_idx=False,
-                            add_fake_g=False,
-                            fake_g_lcuc=False,
-                            add_ids_out_file=False,
-                            add_seqs_out_file=False,
-                            bps_mode=1):
-    """
-    Generate PyTorch Geometric graph format data.
-
-    seqs_dic:
-        Sequence ID -> sequence dictionary.
-    vp_dic:
-        Sequence ID -> [viewpont (uppercase) start, viewpoint end] dictionary.
-
-    Return the following lists:
-    all_nodes_labels       Nucleotide indices (dict_label_idx)
-    all_graph_indicators   Graph indices, each node of a graph
-                           gets same index
-    all_edges              Indices of edges
-    all_nodes_attributes   Node vectors
-    Also return the latest graph and node indices:
-    g_idx
-    n_idx
-
-    """
-
-    # Checks.
-    assert seqs_dic, "seqs_dic empty"
-    # Nucleotide label to idx dictionary.
-    dict_label_idx = {'A': '1',
-                      'C': '2',
-                      'G': '3',
-                      'U': '4',
-                      'a': '5',
-                      'c': '6',
-                      'g': '7',
-                      'u': '8'}
-    # Init lists.
-    all_nodes_labels = []
-    all_graph_indicators = []
-    all_edges = []
-    all_nodes_attributes = []
-
-    # Init graph and node indices (if not given).
-    if not g_idx:
-        g_idx = 0
-    if not n_idx:
-        n_idx = 1
-
-    # Store sequence ID -> site sequence.
-    seqs_out_dic = {}
-    # Sequence ID -> graph index.
-    id2gidx_dic = {}
-
-    for seq_id, seq in sorted(seqs_dic.items()):
-        # Uppercase region (viewpoint) start + end + lengths.
-        vp_s = vp_dic[seq_id][0] # 1-based.
-        vp_e = vp_dic[seq_id][1] # 1-based.
-        l_vp = vp_e - vp_s + 1
-        l_seq = len(seq)
-        # Length of graph.
-        n_nodes = l_seq
-        # Add graph indicator labels (length of graph).
-        all_graph_indicators.extend([g_idx+1]*n_nodes)
-
-        # Check for ID in given dictionaries.
-        if bpp_dic:
-            assert seq_id in bpp_dic, "sequence ID \"%s\" not in bpp_dic" %(seq_id)
-        if eia_dic:
-            assert seq_id in eia_dic, "sequence ID \"%s\" not in eia_dic" %(seq_id)
-        if pc_con_dic:
-            assert seq_id in pc_con_dic, "sequence ID \"%s\" not in pc_con_dic" %(seq_id)
-        if pp_con_dic:
-            assert seq_id in pp_con_dic, "sequence ID \"%s\" not in pp_con_dic" %(seq_id)
-        if rra_dic:
-            assert seq_id in rra_dic, "sequence ID \"%s\" not in rra_dic" %(seq_id)
-        if str_elem_p_dic:
-            assert seq_id in str_elem_p_dic, "sequence ID \"%s\" not in str_elem_p_dic" %(seq_id)
-        if tra_dic:
-            assert seq_id in tra_dic, "sequence ID \"%s\" not in tra_dic" %(seq_id)
-
-        # Add feature values per position.
-        g_i = 0
-        for i,c in enumerate(seq): # i from 0.. l-1
-            if seq_id in seqs_out_dic:
-                seqs_out_dic[seq_id] += c
-            else:
-                seqs_out_dic[seq_id] = c
-            all_nodes_labels.append(dict_label_idx[c])
-
-            # Make feature vector [0,1, ..] for each graph node.
-            feat_vector = []
-            if eia_dic:
-               feat_vector = feat_vector + eia_dic[seq_id][i]
-            if str_elem_p_dic:
-               feat_vector = feat_vector + str_elem_p_dic[seq_id][i]
-            if pc_con_dic:
-                feat_vector.append(pc_con_dic[seq_id][i])
-            if pp_con_dic:
-                feat_vector.append(pp_con_dic[seq_id][i])
-            if rra_dic:
-               feat_vector = feat_vector + rra_dic[seq_id][i]
-            if tra_dic:
-               feat_vector = feat_vector + tra_dic[seq_id][i]
-
-            # Convert list elements to string and save in new list.
-            if feat_vector:
-                node_attribute = [str(att) for att in feat_vector]
-                # Join elements separate by , to string and append to list.
-                all_nodes_attributes.append(",".join(node_attribute))
-
-            # Add backbone edge.
-            if g_i > 0:
-                all_edges.append((g_i-1+n_idx, g_i+n_idx))
-                all_edges.append((g_i+n_idx, g_i-1+n_idx))
-            # Increment graph node index.
-            g_i += 1
-
-        # Add base pair edges to graph.
-        if bpp_dic:
-            for entry in bpp_dic[seq_id]:
-                m = re.search("(\d+)-(\d+),(.+)", entry)
-                p1 = int(m.group(1))
-                p2 = int(m.group(2))
-                bpp_value = float(m.group(3))
-                g_p1 = p1 - 1 # 0-based base pair index.
-                g_p2 = p2 - 1 # 0-based base pair index.
-                # Filter.
-                if bpp_value < plfold_bpp_cutoff: continue
-                # Add base pair depending on set mode.
-                if bps_mode == 1:
-                    if (p1 >= vp_s and p1 <= vp_e) or (p2 >= vp_s and p2 <= vp_e):
-                        all_edges.append((g_p1+n_idx, g_p2+n_idx))
-                        all_edges.append((g_p2+n_idx, g_p1+n_idx))
-                elif bps_mode == 2:
-                    if p1 >= vp_s and p2 <= vp_e:
-                        all_edges.append((g_p1+n_idx, g_p2+n_idx))
-                        all_edges.append((g_p2+n_idx, g_p1+n_idx))
-                else:
-                    assert False, "ERROR: invalid bps_mode given (valid values: 1,2)"
-
-        # Update node and graph indices.
-        n_idx += n_nodes
-        g_idx += 1
-        # Store sequence ID -> graph index.
-        id2gidx_dic[seq_id] = g_idx
-
-    assert g_idx, "no graphs added (g_idx == 0)"
-
-    # Output additional infos.
-    if add_ids_out_file:
-        ADDOUT = open(add_ids_out_file, "w")
-        for seq_id, gidx in sorted(id2gidx_dic.items()):
-            ADDOUT.write("%s\t%i\n" %(seq_id, id2gidx_dic[seq_id]))
-        ADDOUT.close()
-    if add_seqs_out_file:
-        fasta_output_dic(seqs_out_dic, add_seqs_out_file,
-                         split=True,
-                         split_size=60)
-
-    # If double taking jive fake graph should be added.
-    if add_fake_g:
-        # Fake sequence.
-        fake_seq = "ACGU"
-        if fake_g_lcuc:
-            fake_seq = "ACGUacgu"
-        # Node indicators.
-        n_nodes = len(fake_seq)
-        all_graph_indicators.extend([g_idx+1]*n_nodes)
-        # Node labels and edges.
-        g_i = 0
-        for i,c in enumerate(fake_seq):
-            all_nodes_labels.append(dict_label_idx[c])
-            # Add backbone edges.
-            if g_i > 0:
-                all_edges.append((g_i-1+n_idx, g_i+n_idx))
-                all_edges.append((g_i+n_idx, g_i-1+n_idx))
-            # Increment graph node index.
-            g_i += 1
-        # Node attributes.
-        if all_nodes_attributes:
-            # Add first element n_nodes times.
-            for i in range(n_nodes):
-                all_nodes_attributes.append(all_nodes_attributes[0])
-        # Update node and graph indices.
-        n_idx += n_nodes
-        g_idx += 1
-
-    return all_nodes_labels, all_graph_indicators, all_edges, all_nodes_attributes, g_idx, n_idx
-
-
-################################################################################
-
-def decompose_node_attr(x):
-    """
-    Get feature lists for one graph, by decomposing its node attributes list.
-
-    """
-    x = x.tolist()
-    dict_onehot_label = {'1000': 1, '0100': 2, '0010': 3, '0001': 4}
-    dict_onehot_nucleotide = {'1000': 'A', '0100': 'C', '0010': 'G', '0001': 'U'}
-    dict_reg_exon_intron = {1: 'E', 0: 'I'}
-    list_nucleotides = []
-    list_attrs = []
-    list_node_labels = []
-    list_cons_1 = []
-    list_cons_2 = []
-    list_exons_introns = []
-
-    for idx in range(len(x)):
-        attrs = [str(att) for att in x[idx][:4]]  # first 4 elements.
-        onehot = "".join([str(int(i)) for i in x[idx][4:]]) # Elements 5,6 ...
-        list_attrs.append(",".join(attrs))
-        list_node_labels.append(dict_onehot_label[onehot])
-        list_nucleotides.append(dict_onehot_nucleotide[onehot])
-        list_cons_1.append(str(x[idx][0]))
-        list_cons_2.append(str(x[idx][1]))
-        list_exons_introns.append(dict_reg_exon_intron[int(x[idx][2])])
-
-    return list_attrs, list_node_labels, list_nucleotides, list_exons_introns, list_cons_1, list_cons_2
-
 
 ################################################################################
 
