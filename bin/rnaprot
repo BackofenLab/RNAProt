@@ -157,17 +157,22 @@ def setup_argument_parser():
                    type = float,
                    metavar='float',
                    default = 0.2,
-                   help = "Validation set size for training final model as percentage of all training sites. NOTE that if --test is set, the test set will have the same size (so if --val-size 0.2, train on 60%, validate on 20%, and test on 20%) (default: 0.2)")
-    p_tra.add_argument("--test",
-                   dest="test_set",
-                   type=str,
-                   required = True,
+                   help = "Validation set size for training final model as percentage of all training sites. NOTE that if --add-test is set, the test set will have the same size (so if --val-size 0.2, train on 60%, validate on 20%, and test on 20%) (default: 0.2)")
+    p_tra.add_argument("--add-test",
+                   dest="add_test",
+                   default = False,
+                   action = "store_true",
                    help = "Use a part of the training set as a test set to evaluate final model. Test set size is controlled by --val-size (default: False)")
+    p_trm.add_argument("--test-ids",
+                   dest="test_ids",
+                   type=str,
+                   metavar='str',
+                   help = "Provide file with test IDs to be used as a test set for testing final model. Test IDs need to be part of --in training set. Not compatible with --add-test, --gen-cv, or --gm-cv")
     p_tra.add_argument("--keep-order",
                    dest="keep_order",
                    default = False,
                    action = "store_true",
-                   help = "Use same train / validation (/ test) split for each call to train final model. Test split only if --test (default: False)")
+                   help = "Use same train / validation (/ test) split for each call to train final model. Test split only if --add-test or --test-ids (default: False)")
     p_tra.add_argument("--plot-lc",
                    dest = "plot_lc",
                    default = False,
@@ -235,7 +240,7 @@ def setup_argument_parser():
     p_tra.add_argument("--model-type",
                    dest="model_type",
                    type = int,
-                   default = 2,
+                   default = 1,
                    choices = [1,2,3,4],
                    help = "RNN model type to use. 1: biGRU, 2: biLSTM, 3: GRU, 4: LSTM (default: 1)")
     p_tra.add_argument("--run-bohb",
@@ -243,6 +248,29 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Use BOHB to run a hyperparameter optimization. NOTE that this will overwrite set hyperparameters, and trains the final model with the found best hyperparameter setting. ALSO NOTE that this will take some time (!) (default: False)")
+    p_tra.add_argument("--bohb-n",
+                   dest="bohb_n_iter",
+                   type = int,
+                   metavar='int',
+                   default=50,
+                   help = "Number of BOHB iterations (default: 50)")
+    p_tra.add_argument("--bohb-min-budget",
+                   dest="bohb_min_budget",
+                   type = int,
+                   metavar='int',
+                   default=5,
+                   help = "BOHB minimum budget (default: 5)")
+    p_tra.add_argument("--bohb-max-budget",
+                   dest="bohb_max_budget",
+                   type = int,
+                   metavar='int',
+                   default=20,
+                   help = "BOHB maximum budget (default: 20)")
+    p_tra.add_argument("--verbose-bohb",
+                   dest = "verbose_bohb",
+                   default = False,
+                   action = "store_true",
+                   help = "Enable verbose output for BOHB hyperparameter optimization. By default only warnings are print out (default: False)")
 
     """
     Model evaluation mode.
@@ -732,8 +760,9 @@ def main_train(args):
     indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
     if indiv_feat_check and args.only_seq:
         assert False, "--only-seq useless in combination with individually selected features (--use-xxx)"
-    if args.test_set:
-        assert args.val_size >= 0.1 and args.val_size <= 0.3, "use reasonable values for --val-size in combination with --test (>= 0.1 and <= 0.3)"
+    if args.add_test:
+        assert args.val_size >= 0.1 and args.val_size <= 0.3, "use reasonable values for --val-size in combination with --add-test (>= 0.1 and <= 0.3)"
+        assert not args.test_ids, "use either --add-test to automatically select a test set for final model testing, or supply specified test set IDs via --test-ids to test final model"
     else:
         assert args.val_size >= 0.1 and args.val_size <= 0.5, "use reasonable values for --val-size (>= 0.1 and <= 0.5)"
     if args.gm_cv and args.gen_cv:
@@ -741,9 +770,13 @@ def main_train(args):
     if args.gen_cv:
         assert not args.run_bohb, "incompatible options --run-bohb and --gen-cv. Use either --run-bohb to optimize hyperparameters, or --gen-cv to use the set of optimized parameters (provided as command line arguments) to estimate generalization performance via cross validation"
         assert not args.keep_order, "incompatible options --keep-order and --gen-cv. --keep-order is only effective for final model training (--gen-cv disabled)"
+        assert not args.add_test, "incompatible options --add-test and --gen-cv. --add-test only for training final model, not for --gen-cv cross validation"
+        assert not args.test_ids, "incompatible options --test-ids and --gen-cv. --test-ids only for training final model, not for --gen-cv cross validation"
     if args.gm_cv:
         assert not args.run_bohb, "incompatible options --run-bohb and --gm-cv. Use either --run-bohb to optimize hyperparameters, or --gm-cv to apply the set of optimized parameters (provided as command line arguments) to estimate generic model performance via cross validation"
         assert not args.keep_order, "incompatible options --keep-order and --gm-cv. --keep-order is only effective for final model training (--gm-cv disabled)"
+        assert not args.add_test, "incompatible options --add-test and --gm-cv. --add-test only for training final model, not for --gm-cv cross validation"
+        assert not args.test_ids, "incompatible options --test-ids and --gm-cv. --test-ids only for training final model, not for --gm-cv cross validation"
 
     assert args.epochs >= 5 and args.epochs <= 500, "use reasonable number for --epochs (>= 5 and <= 500)"
     assert args.patience > 0 and args.patience <= 100, "use reasonable number for --patience (> 0 and <= 100)"
@@ -842,16 +875,26 @@ def main_train(args):
     # Class label to RBP label dictionary.
     li2label_dic = {}
 
+    # Feature info dictionary.
+    feat_info_dic = {}
+
     # Load training data.
-    seqs_dic, idx2id_dic, label_list, all_features = rplib.load_training_data(args,
+    seqs_dic, idx2id_dic, labels, all_features = rplib.load_training_data(args,
                                                            kmer2idx_dic=kmer2idx_dic,
                                                            store_tensors=True,
+                                                           feat_info_dic=feat_info_dic,
                                                            li2label_dic=li2label_dic)
 
     # Number of features (feature vector length).
     n_feat = len(all_features[0][0])
     assert n_feat, "invalid number of features (%s)" %(n_feat)
     args.n_feat = n_feat
+
+    # Reverse mapping.
+    id2idx_dic = {}
+    for idx in idx2id_dic:
+        seq_id = idx2id_dic[idx]
+        id2idx_dic[seq_id] = idx
 
     # Check for CUDA support.
     if torch.cuda.is_available():
@@ -889,7 +932,7 @@ def main_train(args):
 
         # Shuffle.
         random.seed(1)
-        labels, all_features = rplib.shuffle_idx_feat_labels(label_list, all_features,
+        labels, all_features = rplib.shuffle_idx_feat_labels(labels, all_features,
                                                              idx2id_dic=idx2id_dic)
 
         # Split datasets into folds.
@@ -943,15 +986,16 @@ def main_train(args):
             model_path = model_folder + "/gen_cv.model"
 
             # Train model on fold dataset.
+            run_id = "cv_fold_%i" %(i_cv)
             val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
                                                               val_loader, model_path,
                                                               device, criterion,
-                                                              fold_i=i_cv,
+                                                              run_id=run_id,
                                                               verbose=args.verbose_train,
                                                               plot_lc_folder=plot_lc_folder)
 
             # Get model test set performance.
-            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path
+            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path,
                                                      device, criterion)
 
             # Store test ACC and AUC.
@@ -1088,15 +1132,16 @@ def main_train(args):
             model_path = model_folder + "/gen_cv.model"
 
             # Train model on fold dataset.
+            run_id = "cv_fold_%i" %(i_cv)
             val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
                                                               val_loader, model_path,
                                                               device, criterion,
-                                                              fold_i=i_cv,
+                                                              run_id=run_id,
                                                               verbose=args.verbose_train,
                                                               plot_lc_folder=plot_lc_folder)
 
             # Get model test set performance.
-            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path
+            test_auc, test_acc = rnn_util.test_model(args, test_loader, model_path,
                                                      device, criterion)
 
             # Store test ACC and AUC.
@@ -1145,17 +1190,71 @@ def main_train(args):
     run BOHB hyperparameter optimization with --run-bohb. If --run-bohb
     is set, the final model will be trained using the optimized
     hyperparameters returned by Mr BOHB himself.
-    NOTE that if --test, --val-size determines size of extra test set.
+    NOTE that if --add-test, --val-size determines size of extra test set.
 
     """
 
     # Path to store final models.
-    model_folder = out_folder + "/final_models/"
+    model_folder = out_folder + "/final_model/"
     if not os.path.exists(model_folder):
         os.makedirs(model_folder)
 
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
+
+    """
+    In case we have test set IDs provided via --test-ids, seperate the
+    training set (labels, all_features) into test set and new train set
+    for training and evaluating final model.
+
+    """
+
+    # Read in test IDs for testing final model.
+    test_ids_dic = {}
+    list_test_features = []
+    list_test_labels = []
+    test_idx2id_dic = {}
+    # Temp store train features.
+    train_features = []
+    train_labels = []
+    train_idx2id_dic = {}
+
+    if args.test_ids:
+        print("Test IDs provided via --test-ids. Split train into test-train ... ")
+        # Read in test IDs.
+        test_ids_dic = rplib.read_ids_into_dic(args.test_ids)
+        # Check if IDs in training set.
+        for seq_id in test_ids_dic:
+            assert seq_id in seqs_dic, "--test-ids ID %s not in training set!" %(seq_id)
+        # Make new test / train set.
+        test_idx = 0
+        train_idx = 0
+        for seq_id in id2idx_dic:
+            old_idx = id2idx_dic[seq_id]
+            label = labels[old_idx]
+            if seq_id in test_ids_dic:
+                list_test_features.append(all_features[old_idx])
+                list_test_labels.append(label)
+                test_idx2id_dic[test_idx] = seq_id
+                test_idx += 1
+            else:
+                train_features.append(all_features[old_idx])
+                train_labels.append(label)
+                train_idx2id_dic[train_idx] = seq_id
+                train_idx += 1
+        # Overwrite old train set.
+        idx2id_dic = train_idx2id_dic
+        all_features = train_features
+        labels = train_labels
+        # Reverse mapping again.
+        id2idx_dic = {}
+        for idx in idx2id_dic:
+            seq_id = idx2id_dic[idx]
+            id2idx_dic[seq_id] = idx
+        c_train = len(labels)
+        c_test = len(list_test_labels)
+        print("Test set (--test-ids) size:  %i" %(c_test))
+        print("New training set size:       %i" %(c_train))
 
     # Keep order of splits?
     random_state = None
@@ -1163,7 +1262,7 @@ def main_train(args):
         random_state = 1
 
     val_set_perc = args.val_size * 100
-    if args.test_set:
+    if args.add_test:
         print("Using %.1f" %(val_set_perc) + '% ' + " for validation and testing ... ")
 
     else:
@@ -1174,16 +1273,14 @@ def main_train(args):
 
     list_train_features = []
     list_train_labels = []
-    list_test_features = []
-    list_test_labels = []
     list_val_features = []
     list_val_labels = []
 
     for list_tr_idx, list_val_idx in sss.split(np.zeros(len(labels)), labels):
-        list_test_idx = []
+        list_test_idx = [] # only populated if --add-test.
         n_val_idx = len(list_val_idx)
         list_new_tr_idx = list_tr_idx
-        if args.test_set:
+        if args.add_test:
             list_test_idx = list_tr_idx[-n_val_idx:]
             list_new_tr_idx = list_tr_idx[:-n_val_idx]
         for idx,label in enumerate(labels):
@@ -1196,18 +1293,28 @@ def main_train(args):
             else:
                 list_train_features.append(all_features[idx])
                 list_train_labels.append(labels[idx])
+        if args.verbose_train:
+            print("Train set indices:      ", list_new_tr_idx)
+            print("Validation set indices: ", list_val_idx)
+            if args.add_test:
+                print("Test set indices:       ", list_test_idx)
 
     # Joint shuffle label + feature lists.
-    list_train_labels, list_train_features = rplib.shuffle_idx_feat_labels(list_train_labels, list_train_features)
-    list_val_labels, list_val_features = rplib.shuffle_idx_feat_labels(list_val_labels, list_val_features)
+    #random.seed(1)
+    random_seed = 1
+    list_train_labels, list_train_features = rplib.shuffle_idx_feat_labels(list_train_labels, list_train_features,
+                                                            random_seed=random_seed)
+    list_val_labels, list_val_features = rplib.shuffle_idx_feat_labels(list_val_labels, list_val_features,
+                                                            random_seed=random_seed)
     train_dataset = RNNDataset(list_train_features, list_train_labels)
     val_dataset = RNNDataset(list_val_features, list_val_labels)
     c_train = len(list_train_labels)
     c_val = len(list_val_labels)
     print("# training instances:    %i" %(c_train))
     print("# validation instances:  %i" %(c_val))
-    if args.test_set:
-        list_test_labels, list_test_features = rplib.shuffle_idx_feat_labels(list_test_labels, list_test_features)
+    if args.add_test or args.test_ids:
+        list_test_labels, list_test_features = rplib.shuffle_idx_feat_labels(list_test_labels, list_test_features,
+                                                            random_seed=random_seed)
         test_dataset = RNNDataset(list_test_features, list_test_labels)
         c_test = len(list_test_labels)
         print("# test instances:        %i" %(c_test))
@@ -1215,7 +1322,21 @@ def main_train(args):
     """
     If --run-bohb is set, run BOHB (part of HpBandSter package) to get
     optimized parameters.
-    Otherwise, train final model with default parameters found in args.
+
+    bohb_n_iter:
+        Number of iterations performed by BOHB, controlling how many
+        HP configurations are evaluated.
+    bohb_min_budget:
+        Minimum number of epochs for training one HP configuration.
+    bohb_max_budget:
+        Maximum number of epochs for training one HP configuration.
+
+    For debugging:
+    Use tiny budgets, one iteration, and set logging level to DEBUG,
+    i.e., verbose_bohb=True
+
+Budgets to make early decisions regarding discarding configurations
+Idea: drop unpromising configurations early on
 
     """
 
@@ -1232,6 +1353,10 @@ def main_train(args):
     opt_dic["rnn_type"] = args.rnn_type
     opt_dic["embed_dim"] = args.embed_dim
 
+
+    # HALLO 123
+    # all_runs_max_budget = result.get_all_runs(only_largest_budget=True)
+
     if args.run_bohb:
 
         # BOHB output folder.
@@ -1239,164 +1364,136 @@ def main_train(args):
         if not os.path.exists(bohb_out_folder):
             os.makedirs(bohb_out_folder)
 
-        print("Starting BOHB (!) ... ")
+        # Run BOHB.
+        print("Starting BOHB hyperparameter optimization (!) ... ")
         best_hp_dic, best_acc, best_auc  = rnn_util.run_BOHB(args, train_dataset,
                                                     val_dataset, bohb_out_folder,
-                                                    n_bohb_iter=10,
-                                                    min_budget=3,
-                                                    max_budget=27)
-
+                                                    verbose_bohb=args.verbose_bohb,
+                                                    n_bohb_iter=args.bohb_n_iter,
+                                                    min_budget=args.bohb_min_budget,
+                                                    max_budget=args.bohb_max_budget)
+        print("BOHB's done!")
         # Get keys.
         opt_keys = []
-        for key in res_dic:
+        for key in best_hp_dic:
             opt_keys.append(key)
             assert key in opt_dic, "optimized HP key %s not in opt_dic HP dictionary" %(key)
-            opt_dic[key] = res_dic[key]
-        print("HPs optimized by BOHB:\n")
-        print(opt_keys)
-        print("Optimal HPs:")
-        # report AUC /ACC
+            opt_dic[key] = best_hp_dic[key]
+        #print("HPs optimized by BOHB:")
+        #for key in opt_keys:
+        #    print(key, " (", opt_dic[key], ")")
+        print("Best configuration accuracy:    %f" %(best_acc))
+        print("Best configuration AUC:         %f" %(best_auc))
 
-        #write new HPs to params file, test on test_dataset if exists.
+    """
+    Train final model, either with optimizd HPs from BOHB or default ones /
+    set ones from command line.
 
-    # Train final model, with or without BOHB.
+    """
 
+    # B*tch loaders.
+    train_loader = DataLoader(dataset=train_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
 
+    # Plot learning curves.
+    plot_lc_folder = False
+    if args.plot_lc:
+        plot_lc_folder = model_folder + "/lc_plots"
 
+    # Train model on fold dataset.
+    print("Training model ... ")
+    val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
+                                                      val_loader, final_model_path,
+                                                      device, criterion,
+                                                      opt_dic=opt_dic,
+                                                      run_id="final_model",
+                                                      verbose=args.verbose_train,
+                                                      plot_lc_folder=plot_lc_folder)
 
+    print("# epochs used to train model:   %i" %(c_epochs))
+    print("Model validation set accuracy:  %f" %(val_acc))
+    print("Model validation set AUC:       %f" %(val_auc))
 
-
-
-"""
-run_BOHB(n_bohb_iter=10, min_budget=5, max_budget=50, train_loader=train_loader, val_loader=val_loader, dataset_name=dataset_name)
-print('Done run Bohb')
-eval_BOHB(working_dir='hpo_results', result_file=dataset_name + "_bohb_result.pkl", save=True, dataset_name=dataset_name)
-
-returns:
-dropout_rate: 0.0856596584322409
-lr: 0.0004564820428559883
-wd: 0.0036776377522071343
-
-"""
-
-
-    # Embedding (by default True).
-    args.embed = True
-    args.embed_k = 1
-    args.embed_vocab_size = 4**args.embed_k + 1
-    args.embed_dim = 10
-    kmer2idx_dic = False
-    if args.embed:
-        kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
-    args.add_feat = False
-    if indiv_feat_check:
-        args.add_feat = True
-
-    # Number of classes.
-    args.n_class = 1
-
-    # Bidirectional.
-    args.bidirect = False
-    if args.rnn_type == 1 or args.rnn_type == 2:
-        args.bidirect = True
-
-    # Additional FC layer.
-    args.add_fc_layer = False
-    if args.n_fc_layers == 2:
-        args.add_fc_layer = True
-
-
-
-
-
-
-
-
-    else:
-
-
-        # Plot learning curves.
-        plot_lc_folder = False
-        if args.plot_lc:
-            plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
-
-        # Get optimal parameters for this CV split.
-        opt_dic = rnn_util.select_model(args, num_features, train_dataset,
-                                        val_dataset, model_folder,
-                                        device, criterion,
-                                        verbose=args.verbose_train,
-                                        plot_lc_folder=plot_lc_folder)
-
-        opt_batch_size = opt_dic["opt_batch_size"]
-        opt_n_hidden_dim = opt_dic["opt_n_hidden_dim"]
-        opt_n_hidden_layers = opt_dic["opt_n_hidden_layers"]
-        opt_weight_decay = opt_dic["opt_weight_decay"]
-        opt_lr = opt_dic["opt_lr"]
-        opt_dr = opt_dic["opt_dr"]
-        opt_acc = opt_dic["opt_acc"]
-        opt_auc = opt_dic["opt_auc"]
-        opt_epochs = opt_dic["opt_epochs"]
-
-        # Move final model file.
-        model_path = model_folder + "/" + str(opt_batch_size) + "_" + str(opt_n_hidden_layers) + "_" + str(opt_n_hidden_dim) + "_" + str(opt_weight_decay) + "_" + str(opt_lr) + "_" + str(opt_dr)
-        assert os.path.exists(model_path), "missing model file (path: %s)" %(model_path)
-        rplib.move_rename_file(model_path, final_model_path)
-
-        # If hold-out set prediction should be done with final model.
-        if ho_idx_dic:
-            # Load final model.
-            model = GRUModel(num_features, opt_n_hidden_dim, opt_n_hidden_layers,
-                             2, device, dr=opt_dr).to(device)
-            model.load_state_dict(torch.load(final_model_path))
-
-            # Get test error of final model.
-            assert test_dataset, "--hold-out-ids given but test_dataset empty"
-            test_loader = DataLoader(dataset=test_dataset, batch_size=opt_batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
-            loss, acc, auc = rnn_util.test(test_loader, model, criterion)
-
-            print("Final model accuracy on --hold-out-ids:  %f" %(acc))
-            print("Final model AUC on --hold-out-ids:       %f" %(auc))
-
-        # Write model params file.
-        PAROUT = open(final_params_path, "w")
-        PAROUT.write("num_features\t%i\n" %(num_features))
-        PAROUT.write("epochs\t%s\n" %(str(args.epochs)))
-        PAROUT.write("patience\t%s\n" %(str(args.patience)))
-        PAROUT.write("model_epochs\t%s\n" %(str(opt_epochs)))
-        PAROUT.write("nr_hp_comb\t%s\n" %(str(nr_hp_comb)))
-        PAROUT.write("val_acc\t%s\n" %(str(opt_acc)))
-        PAROUT.write("val_auc\t%s\n" %(str(opt_auc)))
-        PAROUT.write("batch_size\t%s\n" %(str(opt_batch_size)))
-        PAROUT.write("lr\t%s\n" %(str(opt_lr)))
-        PAROUT.write("dr\t%s\n" %(str(opt_dr)))
-        PAROUT.write("n_hidden_dim\t%s\n" %(str(opt_n_hidden_dim)))
-        PAROUT.write("n_hidden_layers\t%s\n" %(str(opt_n_hidden_layers)))
-        PAROUT.write("weight_decay\t%s\n" %(str(opt_weight_decay)))
-        PAROUT.close()
-
-        # Epochs and accuracy.
-        print("# epochs used to train model: ", opt_epochs)
-        print("Model validation accuracy:    ", opt_acc)
-        print("Model validation AUC:         ", opt_auc)
-        print("")
-        if run_hpo:
-            print("Optimized final model hyperparameters")
-            print("=====================================")
+    if args.add_test or args.test_ids:
+        if args.add_test:
+            print("Testing model ... ")
         else:
-            print("Final model hyperparameters")
-            print("===========================")
-        print("Batch size:                 ", opt_batch_size)
-        print("# hidden layers:            ", opt_n_hidden_layers)
-        print("# hidden layer dimensions:  ", opt_n_hidden_dim)
-        print("Weight decay:               ", opt_weight_decay)
-        print("Learning rate:              ", opt_lr)
-        print("Dropout rate:               ", opt_dr)
-        print("")
-        print("Final model (hyper)parameters file:")
-        print(final_params_path)
-        print("Final model file:")
-        print(final_model_path)
-        print("")
+            print("Testing model on --test-ids set ... ")
+        test_loader = DataLoader(dataset=test_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
+        # Get model test set performance.
+        test_auc, test_acc = rnn_util.test_model(args, test_loader, final_model_path,
+                                                 device, criterion,
+                                                 opt_dic=opt_dic)
+
+        print("Model test set accuracy:        %f" %(val_acc))
+        print("Model test set AUC:             %f" %(val_auc))
+
+    final_model_path = out_folder + "/" + "final.model"
+    final_params_path = out_folder + "/" + "final.params"
+
+    # Write model params file.
+    PAROUT = open(final_params_path, "w")
+    PAROUT.write("n_feat\t%i\n" %(args.n_feat))
+    PAROUT.write("n_class\t%i\n" %(args.n_class))
+
+    PAROUT.write("epochs\t%s\n" %(str(args.epochs)))
+    PAROUT.write("patience\t%s\n" %(str(args.patience)))
+    PAROUT.write("final_model_epochs\t%s\n" %(str(c_epochs)))
+    PAROUT.write("val_acc\t%s\n" %(str(val_acc)))
+    PAROUT.write("val_auc\t%s\n" %(str(val_auc)))
+    if args.add_test or args.test_ids:
+        PAROUT.write("test_acc\t%s\n" %(str(test_acc)))
+        PAROUT.write("test_auc\t%s\n" %(str(test_auc)))
+    PAROUT.write("batch_size\t%s\n" %(str(opt_dic["batch_size"])))
+    PAROUT.write("learn_rate\t%s\n" %(str(opt_dic["learn_rate"])))
+    PAROUT.write("weight_decay\t%s\n" %(str(opt_dic["weight_decay"])))
+    PAROUT.write("dropout_rate\t%s\n" %(str(opt_dic["dropout_rate"])))
+    PAROUT.write("rnn_type\t%s\n" %(str(opt_dic["rnn_type"])))
+    PAROUT.write("n_rnn_dim\t%s\n" %(str(opt_dic["n_rnn_dim"])))
+    PAROUT.write("n_rnn_layers\t%s\n" %(str(opt_dic["n_rnn_layers"])))
+    PAROUT.write("bidirect\t%s\n" %(str(opt_dic["bidirect"])))
+    PAROUT.write("add_fc_layer\t%s\n" %(str(opt_dic["add_fc_layer"])))
+    PAROUT.write("add_feat\t%s\n" %(str(args.add_feat)))
+    PAROUT.write("embed\t%s\n" %(str(args.embed)))
+    PAROUT.write("embed_k\t%s\n" %(str(args.embed_k)))
+    PAROUT.write("embed_vocab_size\t%s\n" %(str(args.embed_vocab_size)))
+    PAROUT.write("embed_dim\t%s\n" %(str(opt_dic["embed_dim"])))
+    PAROUT.write("feat_info_dic\t%s\n" %(str(feat_info_dic)))
+    PAROUT.close()
+
+    # RNN type string.
+    rnn_model_type = "GRU"
+    if opt_dic["rnn_type"] == 2:
+        rnn_model_type = "LSTM"
+    n_fc_layers = 1
+    if opt_dic["add_fc_layer"]:
+        n_fc_layers = 2
+
+    print("")
+    print("=========================")
+    print("  MODEL HYPERPARAMETERS")
+    print("=========================")
+    print("Batch size:               ", opt_dic["batch_size"])
+    print("Learning rate:            ", opt_dic["learn_rate"])
+    print("Weight decay:             ", opt_dic["weight_decay"])
+    print("RNN model type:           ", rnn_model_type)
+    print("Bidirectional RNN:        ", opt_dic["bidirect"])
+    print("# RNN layers:             ", opt_dic["n_rnn_layers"])
+    print("# RNN layer dimensions:   ", opt_dic["n_rnn_dim"])
+    print("# fully connected layers: ", n_fc_layers)
+    print("Dropout rate:             ", opt_dic["dropout_rate"])
+    if args.embed:
+        print("Embedding:                ", args.embed)
+        print("Embedding k:              ", args.embed_k)
+        print("Embedding dimensions:     ", opt_dic["embed_dim"])
+    else:
+        print("Embedding:                ", args.embed)
+    print("")
+    print("Model (hyper)parameters file:")
+    print(final_params_path)
+    print("Model file:")
+    print(final_model_path)
+    print("")
 
 
 ################################################################################
@@ -2657,8 +2754,8 @@ def main_predict(args):
 
     # --in folder containing prediction data.
     assert os.path.isdir(args.in_folder), "--in folder does not exist"
-    # --model-in folder containing trained model.
-    assert os.path.isdir(args.train_in_folder), "--model-in folder does not exist"
+    # --train-in folder containing trained model.
+    assert os.path.isdir(args.train_in_folder), "--train-in folder does not exist"
 
     # Model and model parameter file.
     params_file = args.train_in_folder + "/final.params"
@@ -3434,6 +3531,8 @@ def main_gt(args):
     # Get chromsome lengths from --gen.
     print("Get chromosome lengths from --gen ... ")
     chr_len_dic = rplib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
+    gen_chr_len_dic = chr_len_dic
+
     # Get chromosome IDs.
     print("Get chromosome IDs from --in ... ")
     chr_ids_dic = rplib.bed_get_chromosome_ids(args.in_sites)
@@ -3463,13 +3562,13 @@ def main_gt(args):
     if transcript_regions:
         # Check for set --exon-intron.
         if args.exon_intron_annot:
-            print("ERROR: setting --eia is useless for transcript sites. Please disable or provide genomic input sites.")
+            print("ERROR: setting --eia is useless for transcript sites. Please disable or provide genomic input sites")
             sys.exit()
         if args.intron_border_annot:
-            print("ERROR: setting --eia-ib is useless for transcript sites. Please disable or provide genomic input sites.")
+            print("ERROR: setting --eia-ib is useless for transcript sites. Please disable or provide genomic input sites")
             sys.exit()
         if args.exon_intron_n:
-            print("ERROR: setting --eia-ib is useless for transcript sites. Please disable or provide genomic input sites.")
+            print("ERROR: setting --eia-ib is useless for transcript sites. Please disable or provide genomic input sites")
             sys.exit()
         # Read in transcript lengths from --gtf.
         print("Get transcript lengths from --gtf ... ")
@@ -4200,7 +4299,7 @@ def main_gt(args):
                                             stats_dic=pos_tra_stats_dic,
                                             codon_annot=args.tr_reg_codon_annot,
                                             border_annot=args.tr_reg_border_annot,
-                                            mergepos_str_stats_dic_split_regions=True)
+                                            merge_split_regions=True)
         rplib.bed_get_transcript_annotations_from_gtf(tr_ids_dic,
                                             neg_transcript_to_genome_bed,
                                             args.in_gtf, neg_tra_out,
@@ -4398,14 +4497,63 @@ def main_gt(args):
                 pos_stats_dic = {}
                 neg_stats_dic = {}
 
-            print("Extracting \"%s\" feature ... " %(feat_id))
+            """
+            Check if --feat-in regions are purely genomic or transcript,
+            and whether mapping to transcriptome is necessary.
+            """
+
+            bed_ids_dic = rplib.bed_get_chromosome_ids(bed_path)
+            if transcript_regions:
+                print("Check whether \"%s\" feature BED contains exclusively genomic or transcript regions ..." %(feat_id))
+                # Check if IDs are transcript IDs.
+                need_to_map = False
+                if not rplib.check_dic1_keys_in_dic2(bed_ids_dic, tr_len_dic):
+                    print("Regions not exclusively transcript in \"%s\" feature BED, check for genomic regions ... " %(feat_id))
+                    # Check if IDs are genomic IDs.
+                    if rplib.check_dic1_keys_in_dic2(bed_ids_dic, gen_chr_len_dic):
+                        need_to_map = True
+                    else:
+                        assert False, "Regions not exclusively genomic in in \"%s\" feature BED. Supply either solely transcript or solely genomic regions (no mixed regions allowed so far)" %(feat_id)
+                if need_to_map:
+                    # Temp mapping folder.
+                    map_out_folder = args.out_folder + "/" + "tmp_map_out"
+                    if os.path.exists(map_out_folder):
+                        shutil.rmtree(map_out_folder)
+                    os.makedirs(map_out_folder)
+
+                    print("\"%s\" feature BED contains genomic regions ... " %(feat_id))
+                    #print("Get all transript IDs from --gtf ...")
+                    #all_tr_ids_dic =  dsglib.gtf_get_transcript_ids(args.in_gtf)
+                    print("Map \"%s\" feature BED regions to transcriptome, using all --gtf transcripts ... " %(feat_id))
+
+                    # Map feature BED genomic regions to transcriptome.
+                    rplib.convert_genome_positions_to_transcriptome(bed_path,
+                                                                    map_out_folder,
+                                                                    args.in_gtf,
+                                                                    tr_len_dic)
+
+                    all_comp_transcript_hits_bed = map_out_folder + "/" + "transcript_hits_complete.bed"
+                    all_incomp_transcript_hits_bed = map_out_folder + "/" + "transcript_hits_incomplete.bed"
+                    assert os.path.exists(all_comp_transcript_hits_bed), "Mapping file %s not found" %(all_comp_transcript_hits_bed)
+                    assert os.path.exists(all_incomp_transcript_hits_bed), "Mapping file %s not found" %(all_incomp_transcript_hits_bed)
+                    merge_list = []
+                    merge_list.append(all_comp_transcript_hits_bed)
+                    merge_list.append(all_incomp_transcript_hits_bed)
+                    rplib.merge_files(merge_list, bed_path)
+
+            else:
+                # Check if IDs are genomic IDs.
+                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in in \"%s\" feature BED. Please provide genomic regions matching --gtf and --gen files" %(feat_id)
+
+
+            print("Annotating \"%s\" feature ... " %(feat_id))
 
             # Training set.
             pos_feat_out = args.out_folder + "/" + "positives." + feat_id
             rplib.bed_get_feature_annotations(pos_bed_out, bed_path, pos_feat_out,
                                               feat_type=feat_type,
                                               stats_dic=pos_stats_dic,
-                                              disable_pol=disable_pol)
+                                              disable_pol=False)
             # Add additional stats to pos_stats_dic.
             if args.report:
                 pos_stats_dic["set"] = "positives"
@@ -4415,7 +4563,7 @@ def main_gt(args):
             rplib.bed_get_feature_annotations(neg_bed_out, bed_path, neg_feat_out,
                                               feat_type=feat_type,
                                               stats_dic=neg_stats_dic,
-                                              disable_pol=disable_pol)
+                                              disable_pol=False)
             # Add additional stats to neg_stats_dic.
             if args.report:
                 neg_stats_dic["set"] = "negatives"
@@ -4429,6 +4577,11 @@ def main_gt(args):
                                                      int_whole_nr=True)
 
     FEATOUT.close()
+
+    # Delete feature BED transcript mapping folder if present.
+    map_out_folder = args.out_folder + "/" + "tmp_map_out"
+    if os.path.exists(map_out_folder):
+        shutil.rmtree(map_out_folder)
 
     """
     Generate HTML report including various training dataset statistics.
@@ -4635,23 +4788,12 @@ def main_gp(args):
     # Get infos from rnaprot train settings (partly ported over from gt).
     rp_train_settings_file = args.train_in_folder + "/settings.rnaprot_train.out"
     assert os.path.exists(rp_train_settings_file), "rnaprot train settings file %s not found" %(rp_train_settings_file)
-    train_settings_dic = {}
-    with open(rp_train_settings_file) as f:
-        for line in f:
-            cols = line.strip().split("\t")
-            train_settings_dic[cols[0]] = cols[1]
-    f.closed
-    assert train_settings_dic, "train_settings_dic empty"
+    train_settings_dic = rplib.read_settings_into_dic(rp_train_settings_file)
 
     # Get used model features.
     rp_train_features_file = args.train_in_folder + "/features.out"
-    train_fid_dic = {}
-    with open(rp_train_features_file) as f:
-        for line in f:
-            cols = line.strip().split("\t")
-            train_fid_dic[cols[0]] = cols[2]
-    f.closed
-    assert train_fid_dic, "train_fid_dic empty"
+    train_fid_dic = rplib.read_settings_into_dic(rp_train_features_file,
+                                                 val_col2=True)
     assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
 
     # Additional feature file.
@@ -4665,6 +4807,7 @@ def main_gp(args):
     else:
         if train_settings_dic["feat_in"] != "None":
             if os.path.exists(train_settings_dic["feat_in"]):
+                print("Using --feat-in file specified in --train-in ... ")
                 feat_in_file = train_settings_dic["feat_in"]
     # Get additional feature IDs.
     add_fid_dic = {}
@@ -4675,7 +4818,9 @@ def main_gp(args):
                 cols = line.strip().split("\t")
                 feat_id = cols[0]
                 add_fid_dic[feat_id] = 1
+                assert feat_id in train_fid_dic, "--feat-in \"%s\" ID not a feature of --train-in model" %(feat_id)
         f.closed
+    assert add_fid_dic, "no additional features read in from specified --feat-in %s" %(feat_in_file)
 
     # Region features.
     args.exon_intron_annot = False
@@ -4758,11 +4903,11 @@ def main_gp(args):
                 args.exon_intron_n = True
             if train_settings_dic["eia_all_ex"]  == "True":
                 if not args.eia_all_ex:
-                    print("WARNING: --model-in model was trained with --eia-all-ex which is currently disabled!")
+                    print("WARNING: --train-in model was trained with --eia-all-ex which is currently disabled!")
                     print("         Please set --eia-all-ex if desired for exon-intron annotation ... ")
             if args.eia_all_ex:
-                assert not args.intron_border_annot, "--eia-all-ex incompatible with --eia-ib setting from --model-in model. Please unset --eia-all-ex or train model without --eia-ib or use --eia-all-ex setting in rnaprot gt"
-                assert not args.exon_intron_n, "--eia-all-ex incompatible with --eia-n setting from --model-in model. Please unset --eia-all-ex or train model without --eia-n or use --eia-all-ex setting in rnaprot gt"
+                assert not args.intron_border_annot, "--eia-all-ex incompatible with --eia-ib setting from --train-in model. Please unset --eia-all-ex or train model without --eia-ib or use --eia-all-ex setting in rnaprot gt"
+                assert not args.exon_intron_n, "--eia-all-ex incompatible with --eia-n setting from --train-in model. Please unset --eia-all-ex or train model without --eia-n or use --eia-all-ex setting in rnaprot gt"
 
         elif fid == "tra":
             std_feat_found = True
@@ -4975,13 +5120,13 @@ def main_gp(args):
     if transcript_regions:
         # Check for set --exon-intron.
         if args.exon_intron_annot:
-            print("ERROR: setting --eia is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites.")
+            print("ERROR: setting --eia is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites")
             sys.exit()
         if args.intron_border_annot:
-            print("ERROR: setting --eia-ib is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites.")
+            print("ERROR: setting --eia-ib is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites")
             sys.exit()
         if args.exon_intron_n:
-            print("ERROR: setting --eia-ib is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites.")
+            print("ERROR: setting --eia-ib is useless for transcript sites. Please use --train-in model not trained with --eia or provide genomic input sites")
             sys.exit()
         # Read in transcript lengths from --gtf.
         print("Get transcript lengths from --gtf ... ")

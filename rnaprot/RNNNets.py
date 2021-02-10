@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pack_padded_sequence
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -185,7 +186,7 @@ class RNNModel(nn.Module):
         self.add_feat = add_feat
         self.rnn_type = rnn_type
         self.rnn_n_layers = rnn_n_layers
-        self.rnn_hidden_dim = gru_hidden_dim
+        self.rnn_hidden_dim = rnn_hidden_dim
         self.device = device
         self.add_fc_layer = add_fc_layer
 

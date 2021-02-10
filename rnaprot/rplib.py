@@ -37,6 +37,14 @@ python3 -m doctest rplib.py
 python3 -m doctest -v rplib.py
 
 
+TO DO:
+Decide on some usefull profile windows (for saliency and single pos scoring),
+maybe even merge these ...
+Once windows set, run on positive set in rnaprot train, to get a distribution
+(p50)
+
+
+
 """
 
 ################################################################################
@@ -786,7 +794,8 @@ def count_file_rows(in_file):
 
 ################################################################################
 
-def bed_check_six_col_format(bed_file):
+def bed_check_six_col_format(bed_file,
+                             nr_cols=6):
     """
     Check whether given .bed file has 6 columns.
 
@@ -803,7 +812,7 @@ def bed_check_six_col_format(bed_file):
     with open(bed_file) as f:
         for line in f:
             cols = line.strip().split("\t")
-            if len(cols) == 6:
+            if len(cols) == nr_cols:
                 six_col_format = True
             break
     f.closed
@@ -4248,6 +4257,32 @@ def check_convert_chr_id(chr_id):
 
 ################################################################################
 
+def check_dic1_keys_in_dic2(dic1, dic2):
+    """
+    Check if keys in dic1 are all present in dic2, return True if present,
+    otherwise False.
+
+    >>> d1 = {'hallo': 1, 'hello' : 1}
+    >>> d2 = {'hallo': 1, 'hello' : 1, "bonjour" : 1}
+    >>> check_dic1_keys_in_dic2(d1, d2)
+    True
+    >>> d1 = {'hallo': 1, 'ciao' : 1}
+    >>> check_dic1_keys_in_dic2(d1, d2)
+    False
+
+    """
+    assert dic1, "dic1 empty"
+    assert dic2, "dic2 empty"
+    check = True
+    for key in dic1:
+        if key not in dic2:
+            check = False
+            break
+    return check
+
+
+################################################################################
+
 def bed_get_chromosome_ids(bed_file,
                            std_chr_filter=False,
                            ids_dic=False):
@@ -5783,6 +5818,460 @@ def gtf_count_isoforms_per_gene(in_gtf,
 
 ################################################################################
 
+def convert_genome_positions_to_transcriptome(in_bed, out_folder,
+                                              in_gtf, tr_ids_dic,
+                                              intersectBed_f=1,
+                                              int_whole_nr=True,
+                                              ignore_ids_dic=False):
+    """
+    Converts a BED file with genomic coordinates into a BED file with
+    transcriptome coordinates. A GTF file with exon features needs to be
+    supplied. A dictionary of transcript IDs defines to which transcripts
+    the genomic regions will be mapped to. Note that input BED file column
+    4 is used as region ID and should be unique.
+
+    Output files are:
+    genomic_exon_coordinates.bed
+        Genomic exon coordinates extracted from .gtf file
+    transcript_exon_coordinates.bed
+        Transcript exon coordinates calculated from genomic ones
+    hit_exon_overlap.bed
+        Overlap between genomic input and exon regions
+    transcript_matches_complete.bed
+        Input regions that fully (completely) map to transcript regions
+    transcript_matches_incomplete.bed
+        Input regions that partly (incompletely) map to transcript regions
+    transcript_matches_complete_unique.bed
+        Unique + complete (full-length) matches
+    transcript_matches_all_unique.bed
+        All unique (complete+incomplete) matches
+    hit_transcript_exons.bed
+        Genomic coordinates of exons of transcripts with mapped regions
+    hit_transcript_stats.out
+        Various statistics for transcripts with hits
+        e.g. gene ID, gene name, gene biotype, # unique complete hits,
+        # unique all hits, # complete hits, # all hits
+
+    NOTE that function has been tested with .gtf files from Ensembl. .gtf files
+    from different sources sometimes have a slightly different format, which
+    could lead to incompatibilities / errors. See test files for format that
+    works.
+
+    Some tested Ensembl GTF files:
+    Homo_sapiens.GRCh38.97.gtf.gz
+    Mus_musculus.GRCm38.81.gtf.gz
+    Mus_musculus.GRCm38.79.gtf.gz
+
+    Requirements:
+    bedTools (tested with version 2.29.0)
+    GTF file needs to have exons sorted (minus + plus strand exons, see test.gtf
+    below as an example). Sorting should be the default (at least for tested
+    Ensembl GTF files).
+
+    >>> tr_ids_dic = {"ENST001" : 1, "ENST002" : 1}
+    >>> in_bed = "test_data/map_test_in.bed"
+    >>> in_gtf = "test_data/map_test_in.gtf"
+    >>> comp_uniq_exp = "test_data/map_test_out_all_unique.bed"
+    >>> comp_uniq_out = "test_data/map_out/transcript_hits_all_unique.bed"
+    >>> tr_stats_exp = "test_data/map_test_out_transcript_stats.out"
+    >>> tr_stats_out = "test_data/map_out/hit_transcript_stats.out"
+    >>> out_folder = "test_data/map_out"
+    >>> convert_genome_positions_to_transcriptome(in_bed, out_folder, in_gtf, tr_ids_dic, intersectBed_f=0.5)
+    >>> diff_two_files_identical(comp_uniq_exp, comp_uniq_out)
+    True
+    >>> diff_two_files_identical(tr_stats_exp, tr_stats_out)
+    True
+
+    """
+    # Check for bedtools.
+    assert is_tool("bedtools"), "bedtools not in PATH"
+
+    # Results output folder.
+    if not os.path.exists(out_folder):
+        os.makedirs(out_folder)
+    # Output files.
+    genome_exon_bed = out_folder + "/" + "genomic_exon_coordinates.bed"
+    transcript_exon_bed = out_folder + "/" + "transcript_exon_coordinates.bed"
+    overlap_out = out_folder + "/" + "hit_exon_overlap.bed"
+    complete_transcript_hits_bed = out_folder + "/" + "transcript_hits_complete.bed"
+    incomplete_transcript_hits_bed = out_folder + "/" + "transcript_hits_incomplete.bed"
+    uniq_complete_out = out_folder + "/" + "transcript_hits_complete_unique.bed"
+    uniq_all_out = out_folder + "/" + "transcript_hits_all_unique.bed"
+    hit_tr_exons_bed = out_folder + "/" + "hit_transcript_exons.bed"
+    hit_tr_stats_out = out_folder + "/" + "hit_transcript_stats.out"
+
+    # Check for unique .bed IDs.
+    assert bed_check_unique_ids(in_bed), "in_bed \"%s\" column 4 IDs not unique" % (in_bed)
+
+    # Remove IDs to ignore from transcript IDs dictionary.
+    if ignore_ids_dic:
+        for seq_id in ignore_ids_dic:
+            del tr_ids_dic[seq_id]
+
+    # Output genomic exon regions.
+    OUTBED = open(genome_exon_bed, "w")
+
+    # Read in exon features from GTF file.
+    tr2gene_id_dic = {}
+    tr2gene_name_dic = {}
+    tr2gene_biotype_dic = {}
+    c_gtf_ex_feat = 0
+    # dic for sanity checking exon number order.
+    tr2exon_nr_dic = {}
+    # dic of lists, storing exon lengths and IDs.
+    tr_exon_len_dic = {}
+    tr_exon_id_dic = {}
+    exon_id_tr_dic = {}
+
+    # Open GTF either as .gz or as text file.
+    if re.search(".+\.gz$", in_gtf):
+        f = gzip.open(in_gtf, 'rt')
+    else:
+        f = open(in_gtf, "r")
+    for line in f:
+        # Skip header.
+        if re.search("^#", line):
+            continue
+        cols = line.strip().split("\t")
+        chr_id = cols[0]
+        feature = cols[2]
+        feat_s = int(cols[3])
+        feat_e = int(cols[4])
+        feat_pol = cols[6]
+        infos = cols[8]
+        if not feature == "exon":
+            continue
+
+        # Restrict to standard chromosomes.
+        new_chr_id = check_convert_chr_id(chr_id)
+        if not new_chr_id:
+            continue
+        else:
+            chr_id = new_chr_id
+
+        # Make start coordinate 0-base (BED standard).
+        feat_s = feat_s - 1
+
+        # Extract transcript ID and from infos.
+        m = re.search('gene_id "(.+?)"', infos)
+        assert m, "gene_id entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        gene_id = m.group(1)
+        # Extract transcript ID.
+        m = re.search('transcript_id "(.+?)"', infos)
+        assert m, "transcript_id entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        transcript_id = m.group(1)
+        # Extract exon number.
+        m = re.search('exon_number "(\d+?)"', infos)
+        assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        exon_nr = int(m.group(1))
+        # Extract gene name.
+        m = re.search('gene_name "(.+?)"', infos)
+        assert m, "gene_name entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        gene_name = m.group(1)
+        # Extract gene biotype.
+        m = re.search('gene_biotype "(.+?)"', infos)
+        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        gene_biotype = m.group(1)
+
+        # Check if transcript ID is in transcript dic.
+        if not transcript_id in tr_ids_dic:
+            continue
+
+        # Check whether exon numbers are incrementing for each transcript ID.
+        if not transcript_id in tr2exon_nr_dic:
+            tr2exon_nr_dic[transcript_id] = exon_nr
+        else:
+            assert tr2exon_nr_dic[transcript_id] < exon_nr, "transcript ID \"%s\" without increasing exon number order in GTF file \"%s\"" %(transcript_id, in_gtf)
+            tr2exon_nr_dic[transcript_id] = exon_nr
+
+        # Make exon count 3-digit.
+        #add = ""
+        #if exon_nr < 10:
+        #    add = "00"
+        #if exon_nr >= 10 and exon_nr < 100:
+        #    add = "0"
+
+        # Count exon entry.
+        c_gtf_ex_feat += 1
+
+        # Construct exon ID.
+        exon_id = transcript_id + "_e" + str(exon_nr)
+
+        # Store more infos.
+        tr2gene_name_dic[transcript_id] = gene_name
+        tr2gene_biotype_dic[transcript_id] = gene_biotype
+        tr2gene_id_dic[transcript_id] = gene_id
+        exon_id_tr_dic[exon_id] = transcript_id
+
+        # Store exon lengths in dictionary of lists.
+        feat_l = feat_e - feat_s
+        if not transcript_id in tr_exon_len_dic:
+            tr_exon_len_dic[transcript_id] = [feat_l]
+        else:
+            tr_exon_len_dic[transcript_id].append(feat_l)
+        # Store exon IDs in dictionary of lists.
+        if not transcript_id in tr_exon_id_dic:
+            tr_exon_id_dic[transcript_id] = [exon_id]
+        else:
+            tr_exon_id_dic[transcript_id].append(exon_id)
+
+        # Output genomic exon region.
+        OUTBED.write("%s\t%i\t%i\t%s\t0\t%s\n" % (chr_id,feat_s,feat_e,exon_id,feat_pol))
+
+    OUTBED.close()
+    f.close()
+
+    # Check for read-in features.
+    assert c_gtf_ex_feat, "no exon features read in from \"%s\"" %(in_gtf)
+
+    # Output transcript exon regions.
+    OUTBED = open(transcript_exon_bed, "w")
+    tr_exon_starts_dic = {}
+
+    # Calculate transcript exon coordinates from in-order exon lengths.
+    for tr_id in tr_exon_len_dic:
+        start = 0
+        for exon_i, exon_l in enumerate(tr_exon_len_dic[tr_id]):
+            exon_id = tr_exon_id_dic[tr_id][exon_i]
+            new_end = start + exon_l
+            # Store exon transcript start positions (0-based).
+            tr_exon_starts_dic[exon_id] = start
+            OUTBED.write("%s\t%i\t%i\t%s\t0\t+\n" % (tr_id,start,new_end,exon_id))
+            # Set for next exon.
+            start = new_end
+    OUTBED.close()
+
+    # Get input .bed region lengths and scores.
+    id2site_sc_dic = {}
+    id2site_len_dic = {}
+    with open(in_bed) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            site_s = int(cols[1])
+            site_e = int(cols[2])
+            site_id = cols[3]
+            site_sc = float(cols[4])
+            site_pol = cols[5]
+            assert site_pol == "+" or site_pol == "-", "invalid strand (in_bed: %s, site_pol: %s)" %(in_bed, site_pol)
+            # Check whether score is whole number.
+            if int_whole_nr:
+                if not site_sc % 1:
+                    site_sc = int(site_sc)
+            # Store score and length of each genomic input site.
+            id2site_sc_dic[site_id] = site_sc
+            id2site_len_dic[site_id] = site_e - site_s
+    f.close()
+
+    # Number input sites.
+    c_in_bed_sites = len(id2site_len_dic)
+
+    # Calculate overlap between genome exon .bed and input .bed.
+    intersect_params = "-s -wb -f %f" %(intersectBed_f)
+    intersect_bed_files(in_bed, genome_exon_bed, intersect_params, overlap_out)
+
+    # Calculate hit region transcript positions.
+
+    # Store complete and incomplete hits in separate .bed files.
+    OUTINC = open(incomplete_transcript_hits_bed, "w")
+    OUTCOM = open(complete_transcript_hits_bed, "w")
+
+    c_complete = 0
+    c_incomplete = 0
+    c_all = 0
+    # Count site hits dic.
+    c_site_hits_dic = {}
+    # ID to site stats dic of lists.
+    id2stats_dic = {}
+    # ID to hit length dic.
+    id2hit_len_dic = {}
+    # Transcripts with hits dic.
+    match_tr_dic = {}
+    # Transcript ID to unique complete hits dic.
+    tr2uniq_com_hits_dic = {}
+    # Transcript ID to unique all hits dic.
+    tr2uniq_all_hits_dic = {}
+    # Transcript ID to complete hits dic.
+    tr2com_hits_dic = {}
+    # Transcript ID to all hits dic.
+    tr2all_hits_dic = {}
+    # Site ID to transcript ID dic.
+    site2tr_id_dic = {}
+
+    with open(overlap_out) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            s_gen_hit = int(cols[1])
+            e_gen_hit = int(cols[2])
+            site_id = cols[3]
+            s_gen_exon = int(cols[7])
+            e_gen_exon = int(cols[8])
+            exon_id = cols[9]
+            exon_pol = cols[11]
+            c_all += 1
+            # Count how many transcriptome matches site has.
+            if site_id in c_site_hits_dic:
+                c_site_hits_dic[site_id] += 1
+            else:
+                c_site_hits_dic[site_id] = 1
+            # Exon transcript start position (0-based).
+            s_tr_exon = tr_exon_starts_dic[exon_id]
+            # Hit length.
+            l_gen_hit = e_gen_hit - s_gen_hit
+            # Site length.
+            l_site = id2site_len_dic[site_id]
+            # Hit region transcript positions (plus strand).
+            hit_tr_s_pos = s_gen_hit - s_gen_exon + s_tr_exon
+            hit_tr_e_pos = hit_tr_s_pos + l_gen_hit
+            # If exon on reverse (minus) strand.
+            if exon_pol == "-":
+                hit_tr_s_pos = e_gen_exon - e_gen_hit + s_tr_exon
+                hit_tr_e_pos = hit_tr_s_pos + l_gen_hit
+            # Site score.
+            site_sc = id2site_sc_dic[site_id]
+            # Transcript ID.
+            tr_id = exon_id_tr_dic[exon_id]
+            # Store transcript ID for each site ID.
+            # In case site ID has several transcript hits, this will be overwritten,
+            # but we just use this dic for unique hits so no problem.
+            site2tr_id_dic[site_id] = tr_id
+            # Store transcript ID has a match.
+            match_tr_dic[tr_id] = 1
+            # If site score round number, make integer.
+            if not site_sc % 1:
+                site_sc = int(site_sc)
+            site_sc = str(site_sc)
+            # Store hit stats list (bed row) for each site.
+            bed_row = "%s\t%i\t%i\t%s\t%s\t+" %(tr_id, hit_tr_s_pos, hit_tr_e_pos, site_id, site_sc)
+            if not site_id in id2stats_dic:
+                id2stats_dic[site_id] = [bed_row]
+            else:
+                id2stats_dic[site_id].append(bed_row)
+            id2hit_len_dic[site_id] = l_gen_hit
+            if l_gen_hit == l_site:
+                # Output complete hits.
+                OUTCOM.write("%s\n" % (bed_row))
+                # Count complete hits per transcript.
+                if tr_id in tr2com_hits_dic:
+                    tr2com_hits_dic[tr_id] += 1
+                else:
+                    tr2com_hits_dic[tr_id] = 1
+            else:
+                # Output incomplete hits.
+                OUTINC.write("%s\n" % (bed_row))
+            # Count all hits per transcript.
+            if tr_id in tr2all_hits_dic:
+                tr2all_hits_dic[tr_id] += 1
+            else:
+                tr2all_hits_dic[tr_id] = 1
+
+    OUTCOM.close()
+    OUTINC.close()
+    f.close()
+
+    # Output unique hits (two files, one for complete hits, other for all).
+    OUTUNIALL = open(uniq_all_out, "w")
+    OUTUNICOM = open(uniq_complete_out, "w")
+
+    for site_id in c_site_hits_dic:
+        c_hits = c_site_hits_dic[site_id]
+        if c_hits != 1:
+            continue
+        l_hit = id2hit_len_dic[site_id]
+        l_site = id2site_len_dic[site_id]
+        tr_id = site2tr_id_dic[site_id]
+        bed_row = id2stats_dic[site_id][0]
+        if l_hit == l_site:
+            # Store unique + complete hit.
+            OUTUNICOM.write("%s\n" % (bed_row))
+            if tr_id in tr2uniq_com_hits_dic:
+                tr2uniq_com_hits_dic[tr_id] += 1
+            else:
+                tr2uniq_com_hits_dic[tr_id] = 1
+        # Store unique hit (complete or incomplete).
+        OUTUNIALL.write("%s\n" % (bed_row))
+        if tr_id in tr2uniq_all_hits_dic:
+            tr2uniq_all_hits_dic[tr_id] += 1
+        else:
+            tr2uniq_all_hits_dic[tr_id] = 1
+
+    OUTUNICOM.close()
+    OUTUNIALL.close()
+
+    # For all transcripts with mapped regions, store exons.bed + stats.out.
+    OUTEXBED = open(hit_tr_exons_bed, "w")
+    OUTSTATS = open(hit_tr_stats_out, "w")
+    # Statistics out file header.
+    OUTSTATS.write("tr_id\tchr\tgen_s\tgen_e\tpol\tgene_id\tgene_name\tgene_biotype\ttr_len\tcomp_hits\tall_hits\tuniq_comp_hits\tuniq_all_hits\n")
+    # transcript stats.
+    tr2len_dic = {}
+    tr2gen_s_dic = {}
+    tr2gen_e_dic = {}
+    tr2gen_chr_dic = {}
+    tr2gen_pol_dic = {}
+
+    with open(genome_exon_bed) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            chr_id = cols[0]
+            ex_s = int(cols[1])
+            ex_e = int(cols[2])
+            ex_id = cols[3]
+            ex_pol = cols[5]
+            ex_l = ex_e - ex_s
+            # Print out exons of transcripts with hits.
+            tr_id = exon_id_tr_dic[ex_id]
+            # Store transcripts lengths.
+            if tr_id in tr2len_dic:
+                tr2len_dic[tr_id] += ex_l
+            else:
+                tr2len_dic[tr_id] = ex_l
+            # Store more transcript stats.
+            if tr_id in tr2gen_s_dic:
+                if ex_s < tr2gen_s_dic[tr_id]:
+                    tr2gen_s_dic[tr_id] = ex_s
+            else:
+                tr2gen_s_dic[tr_id] = ex_s
+            if tr_id in tr2gen_e_dic:
+                if ex_e > tr2gen_e_dic[tr_id]:
+                    tr2gen_e_dic[tr_id] = ex_e
+            else:
+                tr2gen_e_dic[tr_id] = ex_e
+            tr2gen_chr_dic[tr_id] = chr_id
+            tr2gen_pol_dic[tr_id] = ex_pol
+            if tr_id in match_tr_dic:
+                bed_row = "%s\t%i\t%i\t%s\t0\t%s" %(chr_id, ex_s, ex_e, ex_id, ex_pol)
+                OUTEXBED.write("%s\n" % (bed_row))
+    OUTEXBED.close()
+
+    # Transcript hit statistics.
+    for tr_id in match_tr_dic:
+        gene_id = tr2gene_id_dic[tr_id]
+        gene_biotype = tr2gene_biotype_dic[tr_id]
+        gene_name = tr2gene_name_dic[tr_id]
+        tr_l = tr2len_dic[tr_id]
+        tr_chr = tr2gen_chr_dic[tr_id]
+        tr_pol = tr2gen_pol_dic[tr_id]
+        tr_gen_s = tr2gen_s_dic[tr_id]
+        tr_gen_e = tr2gen_e_dic[tr_id]
+        c_com_hits = 0
+        c_all_hits = 0
+        c_uniq_com_hits = 0
+        c_uniq_all_hits = 0
+        if tr_id in tr2com_hits_dic:
+            c_com_hits = tr2com_hits_dic[tr_id]
+        if tr_id in tr2all_hits_dic:
+            c_all_hits = tr2all_hits_dic[tr_id]
+        if tr_id in tr2uniq_com_hits_dic:
+            c_uniq_com_hits = tr2uniq_com_hits_dic[tr_id]
+        if tr_id in tr2uniq_all_hits_dic:
+            c_uniq_all_hits = tr2uniq_all_hits_dic[tr_id]
+        stats_row = "%s\t%s\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%i\t%i\t%i\t%i" %(tr_id, tr_chr, tr_gen_s, tr_gen_e, tr_pol, gene_id, gene_name, gene_biotype, tr_l, c_com_hits, c_all_hits, c_uniq_com_hits, c_uniq_all_hits)
+        OUTSTATS.write("%s\n" % (stats_row))
+    OUTSTATS.close()
+
+
+################################################################################
+
 def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
                                             stats_dic=None,
                                             codon_annot=False,
@@ -6018,23 +6507,19 @@ def bed_get_transcript_annotations_from_gtf(tr_ids_dic, in_bed, in_gtf, out_tra,
     OUTLAB.close()
 
     if stats_dic:
-        with open(out_tra) as f:
-            for line in f:
-                row = line.strip()
-                cols = line.strip().split("\t")
-                reg_id = cols[0]
-                label_str = cols[1]
-                stats_dic["total_pos"] += len(label_str)
-                # Count occurences (+1 for each site with label) for these labels.
-                occ_labels = ["S", "E", "A", "Z", "B"]
-                for ocl in occ_labels:
-                    if re.search("%s" %(ocl), label_str):
-                        stats_dic[ocl] += 1
-                for i in range(len(label_str)):
-                    l = label_str[i]
-                    if l not in occ_labels:
-                        stats_dic[l] += 1
-        f.closed
+        tra_dic = read_cat_feat_into_dic(out_tra)
+        for seq_id in tra_dic:
+            label_str = tra_dic[seq_id]
+            stats_dic["total_pos"] += len(label_str)
+            # Count occurences (+1 for each site with label) for these labels.
+            occ_labels = ["S", "E", "A", "Z", "B"]
+            for ocl in occ_labels:
+                if re.search("%s" %(ocl), label_str):
+                    stats_dic[ocl] += 1
+            for i in range(len(label_str)):
+                l = label_str[i]
+                if l not in occ_labels:
+                    stats_dic[l] += 1
 
     # Take out the trash.
     litter_street = True
@@ -6646,11 +7131,6 @@ def fasta_get_repeat_region_annotations(seqs_dic, out_rra,
         for i in range(0, len(rra_str), split_size):
             OUTRRA.write("%s\n" %((rra_str[i:i+split_size])))
         if stats_dic:
-            if id2ucr_dic:
-                # If uppercase part only, prune rra_str.
-                uc_s = id2ucr_dic[seq_id][0]
-                uc_e = id2ucr_dic[seq_id][1]
-                rra_str = rra_str[uc_s-1:uc_e]
             for l in rra_str:
                 stats_dic["total_pos"] += 1
                 stats_dic[l] += 1
@@ -8111,6 +8591,7 @@ def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     eia_plot = "exon_intron_region_plot.png"
     tra_plot = "transcript_region_plot.png"
     rra_plot = "repeat_region_plot.png"
+    bed_cov_plot = "bed_feat_coverage_plot.png"
     lengths_plot_out = plots_out_folder + "/" + lengths_plot
     entropy_plot_out = plots_out_folder + "/" + entropy_plot
     dint_plot_out = plots_out_folder + "/" + dint_plot
@@ -8120,6 +8601,8 @@ def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     eia_plot_out = plots_out_folder + "/" + eia_plot
     tra_plot_out = plots_out_folder + "/" + tra_plot
     rra_plot_out = plots_out_folder + "/" + rra_plot
+    bed_cov_plot_out = plots_out_folder + "/" + bed_cov_plot
+
 
     print("Generate statistics for HTML report ... ")
 
@@ -8857,7 +9340,7 @@ positive and negative dataset.
 """
         create_train_set_bed_feat_cov_plot(pos_cov_dic, neg_cov_dic,
                                            bed_cov_plot_out,
-                                           theme=args.theme)
+                                           theme=theme)
         bed_cov_plot_path = plots_folder + "/" + bed_cov_plot
         mdtext += '<img src="' + bed_cov_plot_path + '" alt="BED feature coverage distribution"' + "\n"
         mdtext += 'title="BED feature coverage distribution" width="800" />' + "\n"
@@ -10557,6 +11040,7 @@ def read_str_feat_into_dic(str_feat_file,
 def load_training_data(args,
                        store_tensors=True,
                        kmer2idx_dic=False,
+                       feat_info_dic=None,
                        li2label_dic=None):
 
     """
@@ -10568,6 +11052,8 @@ def load_training_data(args,
         Provide k-mer to index mapping dictionary for k-mer embedding.
     store_tensors:
         Store data as tensors in returned all_features.
+    feat_info_dic:
+        Store feature infos in given dictionary.
     li2label_dic:
         Class label to RBP label/name dictionary. For associating the
         positive class label to the RBP name in generic model cross
@@ -10598,7 +11084,7 @@ def load_training_data(args,
     eia	C	E,I	-
     rra	C	N,R	-
     """
-
+    # HALLO 123
     # Channel info output file.
     channel_infos_out = args.out_folder + "/" + "channel_infos.out"
     channel_info_list = []
@@ -10634,6 +11120,7 @@ def load_training_data(args,
     assert fid2cat_dic["fa"] == ["A", "C", "G", "U"], "sequence feature alphabet != A,C,G,U"
 
     # Read in sequences.
+    print("Read in sequences ... ")
     seqs_dic = read_fasta_into_dic(pos_fa_in, all_uc=True)
     pos_ids_dic = {}
     for seq_id in seqs_dic:
@@ -10641,6 +11128,7 @@ def load_training_data(args,
     seqs_dic = read_fasta_into_dic(neg_fa_in, all_uc=True,
                                    seqs_dic=seqs_dic)
     assert seqs_dic, "no sequences read from FASTA files"
+
     neg_ids_dic = {}
     for seq_id in seqs_dic:
         if seq_id not in pos_ids_dic:
@@ -10710,19 +11198,25 @@ def load_training_data(args,
     for seq_id in seqs_dic:
         seq = seqs_dic[seq_id]
         if args.embed:
-            feat_id[seq_id] = convert_seq_to_kmer_embedding(seq, args.embed_k, kmer2idx_dic,
+            feat_dic[seq_id] = convert_seq_to_kmer_embedding(seq, args.embed_k, kmer2idx_dic,
                                                             l2d=True)
-            # Add sequence embedding channel.
-            channel_info = "%i\t%s\tfa\tC\tembedding" %(channel_nr, channel_id)
-            channel_info_list.append(channel_info)
         else:
             feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
-            # Add sequence one-hot channels.
-            for c in fid2cat_dic["fa"]:
-                channel_nr += 1
-                channel_id = c
-                channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
-                channel_info_list.append(channel_info)
+    if args.embed:
+        # Add sequence embedding channel.
+        channel_info = "%i\tembed\tfa\tC\tembedding" %(channel_nr)
+        channel_info_list.append(channel_info)
+        if feat_info_dic is not None:
+            feat_info_dic["fa"] = "C;embed"
+    else:
+        # Add sequence one-hot channels.
+        for c in fid2cat_dic["fa"]:
+            channel_nr += 1
+            channel_id = c
+            channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+            channel_info_list.append(channel_info)
+        if feat_info_dic is not None:
+            feat_info_dic["fa"] = "C;A,C,G,U"
 
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
@@ -10752,6 +11246,8 @@ def load_training_data(args,
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
                 feat_out_str_row = "str\tN\tE,H,I,M,S\tprob"
+                if feat_info_dic is not None:
+                    feat_info_dic["str"] = "N;E,H,I,M,S"
             elif args.str_mode == 2:
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -10759,6 +11255,8 @@ def load_training_data(args,
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
                 feat_out_str_row = "str\tC\tE,H,I,M,S\t-"
+                if feat_info_dic is not None:
+                    feat_info_dic["str"] = "C;E,H,I,M,S"
             elif args.str_mode == 3:
                 channel_nr += 1
                 channel_id = "up"
@@ -10766,6 +11264,8 @@ def load_training_data(args,
                 channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                 channel_info_list.append(channel_info)
                 feat_out_str_row = "str\tN\tup\tprob"
+                if feat_info_dic is not None:
+                    feat_info_dic["str"] = "N;up"
             elif args.str_mode == 4:
                 channel_nr += 1
                 channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
@@ -10774,6 +11274,8 @@ def load_training_data(args,
                 channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
                 feat_out_str_row = "str\tC\tP,U\t-"
+                if feat_info_dic is not None:
+                    feat_info_dic["str"] = "C;P,U"
             else:
                 assert False, "invalid str_mode given"
         else:
@@ -10788,6 +11290,7 @@ def load_training_data(args,
                                           feat_dic=feat_dic,
                                           label_list=feat_alphabet)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            ch_id_str = ",".join(feat_alphabet)
             if ftype == "N":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -10795,6 +11298,8 @@ def load_training_data(args,
                     encoding = fid2norm_dic[fid]
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
+                if feat_info_dic is not None:
+                    feat_info_dic[fid] = "N;" + ch_id_str
             elif ftype == "C":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -10802,6 +11307,8 @@ def load_training_data(args,
                     channel_id = c
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
+                if feat_info_dic is not None:
+                    feat_info_dic[fid] = "C;" + ch_id_str
             else:
                 assert False, "invalid feature type given (%s) for feature %s" %(ftype,fid)
 
@@ -10968,7 +11475,8 @@ def shuffle_idx_feat_labels(labels, features,
 
 ################################################################################
 
-def read_settings_into_dic(settings_file):
+def read_settings_into_dic(settings_file,
+                           val_col2=False):
     """
     Read settings file content into dictionary.
     Each row expected to have following format:
@@ -10978,7 +11486,7 @@ def read_settings_into_dic(settings_file):
 
     >>> test_in = "test_data/test_settings.out"
     >>> read_settings_into_dic(test_in)
-    {'peyote': '20.5', 'china_white': '43.1'}
+    {'peyote': '20.5', 'china_white': '43.1', 'bolivian_marching_powder' : '1000.0'}
 
     """
     assert settings_file, "file name expected"
@@ -10988,7 +11496,10 @@ def read_settings_into_dic(settings_file):
         for line in f:
             cols = line.strip().split("\t")
             settings_id = cols[0]
-            settings_val = cols[1]
+            if val_col2:
+                settings_val = cols[2]
+            else:
+                settings_val = cols[1]
             if settings_id not in set_dic:
                 set_dic[settings_id] = settings_val
             else:
@@ -11285,24 +11796,6 @@ def process_test_sites(in_bed, out_bed, chr_len_dic,
 
             # Store future uppercase region length.
             id2pl_dic[new_site_id] = [0, site_len, 0]
-            # --con-ext lowercase context extension.
-            if args.con_ext:
-                seq_ext_s = new_s
-                seq_ext_e = new_e
-                new_s = new_s - args.con_ext
-                new_e = new_e + args.con_ext
-                # Truncate sites at reference ends.
-                if new_s < 0:
-                    new_s = 0
-                if new_e > chr_len_dic[chr_id]:
-                    new_e = chr_len_dic[chr_id]
-                us_lc_len = seq_ext_s - new_s
-                ds_lc_len = new_e - seq_ext_e
-                id2pl_dic[new_site_id][0] = us_lc_len
-                id2pl_dic[new_site_id][2] = ds_lc_len
-                if site_pol == "-":
-                    id2pl_dic[new_site_id][0] = ds_lc_len
-                    id2pl_dic[new_site_id][2] = us_lc_len
 
             # Check whether score is whole number.
             if not site_sc % 1:
@@ -14160,16 +14653,16 @@ def drop_a_line(theme=1):
 
     lines = []
     a = """
-                \"Let's Party!\"
+                 \"Let's Party!\"
 """
     b = """
-      \"I eat Green Berets for breakfast.\"
+       \"I eat Green Berets for breakfast.\"
 """
     c = """
-       \"There's always barber college.\"
+        \"There's always barber college.\"
 """
     d = """
-         \"Yo, Steve! You're history.\"
+          \"Yo, Steve! You're history.\"
 """
 
     lines.append(a)

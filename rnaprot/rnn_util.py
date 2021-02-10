@@ -1,5 +1,6 @@
 import torch
-from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
+from torch.nn.utils.rnn import pad_sequence
+from torch.nn import BCEWithLogitsLoss
 from sklearn import metrics
 from rnaprot.RNNNets import RNNModel
 from torch.utils.data import DataLoader
@@ -11,21 +12,13 @@ import shutil
 import sys
 import re
 import os
-# New from BOHB.
-from torch.nn import BCEWithLogitsLoss
-#import torch.nn as nn
+# BOHB.
 import ConfigSpace as CS
 import ConfigSpace.hyperparameters as CSH
 from hpbandster.core.worker import Worker
 import hpbandster.core.nameserver as hpns
 import hpbandster.core.result as hpres
 from hpbandster.optimizers import BOHB
-#import pickle
-#import time
-# Logging needed ?
-import logging
-logging.basicConfig(level=logging.DEBUG) # or try logging.WARNING
-#import torch.utils.data needed?
 
 
 """
@@ -39,8 +32,16 @@ optimization.
 
 def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
              n_bohb_iter=10,
-             min_budget=3,
-             max_budget=27):
+             min_budget=5,
+             verbose_bohb=False,
+             max_budget=30):
+
+    # Logging.
+    import logging
+    if verbose_bohb:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.WARNING)
 
     #nic_name = 'lo'
     #port = None
@@ -51,14 +52,19 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
     NS.start()
 
     w = MyWorker(args, train_dataset, val_dataset,
-                 sleep_interval=0, nameserver=host,run_id=run_id)
+                 nameserver=host,run_id=run_id)
     w.run(background=True)
 
     result_logger = hpres.json_result_logger(directory=bohb_out_folder, overwrite=True)
 
-    bohb = BOHB(configspace=w.get_configspace(),
+    # Get HPs and their spaces.
+    conf_space = w.get_configspace()
+    print(conf_space)
+
+    bohb = BOHB(configspace=conf_space,
                 run_id=run_id,
                 nameserver=host,
+                result_logger=result_logger,
                 min_budget=min_budget,
                 max_budget=max_budget)
 
@@ -84,8 +90,8 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
 
     with open(results_json_file) as f:
         for line in f:
-            if re.search("loss.+val acc.+val auc", line):
-                m = re.search(r"loss\": (.+?),.+val acc\": (.+?),.+val auc\": (.+?)\}", line)
+            if re.search("loss.+val_acc.+val_auc", line):
+                m = re.search(r"loss\": (.+?),.+val_acc\": (.+?),.+val_auc\": (.+?)\}", line)
                 loss = float(m.group(1))
                 if loss < best_loss:
                     best_loss = loss
@@ -103,6 +109,14 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
 ################################################################################
 
 class MyWorker(Worker):
+    """
+    The worker is responsible for evaluating a given model with a
+    single configuration on a single budget at a time.
+
+    Worker example:
+    https://automl.github.io/HpBandSter/build/html/auto_examples/example_5_pytorch_worker.html
+
+    """
     def __init__(self, args, train_dataset, val_dataset, **kwargs):
         super().__init__(**kwargs)
         self.train_dataset = train_dataset
@@ -150,15 +164,21 @@ class MyWorker(Worker):
                      }
         })
 
+    """
+    Defining the Search Space:
+    The parameters being optimized need to be defined. HpBandSter relies
+    on the ConfigSpace package for that.
+
+    """
     @staticmethod
     def get_configspace():
         cs = CS.ConfigurationSpace()
-        lr = CSH.UniformFloatHyperparameter('learn_rate', lower=1e-6, upper=1e-1, default_value='1e-2', log=True)
-        wd = CSH.UniformFloatHyperparameter(name='weight_decay', lower=1e-8, upper=1e-1, log=True)
+        lr = CSH.UniformFloatHyperparameter('learn_rate', lower=1e-6, upper=1e-1, default_value='1e-3', log=True)
+        wd = CSH.UniformFloatHyperparameter(name='weight_decay', lower=1e-8, upper=1e-1, default_value='5e-4', log=True)
         embed_dim = CSH.UniformIntegerHyperparameter('embed_dim', lower=4, upper=24, default_value=10)
         n_rnn_dim = CSH.CategoricalHyperparameter('n_rnn_dim', choices=[32, 64, 96], default_value=32)
         n_rnn_layers = CSH.CategoricalHyperparameter('n_rnn_layers', choices=[1, 2, 3], default_value=2)
-        dr = CSH.UniformFloatHyperparameter('dropout_rate', lower=0.0, upper=0.9, default_value=0.5, log=False)
+        dr = CSH.UniformFloatHyperparameter('dropout_rate', lower=0.0, upper=0.8, default_value=0.5, log=False)
         bidirect = CSH.CategoricalHyperparameter('bidirect', choices=[False, True], default_value=True)
         add_fc_layer = CSH.CategoricalHyperparameter('add_fc_layer', choices=[False, True], default_value=True)
         rnn_type = CSH.CategoricalHyperparameter('rnn_type', choices=[1, 2], default_value=1)
@@ -176,6 +196,15 @@ def pad_collate(batch):
     xs_pad = pad_sequence(xs, batch_first=True, padding_value=0)
     ys = torch.FloatTensor([[y] for y in ys])
     return xs_pad, ys, xs_lens
+
+
+###############################################################################
+
+def binary_accuracy(preds, y):
+    rounded_preds = torch.round(torch.sigmoid(preds))
+    correct = (rounded_preds == y).float()
+    acc = correct.sum()/len(correct)
+    return acc
 
 
 ###############################################################################
@@ -279,15 +308,16 @@ def min_max_normalize_probs(x, max_x, min_x,
 
 ################################################################################
 
-def test_model(args, test_loader, model_path,
-               device, criterion):
+def test_model(args, test_loader, model_path, device, criterion,
+               opt_dic=False):
     """
     Run given model on test data in test_loader, return AUC and ACC.
 
     """
 
     # Define model.
-    model = define_model(args, device)
+    model = define_model(args, device,
+                         opt_dic=opt_dic)
     model.load_state_dict(torch.load(model_path))
     test_loss, test_acc, test_auc = test(test_loader, model, criterion, device)
     return test_auc, test_acc
@@ -297,7 +327,8 @@ def test_model(args, test_loader, model_path,
 
 def train_model(args, train_loader, val_loader,
                 model_path, device, criterion,
-                fold_i=1,
+                opt_dic=False,
+                run_id="some_model",
                 plot_lc_folder=False,
                 verbose=False):
 
@@ -308,11 +339,11 @@ def train_model(args, train_loader, val_loader,
     """
 
     if verbose:
-        print("Training --gen-cv model ... "
         print("Reporting: (train_loss, val_loss, val_acc, val_auc)")
 
     # Get model + optimizer.
-    model, optimizer = define_model_and_optimizer(args, device)
+    model, optimizer = define_model_and_optimizer(args, device,
+                                                  opt_dic=opt_dic)
 
     best_val_loss = 1000000000.0
     best_val_acc = 0
@@ -329,13 +360,15 @@ def train_model(args, train_loader, val_loader,
 
         train_loss = train(model, optimizer, train_loader, criterion, device)
         val_loss, val_acc, val_auc = test(val_loader, model, criterion, device)
-        print('Epoch {}: ({}, {}, {}, {})'.format(epoch, train_loss, val_loss, val_acc, val_auc))
+        if verbose:
+            print('Epoch {}: ({}, {}, {}, {})'.format(epoch, train_loss, val_loss, val_acc, val_auc))
 
         tll.append(train_loss)
         vll.append(val_loss)
 
         if val_loss < best_val_loss:
-            print("Saving model ... ")
+            if verbose:
+                print("Saving model ... ")
             elapsed_patience = 0
             best_val_loss = val_loss
             best_val_acc = val_acc
@@ -345,7 +378,7 @@ def train_model(args, train_loader, val_loader,
             elapsed_patience += 1
 
     if plot_lc_folder:
-        lc_plot = plot_lc_folder + "/cv_fold_" + str(fold_i) + ".lc.png"
+        lc_plot = plot_lc_folder + "/" + run_id + ".lc.png"
         assert tll, "tll empty"
         assert vll, "vll empty"
         create_lc_loss_plot(tll, vll, lc_plot)
@@ -355,40 +388,67 @@ def train_model(args, train_loader, val_loader,
 
 ################################################################################
 
-def define_model(args, device):
+def define_model(args, device,
+                 opt_dic=False):
     """
-    Define and return model based on args and device.
+    Define and return model based on args and device. Alternatively use
+    hyperparameters from provided opt_dic.
 
     """
+
     # Define model.
-    model = RNNModel(args.n_feat, args.n_class, device,
-                     rnn_type=args.rnn_type,
-                     rnn_n_layers=args.n_rnn_layers,
-                     rnn_hidden_dim=args.n_rnn_dim,
-                     bidirect=args.bidirect,
-                     dropout_rate=args.dropout_rate,
-                     add_fc_layer=args.add_fc_layer,
-                     embed=args.embed,
-                     embed_vocab_size=args.embed_vocab_size,
-                     embed_dim=args.embed_dim).to(device)
+    if opt_dic:
+        model = RNNModel(args.n_feat, args.n_class, device,
+                         rnn_type=opt_dic["rnn_type"],
+                         rnn_n_layers=opt_dic["n_rnn_layers"],
+                         rnn_hidden_dim=opt_dic["n_rnn_dim"],
+                         bidirect=opt_dic["bidirect"],
+                         dropout_rate=opt_dic["dropout_rate"],
+                         add_fc_layer=opt_dic["add_fc_layer"],
+                         embed=args.embed,
+                         embed_vocab_size=args.embed_vocab_size,
+                         embed_dim=opt_dic["embed_dim"]).to(device)
+    else:
+        model = RNNModel(args.n_feat, args.n_class, device,
+                         rnn_type=args.rnn_type,
+                         rnn_n_layers=args.n_rnn_layers,
+                         rnn_hidden_dim=args.n_rnn_dim,
+                         bidirect=args.bidirect,
+                         dropout_rate=args.dropout_rate,
+                         add_fc_layer=args.add_fc_layer,
+                         embed=args.embed,
+                         embed_vocab_size=args.embed_vocab_size,
+                         embed_dim=args.embed_dim).to(device)
     return model
 
 
 ################################################################################
 
-def define_model_and_optimizer(args, device):
+def define_model_and_optimizer(args, device,
+                               opt_dic=False):
     """
     Define and return model and optimizer based on args and device.
+    Alternatively use hyperparameters from provided opt_dic.
 
     """
 
-    # Model.
-    model = define_model(args, device)
+    if opt_dic:
+        # Model.
+        model = define_model(args, device,
+                             opt_dic=opt_dic)
 
-    # Optimizer.
-    optimizer = torch.optim.AdamW(model.parameters(),
-                                  lr=args.learn_rate,
-                                  weight_decay=args.weight_decay)
+        # Optimizer.
+        optimizer = torch.optim.AdamW(model.parameters(),
+                                      lr=opt_dic["learn_rate"],
+                                      weight_decay=opt_dic["weight_decay"])
+    else:
+        # Model.
+        model = define_model(args, device)
+
+        # Optimizer.
+        optimizer = torch.optim.AdamW(model.parameters(),
+                                      lr=args.learn_rate,
+                                      weight_decay=args.weight_decay)
     return model, optimizer
 
 
