@@ -2,7 +2,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn import BCEWithLogitsLoss
 from sklearn import metrics
-from rnaprot.RNNNets import RNNModel
+from rnaprot.RNNNets import RNNModel, RNNDataset
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -262,7 +262,7 @@ def test_scores(loader, model, device,
         batch_labels = batch_labels.to(device)
         outputs, _ = model(batch_data, batch_lens, len(batch_labels))
         # score_all.extend(outputs[0].cpu().detach().numpy())
-        output = outputs[0].cpu().detach().numpy()
+        output = outputs[0].cpu().detach().numpy()[:,0]
         if min_max_norm:
             for o in output:
                 o_norm = min_max_normalize_probs(o, 1, 0, borders=[-1, 1])
@@ -450,6 +450,126 @@ def define_model_and_optimizer(args, device,
                                       lr=args.learn_rate,
                                       weight_decay=args.weight_decay)
     return model, optimizer
+
+
+###############################################################################
+
+def get_saliency(loader, model, device):
+    """
+    Get saliency. Only tested for batch_size = 1.
+
+    """
+    model.train()
+    model.dropout.eval()
+    all_saliency = []
+    for batch_data, batch_labels, batch_lens in loader:
+        batch_data = batch_data.to(device)
+        outputs, x_embed = model(batch_data, batch_lens, len(batch_labels))
+        outputs[0].backward()
+        saliency = x_embed.grad.data.abs().squeeze()
+        all_saliency.append(saliency.cpu().detach().numpy())
+
+    return all_saliency
+
+
+################################################################################
+
+def get_window_predictions(args, model_path, device,
+                           all_features, win_extlr,
+                           model_hp_dic=False,
+                           load_model=True,
+                           min_max_norm=False,
+                           got_tensors=True):
+    """
+
+    Predict windows on given dataset all_features. Returns position-wise
+    scores in list for each dataset instance.
+
+    args:
+        Model parameters args.
+    model_path:
+        Path to model or model (depending on set load_model) to be used
+        for window predictions.
+    all_features:
+        Features list.
+    win_extlr:
+        Extension left and right of center position.
+    load_model:
+        If True, treat model_path as path to model file, and load model.
+        If False, treat model_path as model object (no need to load).
+    model_hp_dic:
+        Model (hyper)parameter dictionary (to overwrite args).
+    min_max_norm:
+        If True, min-max normalize scores.
+    got_tensors:
+        If True, assumes all_features has tensors. If False,
+        converts windows to tensors.
+
+    Return list of profile score lists, with list index corresponding
+    to all_features index.
+
+    """
+
+    # If model object given, set model_path to model.
+    model = model_path
+    # If load_model set, treat model_path as path to model file and load model.
+    if load_model:
+        # Define and load model.
+        model = define_model(args, device,
+                             opt_dic=model_hp_dic)
+        model.load_state_dict(torch.load(model_path))
+
+    # Create window graphs.
+    all_win_feat = []
+    seq_len_list = []
+    c_all_seq_len = 0
+
+    for feat_list in all_features:
+        l_seq = len(feat_list)
+        # l_seq == window graphs for sequence.
+        seq_len_list.append(l_seq)
+        c_all_seq_len += l_seq
+        # For each position in feat_list.
+        l_feat = len(feat_list)
+        for wi in range(l_feat):
+            reg_s = wi - win_extlr
+            reg_e = wi + win_extlr + 1
+            if reg_e > l_feat:
+                reg_e = l_feat
+            if reg_s < 0:
+                reg_s = 0
+            if got_tensors:
+                all_win_feat.append(feat_list[reg_s:reg_e])
+            else:
+                all_win_feat.append(torch.tensor(feat_list[reg_s:reg_e], dtype=torch.float))
+
+    # Checks.
+    c_all_win_feat = len(all_win_feat)
+    assert c_all_win_feat, "no windows extracted (size of window features list == 0)"
+    assert c_all_seq_len == c_all_win_feat, "total sequence length != # of windows (%i != %i)" %(c_all_seq_len, c_all_win_feat)
+
+    # Load dataset.
+    all_win_feat_labels = [1]*c_all_win_feat
+    predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=pad_collate, pin_memory=True)
+
+    # Predict.
+    win_scores = test_scores(predict_loader, model, device,
+                             min_max_norm=min_max_norm)
+
+    # Checks.
+    c_win_scores = len(win_scores)
+    assert c_win_scores == c_all_seq_len, "# window graph scores != total sequence length (%i != %i)" %(c_win_scores, c_all_seq_len)
+
+    # Create list of profile scores.
+    profile_scores_ll = []
+    si = 0
+    for l in seq_len_list:
+        se = si + l
+        profile_scores_ll.append(win_scores[si:se])
+        si += l
+    assert profile_scores_ll, "profile_scores_ll list empty"
+    return profile_scores_ll
 
 
 ################################################################################

@@ -10122,6 +10122,64 @@ def phylop_norm_train_scores(pos_pp_con_out, neg_pp_con_out,
 
 ################################################################################
 
+def feat_min_max_norm_test_scores(test_feat_out,
+                                  p_values=False,
+                                  dec_round=4,
+                                  int_whole_nr=True):
+    """
+    Read in feature file test_feat_out, min max normalize values,
+    and overwrite (!) existing test_feat_out file.
+    Min max normalization resulting in new scores from 0 to 1.
+
+    p_values:
+        If True, treat scores as p-values, i.e., normalized score
+        == 1 - score
+    int_whole_nr:
+        If True, output whole numbers without decimal places.
+
+    """
+    sc_dic = {}
+    site_id = ""
+    sc_max = -1000000
+    sc_min = 1000000
+    # Read in test set phyloP scores.
+    with open(test_feat_out) as f:
+        for line in f:
+            if re.search(">.+", line):
+                m = re.search(">(.+)", line)
+                site_id = m.group(1)
+                sc_dic[site_id] = []
+            else:
+                sc = float(line.strip())
+                sc_dic[site_id].append(sc)
+                if sc > sc_max:
+                    sc_max = sc
+                if sc < sc_min:
+                    sc_min = sc
+    f.closed
+    assert sc_dic, "no entries read into sc_dic dictionary"
+    # Min max normalize and output to original file.
+    OUTF = open(test_feat_out,"w")
+    for site_id in sc_dic:
+        OUTF.write(">%s\n" %(site_id))
+        for sc in sc_dic[site_id]:
+            if sc == 0:
+                OUTF.write("0\n")
+            else:
+                if p_values:
+                    sc_norm = 1 - sc
+                else:
+                    sc_norm = min_max_normalize(sc, sc_max, sc_min)
+                sc_norm = round(sc_norm, dec_round)
+                if int_whole_nr and not sc_norm % 1:
+                    OUTF.write("%i\n" %(int(sc_norm)))
+                else:
+                    OUTF.write("%s\n" %(str(sc_norm)))
+    OUTF.close()
+
+
+################################################################################
+
 def feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
                                    p_values=False,
                                    dec_round=4,
@@ -10486,7 +10544,10 @@ def load_eval_data(args,
                    load_negatives=False,
                    store_tensors=True,
                    train_folder=False,
-                   num_features=4,
+                   kmer2idx_dic=False,
+                   num_features=False,
+                   embed=None,
+                   embed_k=False,
                    str_mode=False):
 
     """
@@ -10494,15 +10555,24 @@ def load_eval_data(args,
 
     """
 
-    # Checks.
+    # If model params are in args.
+    if not train_folder:
+        train_folder = args.in_train_folder
+    if not num_features:
+        num_features = args.n_feat
+    if not str_mode:
+        str_mode = args.str_mode
+    if embed is None:
+        embed = args.embed
+    if not embed_k:
+        embed_k = args.embed_k
+    if embed:
+        assert kmer2idx_dic, "embed enabled but missing kmer2idx_dic"
+
     assert os.path.isdir(args.in_gt_folder), "--gt-in folder does not exist"
     # Feature file containing info for features used for model training.
-    if train_folder:
-        assert os.path.isdir(train_folder), "model training folder %s does not exist" %(train_folder)
-        feat_file = train_folder + "/" + "features.out"
-    else:
-        assert os.path.isdir(args.in_train_folder), "--train-in folder does not exist"
-        feat_file = args.in_train_folder + "/" + "features.out"
+    assert os.path.isdir(train_folder), "model training folder %s does not exist" %(train_folder)
+    feat_file = train_folder + "/" + "features.out"
     assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
 
     # rnaprot predict output folder.
@@ -10551,9 +10621,13 @@ def load_eval_data(args,
             gt_fid2row_dic[feat_id] = row
     f.closed
     assert gt_fid2row_dic, "no feature infos found in --gt-in feature file %s" %(gt_feat_file)
-    # Compare gt+train features.
+
+    # Pairwise feature comparison (note that --gt-in can have more features, but should have the same!).
     for fid in fid2row_dic:
         assert fid in gt_fid2row_dic, "rnaprot train feature ID \"%s\" not found in %s" %(fid, gt_feat_file)
+        # Structure can differ between gt and train features.out (depending on set --str-mode in train).
+        if fid != "str":
+            assert fid2row_dic[fid] == gt_fid2row_dic[fid], "feature ID \"%s\" annotation varies between --gt-in and model folder %s features.out (\"%s\" vs \"%s\"). Features that a model was trained on need to be present in --gt-in" %(fid, train_folder, gp_fid_dic[fid], train_fid_dic[fid])
 
     # Check sequence feature.
     assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
@@ -10564,6 +10638,7 @@ def load_eval_data(args,
     if load_negatives:
         pos_fa_in = args.in_gt_folder + "/" + "negatives.fa"
     assert os.path.exists(pos_fa_in), "--gt-in folder does not contain %s"  %(pos_fa_in)
+    print("Read in sequences ... ")
     seqs_dic = read_fasta_into_dic(pos_fa_in, all_uc=True)
     assert seqs_dic, "no sequences read in from FASTA file \"%s\"" %(pos_fa_in)
 
@@ -10573,20 +10648,35 @@ def load_eval_data(args,
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
     for seq_id in seqs_dic:
         seq = seqs_dic[seq_id]
-        feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
+        if embed:
+            feat_dic[seq_id] = convert_seq_to_kmer_embedding(seq, embed_k, kmer2idx_dic,
+                                                             l2d=True)
+        else:
+            feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
 
     # Channel info dictionary.
     ch_info_dic = {}
 
     # Add sequence one-hot channels.
     ch_info_dic["fa"] = ["C", [], [], "-"]
-    for c in fid2cat_dic["fa"]:
+    if embed:
         channel_nr += 1
-        channel_id = c
-        channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+        # Add sequence embedding channel.
+        channel_id = "embed"
+        channel_info = "%i\t%s\tfa\tC\tembedding" %(channel_nr, channel_id)
         channel_info_list.append(channel_info)
         ch_info_dic["fa"][1].append(channel_nr-1)
         ch_info_dic["fa"][2].append(channel_id)
+        ch_info_dic["fa"][3] = "embed"
+    else:
+        for c in fid2cat_dic["fa"]:
+            channel_nr += 1
+            channel_id = c
+            channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+            channel_info_list.append(channel_info)
+            ch_info_dic["fa"][1].append(channel_nr-1)
+            ch_info_dic["fa"][2].append(channel_id)
+        ch_info_dic["fa"][3] = "one_hot"
 
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
@@ -10606,33 +10696,47 @@ def load_eval_data(args,
                                               str_mode=str_mode,
                                               feat_dic=feat_dic)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
-            if args.str_mode == 1:
+            if str_mode == 1:
+                encoding = fid2norm_dic[fid]
+                ch_info_dic[fid] = ["N", [], [], encoding]
                 # Same as read in.
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
-                    encoding = fid2norm_dic[fid]
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
-            elif args.str_mode == 2:
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
+            elif str_mode == 2:
+                ch_info_dic[fid] = ["C", [], [], "one_hot"]
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
-            elif args.str_mode == 3:
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
+            elif str_mode == 3:
                 channel_nr += 1
                 channel_id = "up"
                 encoding = "prob"
+                ch_info_dic[fid] = ["N", [], [], encoding]
                 channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                 channel_info_list.append(channel_info)
-            elif args.str_mode == 4:
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append(channel_id)
+            elif str_mode == 4:
+                ch_info_dic[fid] = ["C", [], [], "one_hot"]
                 channel_nr += 1
                 channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append("P")
                 channel_nr += 1
                 channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append("U")
             else:
                 assert False, "invalid str_mode given"
 
@@ -10645,13 +10749,16 @@ def load_eval_data(args,
                                           feat_dic=feat_dic,
                                           label_list=feat_alphabet)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            encoding = fid2norm_dic[fid]
+            ch_info_dic[fid] = [ftype, [], [], encoding]
             if ftype == "N":
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
-                    encoding = fid2norm_dic[fid]
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             elif ftype == "C":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -10659,6 +10766,8 @@ def load_eval_data(args,
                     channel_id = c
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             else:
                 assert False, "invalid feature type given (%s) for feature %s" %(ftype,fid)
 
@@ -10711,24 +10820,33 @@ def load_eval_data(args,
 ################################################################################
 
 def load_predict_data(args,
+                      kmer2idx_dic=False,
                       store_tensors=True):
 
     """
     Load prediction data from RNAProt predict output folder
     and return either as list of graphs or list of feature lists.
 
+    kmer2idx_dic:
+        Provide k-mer to index mapping dictionary for k-mer embedding.
+    store_tensors:
+        Store data as tensors in returned all_features.
+
     """
 
     # Checks.
     assert os.path.isdir(args.in_folder), "--in folder does not exist"
-    assert os.path.isdir(args.train_in_folder), "--train-in model folder does not exist"
+    assert os.path.isdir(args.in_train_folder), "--train-in model folder does not exist"
+    if args.embed:
+        assert kmer2idx_dic, "embed enabled but missing kmer2idx_dic"
+        assert args.embed_k, "embed enabled but missing embed_k"
 
     # Feature file containing info for features used for model training.
-    feat_file = args.train_in_folder + "/" + "features.out"
+    feat_file = args.in_train_folder + "/" + "features.out"
     assert os.path.exists(feat_file), "%s features file expected but not does not exist" %(feat_file)
 
     # Read in model parameters.
-    params_file = args.train_in_folder + "/final.params"
+    params_file = args.in_train_folder + "/final.params"
     assert os.path.isfile(params_file), "missing model training parameter file %s" %(params_file)
     params_dic = read_settings_into_dic(params_file)
     assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
@@ -10770,42 +10888,21 @@ def load_predict_data(args,
     assert "fa" in fid2type_dic, "feature ID \"fa\" not in feature file"
     assert fid2cat_dic["fa"] == ["A", "C", "G", "U"], "sequence feature alphabet != A,C,G,U"
 
-    # Read in features.out from rnaprot gp and check.
-    gp_feat_file = args.in_folder + "/" + "features.out"
-    assert os.path.exists(gp_feat_file), "%s features file expected but not does not exist" %(gp_feat_file)
-    gp_fid2row_dic = {}
-    print("Read in feature infos from %s ... " %(gp_feat_file))
-    with open(gp_feat_file) as f:
-        for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            feat_id = cols[0]
-            gp_fid2row_dic[feat_id] = row
-    f.closed
-    assert gp_fid2row_dic, "no feature infos found in rnaprot gp feature file %s" %(gp_feat_file)
-    #assert len(fid2row_dic) == len(gp_fid2row_dic), "# features in gp + train feature files differ"
-    for fid in fid2row_dic:
-        assert fid in gp_fid2row_dic, "rnaprot train feature ID \"%s\" not found in %s" %(fid, gp_feat_file)
-        # If predict_profiles, "fa" feature between gp + train can differ.
-        if not (args.mode == 2 and fid == "fa"):
-            assert gp_fid2row_dic[fid] == fid2row_dic[fid], "feature infos for feature ID \"%s\" differ between gp + train feature files (train: \"%s\", gp: \"%s\")" %(fid, gp_fid2row_dic[fid], fid2row_dic[fid])
-
-    # Get base pair cutoff from train.
-    rp_train_param_file = args.train_in_folder + "/settings.rnaprot_train.out"
-    assert os.path.isfile(rp_train_param_file), "missing rnaprot train parameter file %s" %(rp_train_param_file)
-    rp_train_param_dic = read_settings_into_dic(rp_train_param_file)
-
-    # Get str_mode info from train settings file.
-    assert "str_mode" in rp_train_param_dic, "str_mode info missing in rnaprot train parameter file %s" %(rp_train_param_file)
-    str_mode = int(rp_train_param_dic["str_mode"])
-    str_mode_check = [1,2,3,4]
-    assert str_mode in str_mode_check, "invalid str_mode given"
-
     # Read in FASTA sequences.
     test_fa_in = args.in_folder + "/" + "test.fa"
     assert os.path.exists(test_fa_in), "--in folder does not contain %s"  %(test_fa_in)
+    print("Read in sequences ... ")
     test_seqs_dic = read_fasta_into_dic(test_fa_in, all_uc=True)
     assert test_seqs_dic, "no sequences read in from FASTA file \"%s\"" %(test_fa_in)
+
+    # Check for 4 (8) distinct nucleotides.
+    cc_dic = seqs_dic_count_chars(test_seqs_dic)
+    allowed_nt_dic = {'A': 1, 'C': 1, 'G': 1, 'U': 1}
+    c_nts = 4
+    for nt in cc_dic:
+        if nt not in allowed_nt_dic:
+            assert False, "sequences with invalid character \"%s\" encountered (allowed characters: ACGU" %(nt)
+    assert len(cc_dic) == c_nts, "# of distinct nucleotide characters in sequences != expected # (%i != %i)" %(len(cc_dic), c_nts)
 
     # Data dictionaries.
     feat_dic = {}
@@ -10813,20 +10910,28 @@ def load_predict_data(args,
     # Init feat_dic (storing node feature vector data) with sequence one-hot encodings.
     for seq_id in test_seqs_dic:
         seq = test_seqs_dic[seq_id]
-        feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
-
-    # Add sequence one-hot channels.
-    for c in fid2cat_dic["fa"]:
+        if args.embed:
+            feat_dic[seq_id] = convert_seq_to_kmer_embedding(seq, args.embed_k, kmer2idx_dic,
+                                                             l2d=True)
+        else:
+            feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
+    if args.embed:
         channel_nr += 1
-        channel_id = c
-        channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+        # Add sequence embedding channel.
+        channel_info = "%i\tembed\tfa\tC\tembedding" %(channel_nr)
         channel_info_list.append(channel_info)
+    else:
+        # Add sequence one-hot channels.
+        for c in fid2cat_dic["fa"]:
+            channel_nr += 1
+            channel_id = c
+            channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
+            channel_info_list.append(channel_info)
 
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
         if fid == "fa": # already added to feat_dic (first item).
             continue
-
         feat_alphabet = fid2cat_dic[fid]
         test_feat_in = args.in_folder + "/test." + fid
         assert os.path.exists(test_feat_in), "--in folder does not contain %s"  %(test_feat_in)
@@ -10836,7 +10941,7 @@ def load_predict_data(args,
         if fid == "str":
             # Deal with structure data.
             feat_dic = read_str_feat_into_dic(test_feat_in,
-                                              str_mode=str_mode,
+                                              str_mode=args.str_mode,
                                               feat_dic=feat_dic)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
             # Set channel infos depending on str_mode.
@@ -10919,6 +11024,7 @@ def load_predict_data(args,
         idx2id_dic[i] = seq_id
         i += 1
 
+    # Construct features list.
     all_features = []
 
     for idx, label in enumerate(label_list):
@@ -10935,6 +11041,7 @@ def load_predict_data(args,
             all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
         else:
             all_features.append(feat_dic[seq_id])
+    assert all_features, "no features stored in all_features (all_features empty)"
 
     # Return some double talking jive data.
     return seqs_dic, idx2id_dic, all_features
@@ -11203,6 +11310,7 @@ def load_training_data(args,
         else:
             feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
     if args.embed:
+        channel_nr += 1
         # Add sequence embedding channel.
         channel_info = "%i\tembed\tfa\tC\tembedding" %(channel_nr)
         channel_info_list.append(channel_info)
@@ -11400,7 +11508,7 @@ def load_training_data(args,
         label_list = label_list + [0]*len(neg_ids_dic)
         assert len(label_list) == len(seqs_dic), "len(label_list) != len(seqs_dic)"
 
-    # Construct graphs list.
+    # Construct features list.
     all_features = []
 
     for idx, label in enumerate(label_list):
@@ -11417,10 +11525,9 @@ def load_training_data(args,
     seqs_dic:
         Sequences dictionary.
     idx2id_dic:
-        list index (label_list and all_graphs list) to sequence ID
-        mapping.
+        list index to sequence ID mapping.
     label_list:
-        Class label list (indices correspond to all_graphs list)
+        Class label list (indices correspond to all_features list)
     all_features:
         List of feature matrices / tensors for positive + negative
         dataset, with order as in label_list. Get sequence ID with
@@ -12079,6 +12186,7 @@ def seq_to_plot_df(seq, alphabet,
 
 def add_importance_scores_plot(df, fig, gs, i,
                                color_dict=False,
+                               y_label="score",
                                y_label_size=9):
     """
     Make nucleotide importance scores plot.
@@ -12099,7 +12207,36 @@ def add_importance_scores_plot(df, fig, gs, i,
     plt.yticks(fontsize=7)
     # ax.yaxis.set_tick_params(labelsize=7)
     logo.ax.set_yticklabels(['-1', '0', '1'])
-    logo.ax.set_ylabel('score', labelpad=10, fontsize=y_label_size)
+    logo.ax.set_ylabel(y_label, labelpad=10, fontsize=y_label_size)
+
+
+################################################################################
+
+def add_saliency_scores_plot(df, fig, gs, i,
+                             color_dict=False,
+                             y_label="saliency",
+                             y_label_size=9):
+    """
+    Make nucleotide importance scores plot.
+    Normalized profile scores range from -1 .. 1.
+
+    """
+    ax = fig.add_subplot(gs[i, :])
+    if color_dict:
+        logo = logomaker.Logo(df, ax=ax, color_scheme=color_dict)
+    else:
+        logo = logomaker.Logo(df, ax=ax)
+    logo.style_spines(visible=False)
+    #logo.style_spines(spines=['left'], visible=True, bounds=[-1, 1])
+    logo.style_spines(spines=['left'], visible=True)
+    logo.style_spines(spines=['bottom'], visible=False)
+    logo.ax.set_xticks([])
+    #logo.ax.set_yticks([-1, 0, 1])
+    # plt.xticks(fontsize=7, rotation=90)
+    plt.yticks(fontsize=7)
+    # ax.yaxis.set_tick_params(labelsize=7)
+    #logo.ax.set_yticklabels(['-1', '0', '1'])
+    logo.ax.set_ylabel(y_label, labelpad=10, fontsize=y_label_size)
 
 
 ################################################################################
@@ -12114,9 +12251,9 @@ def add_label_plot(df, fig, gs, i,
     """
     ax = fig.add_subplot(gs[i, :])
     if color_dict:
-        logo = logomaker.Logo(df, ax=ax, vpad=0.4, color_scheme=color_dict)
+        logo = logomaker.Logo(df, ax=ax, vpad=0.1, color_scheme=color_dict)
     else:
-        logo = logomaker.Logo(df, ax=ax, vpad=0.4)
+        logo = logomaker.Logo(df, ax=ax, vpad=0.1)
     logo.style_spines(visible=False)
     logo.style_spines(spines=['left'], visible=False, bounds=[0, 1])
     logo.style_spines(spines=['bottom'], visible=False)
@@ -12224,7 +12361,7 @@ def add_phastcons_scores_plot(df, fig, gs, i,
                               stdev=False,
                               y_label_size=9,
                               disable_y_labels=False,
-                              ylabel="phastCons score"):
+                              y_label="phastCons score"):
     """
     Make phastCons conservation scores plot.
     phastCons values range from 0 .. 1.
@@ -12252,7 +12389,7 @@ def add_phastcons_scores_plot(df, fig, gs, i,
     ax.set_xlim(-0.5, max(df['pos']-0.5))
     if stdev:
         ax.errorbar(x=df['pos'], y=df['score'], yerr=df['stdev'], ecolor='grey', ls='none')
-    ax.set_ylabel(ylabel, labelpad=12, fontsize=y_label_size)
+    ax.set_ylabel(y_label, labelpad=12, fontsize=y_label_size)
     ax.set_xlabel('')
     # style using Axes methods
     #nn_logo.ax.set_xlim([20, 115])
@@ -12274,7 +12411,7 @@ def add_phastcons_scores_plot(df, fig, gs, i,
 def add_phylop_scores_plot(df, fig, gs, i,
                            stdev=False,
                            y_label_size=9,
-                           ylabel="phyloP score"):
+                           y_label="phyloP score"):
     """
     Make phyloP conservation scores plot.
     Normalized phyloP values range from -1 .. 1.
@@ -12305,7 +12442,7 @@ def add_phylop_scores_plot(df, fig, gs, i,
     ax.set_xlim(-0.5, max(df['pos']-0.5))
     if stdev:
         ax.errorbar(x=df['pos'], y=df['score'], xerr=None, yerr=df['stdev'], ecolor='grey', ls='none')
-    ax.set_ylabel(ylabel, labelpad=9, fontsize=y_label_size)
+    ax.set_ylabel(y_label, labelpad=9, fontsize=y_label_size)
     ax.set_xlabel('')
     # style using Axes methods
     #nn_logo.ax.set_xlim([20, 115])
@@ -12325,6 +12462,7 @@ def add_phylop_scores_plot(df, fig, gs, i,
 
 def make_feature_attribution_plot(seq, profile_scores, feat_list,
                                   ch_info_dic, plot_out_file,
+                                  sal_list=False,
                                   seq_label_plot=False):
     """
     Make a feature attribution plot, showing for each sequence position
@@ -12348,11 +12486,18 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     assert plot_out_file, "given plot_out_file empty"
 
     # Dataframe for importance scores.
-    seq_alphabet = ch_info_dic["fa"][2]
+    seq_alphabet = ["A", "C", "G", "U"]
+
+    #seq_alphabet = ch_info_dic["fa"][2]
     is_df = seq_to_plot_df(seq, seq_alphabet, scores=profile_scores)
     # Number of plots.
     n_subplots = 1
     height_ratios = [2]
+
+    if sal_list:
+        sal_df = seq_to_plot_df(seq, seq_alphabet, scores=sal_list)
+        n_subplots += 1
+        height_ratios.append(1)
 
     # Optional sequence label plot.
     if seq_label_plot:
@@ -12380,12 +12525,32 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
                                color_dict=color_dict,
                                y_label_size=5.5)
 
+    # Saliency plot.
+    if sal_list:
+        i_plot += 1
+        add_saliency_scores_plot(sal_df, fig, gs, i_plot,
+                                 color_dict=color_dict,
+                                 y_label="saliency",
+                                 y_label_size=5.5)
+
     # Plot optional sequence label plot.
     if seq_label_plot:
         i_plot += 1
         color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
         add_label_plot(sl_df, fig, gs, i_plot, color_dict=color_dict, y_label="sequence",
                        y_label_size=4)
+
+    """
+    Format of ch_info_dic:
+    ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'],
+    'CTFC': ['C', [1, 2], ['0', '1'], 'one_hot'],
+    'pc.con': ['N', [3], ['phastcons_score'], 'prob'],
+    'pp.con': ['N', [4], ['phylop_score'], 'minmax2'],
+    'rra': ['C', [5, 6], ['N', 'R'], '-'],
+    'str': ['N', [7, 8, 9, 10, 11], ['E', 'H', 'I', 'M', 'S'], 'prob'],
+    'tra': ['C', [12, 13, 14, 15, 16, 17, 18, 19, 20], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
+    """
 
     # Plot additional plots.
     for fid, fdt in sorted(ch_info_dic.items()):
@@ -12426,14 +12591,16 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
                 assert l_idxs == 1, "len(feat_idxs) != 1 for pc.con feature (instead: %i)" %(l_idxs)
                 pc_con_df = scores_to_plot_df(data[feat_alphabet[0]])
                 add_phastcons_scores_plot(pc_con_df, fig, gs, i_plot,
+                                          y_label="phastCons",
                                           y_label_size=4)
             elif fid == "pp.con":
                 assert l_idxs == 1, "len(feat_idxs) != 1 for pp.con feature (instead: %i)" %(l_idxs)
                 pp_con_df = scores_to_plot_df(data[feat_alphabet[0]])
                 add_phylop_scores_plot(pp_con_df, fig, gs, i_plot,
+                                       y_label="phyloP",
                                        y_label_size=4)
-            elif fid == "elem_p.str":
-                assert l_idxs == 5, "len(feat_idxs) != 5 for elem_p.str feature (instead: %i)" %(l_idxs)
+            elif fid == "str":
+                assert l_idxs == 5, "len(feat_idxs) != 5 for str feature (instead: %i)" %(l_idxs)
                 elem_plot_df = pd.DataFrame(data, columns = feat_alphabet)
                 elem_plot_df.index.name = "pos"
                 add_label_plot(elem_plot_df, fig, gs, i_plot,
@@ -12459,6 +12626,7 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
                                               y_label_size=4)
                 else:
                     assert False, "invalid feature normalization string given for additional numerical %s feature (got: %s)" %(fid, feat_encoding)
+
 
     # Store plot.
     fig.savefig(plot_out_file, dpi=150, transparent=False)
@@ -13566,6 +13734,7 @@ def rp_gp_generate_html_report(test_seqs_dic, out_folder,
                                 test_eia_stats_dic=False,
                                 test_tra_stats_dic=False,
                                 test_rra_stats_dic=False,
+                                add_feat_dic_list=False,
                                 target_gbtc_dic=False,
                                 all_gbtc_dic=False,
                                 t2hc_dic=False,
@@ -13585,6 +13754,7 @@ def rp_gp_generate_html_report(test_seqs_dic, out_folder,
         Structure statistics dictionary
     test_phastcons_stats_dic:
         Phastcons scores statistics dictionary
+    ...
     out_folder:
         rnaprot gp results output folder, to store report in.
     rna:
@@ -13758,6 +13928,9 @@ by RNAProt (rnaprot gp):
     if t2hc_dic and t2i_dic:
         mdtext += "\n"
         mdtext += "- [Target region overlap statistics](#tro-stats)"
+    if add_feat_dic_list:
+        mdtext += "\n"
+        mdtext += "- [BED feature statistics](#bed-stats)\n"
     mdtext += "\n&nbsp;\n"
 
     # Make general stats table.
@@ -13919,10 +14092,6 @@ I: internal loop, M: multi-loop, S: paired.
 &nbsp;
 
 """
-        # Make base pair stats table.
-        test_bps_per_100nt = test_str_stats_dic['bp_c'] / (test_str_stats_dic['seqlen_sum'] / 100)
-        test_mean_bp_p = test_str_stats_dic['bp_p'][0]
-        test_mean_bp_stdev = test_str_stats_dic['bp_p'][1]
 
         mdtext += """
 ## Secondary structure statistics ### {#bp-stats}
@@ -13930,14 +14099,9 @@ I: internal loop, M: multi-loop, S: paired.
 **Table:** Secondary structure statistics of the generated prediction set.
 
 """
-
         mdtext += "| &nbsp; &nbsp; &nbsp; Attribute &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; Prediction set &nbsp; &nbsp; &nbsp; &nbsp; | \n"
         mdtext += "| :-: | :-: |\n"
         mdtext += "| total sequence length | %i |\n" %(test_str_stats_dic['seqlen_sum'])
-        mdtext += "| # base pairs | %i |\n" %(test_str_stats_dic['bp_c'])
-        mdtext += "| base pairs per 100 nt | %.1f |\n" %(test_bps_per_100nt)
-        mdtext += "| # no-base-pair sites | %i |\n" %(test_str_stats_dic['nobpsites_c'])
-        mdtext += "| mean p(base pair) | %.4f (+-%.4f) |\n" %(test_mean_bp_p, test_mean_bp_stdev)
         if 'S' in test_str_stats_dic:
             mdtext += "| mean p(paired) | %.4f (+-%.4f) |\n" %(test_str_stats_dic['S'][0], test_str_stats_dic['S'][1])
             mdtext += "| mean p(unpaired) | %.4f (+-%.4f) |\n" %(test_str_stats_dic['U'][0], test_str_stats_dic['U'][1])
@@ -14187,6 +14351,82 @@ overlapping with the region.
             mdtext += "| ... | &nbsp; | &nbsp; |  &nbsp; |\n"
             mdtext += "\n&nbsp;\n&nbsp;\n"
 
+    # Additional BED annotations.
+    if add_feat_dic_list:
+        mdtext += """
+## BED feature statistics ### {#bed-stats}
+
+Additional BED annotation feature statistics (from --feat-in table) for the
+prediction set.
+
+"""
+        test_cov_dic = {}
+        neg_cov_dic = {}
+        for test_stats_dic in add_feat_dic_list:
+            feat_id = test_stats_dic["feat_id"]
+            feat_type = test_stats_dic["feat_type"]
+            test_total_pos = test_stats_dic["total_pos"]
+            test_perc_zero_sites = "%.2f" % ((test_stats_dic['zero_sites'] / test_stats_dic['total_sites'])*100) + " %"
+
+            if feat_type == "C":
+                test_c_0 = test_stats_dic["0"]
+                test_c_1 = test_stats_dic["1"]
+                test_perc_0 = "%.2f" % ((test_c_0 / test_total_pos)*100) + " %"
+                test_perc_1 = "%.2f" % ((test_c_1 / test_total_pos)*100) + " %"
+            else:
+                test_mean = test_stats_dic["mean"]
+                test_stdev = test_stats_dic["stdev"]
+                test_c_0 = test_stats_dic["zero_pos"]
+                test_c_1 = test_total_pos - test_c_0
+                test_perc_0 = "%.2f" % ((test_c_0 / test_total_pos)*100) + " %"
+                test_perc_1 = "%.2f" % ((test_c_1 / test_total_pos)*100) + " %"
+
+            # Store feature coverage (percentage of positions overlapping).
+            #test_feat_cov = (test_c_1 / test_total_pos) * 100
+            #test_cov_dic[feat_id] = test_feat_cov
+
+            mdtext += """
+### BED annotation file feature \"%s\" statistics
+
+""" %(feat_id)
+
+            if feat_type == "C":
+                mdtext += """
+
+**Table:** BED feature region length + score statistics for the
+prediction set.
+Feature type is one-hot encoding, i.e., every overlapping position
+gets a 1 assigned, every not overlapping position a 0.
+
+"""
+            else:
+                mdtext += """
+
+**Table:** BED feature region length + score statistics for the
+prediction set.
+Feature type is numerical, i.e., every position gets the score of the
+overlapping feature region assigned. In case of no feature region overlap,
+the position gets a score of 0.
+
+"""
+            mdtext += "| &nbsp; Attribute &nbsp; | &nbsp; Prediction set &nbsp; |\n"
+            mdtext += "| :-: | :-: |\n"
+            mdtext += "| mean length | %.2f (+-%.2f) |\n" %(test_stats_dic["mean_l"], test_stats_dic["stdev_l"])
+            mdtext += "| median length | %i |\n" %(test_stats_dic["median_l"])
+            mdtext += "| min length | %i |\n" %(test_stats_dic["min_l"])
+            mdtext += "| max length | %i |\n" %(test_stats_dic["max_l"])
+            if feat_type == "C":
+                mdtext += "| # total positions | %i |\n" %(test_total_pos)
+                mdtext += "| # 0 positions | %i (%s) |\n" %(test_c_0, test_perc_0)
+                mdtext += "| # 1 positions | %i (%s) |\n" %(test_c_1, test_perc_1)
+                mdtext += '| % all-zero sites |' + " %s |\n" %(test_perc_zero_sites)
+            else:
+                mdtext += "| # total positions | %i |\n" %(test_total_pos)
+                mdtext += "| # 0 positions | %i (%s) |\n" %(test_c_0, test_perc_0)
+                mdtext += "| # non-0 positions | %i (%s) |\n" %(test_c_1, test_perc_1)
+                mdtext += '| % all-zero sites |' + " %s |\n" %(test_perc_zero_sites)
+                mdtext += "| mean score | %.3f (+-%.3f) |\n" %(test_mean, test_stdev)
+            mdtext += "\n&nbsp;\n&nbsp;\n"
 
     print("Generate HTML report ... ")
 

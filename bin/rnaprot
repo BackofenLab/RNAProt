@@ -385,7 +385,7 @@ def setup_argument_parser():
                    required = True,
                    help = "Input prediction data folder (output of rnaprot gp)")
     p_prm.add_argument("--train-in",
-                   dest="train_in_folder",
+                   dest="in_train_folder",
                    type=str,
                    required = True,
                    help = "Input model training folder containing model file and parameters (output of rnaprot train)")
@@ -664,7 +664,7 @@ def setup_argument_parser():
                    required = True,
                    help = "Genomic or transcript RBP binding sites file in BED (6-column format) or FASTA format. If --in FASTA, only --str is supported as additional feature. If --in BED, --gtf and --gen become mandatory")
     p_gpm.add_argument("--train-in",
-                   dest="train_in_folder",
+                   dest="in_train_folder",
                    type=str,
                    metavar='str',
                    required = True,
@@ -1353,10 +1353,6 @@ Idea: drop unpromising configurations early on
     opt_dic["rnn_type"] = args.rnn_type
     opt_dic["embed_dim"] = args.embed_dim
 
-
-    # HALLO 123
-    # all_runs_max_budget = result.get_all_runs(only_largest_budget=True)
-
     if args.run_bohb:
 
         # BOHB output folder.
@@ -1526,55 +1522,93 @@ def main_eval(args):
     # Read in model parameters.
     params_dic = rplib.read_settings_into_dic(params_file)
     # Check parameters.
-    assert "n_hidden_dim" in params_dic, "n_hidden_dim info missing in model parameter file %s" %(params_file)
-    assert "n_hidden_layers" in params_dic, "n_hidden_layers info missing in model parameter file %s" %(params_file)
+    assert "rnn_type" in params_dic, "rnn_type info missing in model parameter file %s" %(params_file)
+    assert "n_rnn_dim" in params_dic, "n_rnn_dim info missing in model parameter file %s" %(params_file)
+    assert "n_rnn_layers" in params_dic, "n_rnn_layers info missing in model parameter file %s" %(params_file)
+    assert "bidirect" in params_dic, "bidirect info missing in model parameter file %s" %(params_file)
+    assert "add_fc_layer" in params_dic, "add_fc_layer info missing in model parameter file %s" %(params_file)
+    assert "add_feat" in params_dic, "add_feat info missing in model parameter file %s" %(params_file)
+    assert "embed" in params_dic, "embed info missing in model parameter file %s" %(params_file)
+    assert "embed_k" in params_dic, "embed_k info missing in model parameter file %s" %(params_file)
+    assert "embed_vocab_size" in params_dic, "embed_vocab_size info missing in model parameter file %s" %(params_file)
+    assert "embed_dim" in params_dic, "embed_dim info missing in model parameter file %s" %(params_file)
+    assert "n_class" in params_dic, "n_class info missing in model parameter file %s" %(params_file)
+    assert "n_feat" in params_dic, "n_feat info missing in model parameter file %s" %(params_file)
     assert "batch_size" in params_dic, "batch_size info missing in model parameter file %s" %(params_file)
-    assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
-    assert "dr" in params_dic, "dropout rate info missing in model parameter file %s" %(params_file)
-    assert "lr" in params_dic, "learning rate info missing in model parameter file %s" %(params_file)
-    assert "weight_decay" in params_dic, "weight_decay info missing in model parameter file %s" %(params_file)
+    assert "dropout_rate" in params_dic, "dropout_rate info missing in model parameter file %s" %(params_file)
 
-    # Set parameters.
-    n_hidden_dim = int(params_dic["n_hidden_dim"])
-    n_hidden_layers = int(params_dic["n_hidden_layers"])
-    batch_size = int(params_dic["batch_size"])
-    num_features = int(params_dic["num_features"])
-    args.num_features = num_features
-    weight_decay_str = params_dic["weight_decay"]
-    dr = float(params_dic["dr"])
-    dr_str = params_dic["dr"]
-    lr_str = params_dic["lr"]
-    onlyseq = False
-    if args.num_features == 4:
-        onlyseq = True
+    # Store model parameters in args.
+    args.rnn_type = int(params_dic["rnn_type"])
+    args.n_rnn_dim = int(params_dic["n_rnn_dim"])
+    args.n_rnn_layers = int(params_dic["n_rnn_layers"])
+    args.bidirect = False
+    if params_dic["bidirect"] == "True":
+        args.bidirect = True
+    args.add_fc_layer = False
+    if params_dic["add_fc_layer"] == "True":
+        args.add_fc_layer = True
+    args.add_feat = False
+    if params_dic["add_feat"] == "True":
+        args.add_feat = True
+    args.embed = False
+    if params_dic["embed"] == "True":
+        args.embed = True
+    if not args.embed:
+        assert "rnaprot eval so far only works / has been tested with models using embedding"
+    args.embed_k = int(params_dic["embed_k"])
+    args.embed_vocab_size = int(params_dic["embed_vocab_size"])
+    args.embed_dim = int(params_dic["embed_dim"])
+    kmer2idx_dic = False
+    if args.embed:
+        kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
+    args.n_class = int(params_dic["n_class"])
+    args.n_feat = int(params_dic["n_feat"])
+    args.batch_size = int(params_dic["batch_size"])
+    args.dropout_rate = float(params_dic["dropout_rate"])
+
+    # Get additional model training run parameters.
+    rp_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
+    assert os.path.exists(rp_train_settings_file), "rnaprot train settings file %s not found" %(rp_train_settings_file)
+    train_settings_dic = rplib.read_settings_into_dic(rp_train_settings_file)
+    assert "str_mode" in train_settings_dic, "dropout_rate info missing in train run parameter file %s" %(rp_train_settings_file)
+    assert "only_seq" in train_settings_dic, "only_seq info missing in train run parameter file %s" %(rp_train_settings_file)
+    args.only_seq = False
+    if train_settings_dic["only_seq"] == "True":
+        args.only_seq = True
+    onlyseq = args.only_seq
+    # Checks.
+    if onlyseq:
+        if args.embed:
+            assert args.n_feat == 1, "onlyseq = True and embed = True, but # features != 1 (found %i)" %(args.n_feat)
+        else:
+            assert args.n_feat == 4, "onlyseq = True and embed = False, but # features != 4 (found %i)" %(args.n_feat)
+    # Structure mode.
+    args.str_mode = int(train_settings_dic["str_mode"])
+    str_mode_check = [1, 2, 3, 4]
+    assert args.str_mode in str_mode_check, "invalid str_mode setting found in train run parameter file %s" %(rp_train_settings_file)
+
+    """
+    Output files.
+
+    """
+    # Output folder.
+    if not os.path.exists(args.out_folder):
+        os.makedirs(args.out_folder)
+    # Two model scores output table.
+    two_model_scores_out = args.out_folder + "/two_model_scores.out"
+    # Motif output folder.
+    motif_plots_folder = args.out_folder
+
     # Loss criterion.
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
     # Min-max normalization for scores.
-    min_max_norm = True
-
-    # Get rnaprot train parameters for additional checks.
-    rnaprot_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
-    assert os.path.isfile(rnaprot_train_settings_file), "missing --train-in settings file %s" %(rnaprot_train_settings_file)
-    rnaprot_train_settings_dic = {}
-    with open(rnaprot_train_settings_file) as f:
-        for line in f:
-            row = line.strip()
-            cols = line.strip().split("\t")
-            rnaprot_train_settings_dic[cols[0]] = cols[1]
-    f.closed
-    assert "str_mode" in rnaprot_train_settings_dic, "str_mode info missing in --train-in settings file %s" %(rnaprot_train_settings_file)
-    str_mode = int(rnaprot_train_settings_dic["str_mode"])
-    str_mode_check = [1,2,3,4]
-    assert str_mode in str_mode_check, "invalid str_mode given"
+    min_max_norm = False
 
     # Plot format.
     plot_format = "png"
     if args.plot_format == 2:
         plot_format = "pdf"
 
-    # Output folder.
-    if not os.path.exists(args.out_folder):
-        os.makedirs(args.out_folder)
 
     # More checks.
     assert args.motif_sc_thr <= 1 and args.motif_sc_thr >= -1, "--motif-sc-thr must be within -1 and 1"
@@ -1608,18 +1642,9 @@ def main_eval(args):
         if motif_size > 21:
             assert False, "motif sizes should be <= 21"
     max_motif_extlr = int(max_motif_size/2)
-    # Motif output folder.
-    motif_plots_folder = args.out_folder
-    # k-mer analysis.
-    #kmer_plots_folder = args.out_folder + "/" + "kmer_plots"
-    #if args.report:
-    #    if os.path.exists(kmer_plots_folder):
-    #        shutil.rmtree(kmer_plots_folder)
-    #    if args.num_features != 4:
-    #        os.makedirs(kmer_plots_folder)
 
     # Some facts.
-    print("# dataset features:    %i" %(args.num_features))
+    print("# dataset features:    %i" %(args.n_feat))
     print("Window size:          ", args.win_size)
     print("Top site numbers:     ", args.list_nr_top_sites)
     print("Motif sizes:          ", args.list_motif_sizes)
@@ -1641,9 +1666,8 @@ def main_eval(args):
     # Load data.
     print("Load positive training set from --gt-in ... ")
     seqs_dic, idx2id_dic, all_features, ch_info_dic = rplib.load_eval_data(args,
-                                                            num_features=num_features,
-                                                            store_tensors=False,
-                                                            str_mode=str_mode)
+                                                            kmer2idx_dic=kmer2idx_dic,
+                                                            store_tensors=False)
     l_dataset = len(all_features)
     print("Positive set size:     %i" %(l_dataset))
 
@@ -1668,22 +1692,24 @@ def main_eval(args):
     check_num_feat = 0
     for fid in ch_info_dic:
         check_num_feat += len(ch_info_dic[fid][1])
-    assert args.num_features == check_num_feat, "num_features != check_num_feat (%i != %i)" %(args.num_features, check_num_feat)
-
-    model = GRUModel(num_features, n_hidden_dim, n_hidden_layers,
-                     2, device, dr=dr).to(device)
-    model.load_state_dict(torch.load(model_file))
+    assert args.n_feat == check_num_feat, "num_features != check_num_feat (%i != %i)" %(args.n_feat, check_num_feat)
 
     # Load whole-site dataset.
     c_all_feat = len(all_feat_tens)
     all_labels = [1]*c_all_feat
     predict_dataset = RNNDataset(all_feat_tens, all_labels)
-    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+
+    # Define and load --train-in model.
+    print("Load --train-in model ... ")
+    model = rnn_util.define_model(args, device,
+                                      opt_dic=False)
+    model.load_state_dict(torch.load(model_file))
 
     # Predict.
     print("Predict whole sites ... ")
-    ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                    min_max_norm=min_max_norm)
+    ws_scores = rnn_util.test_scores(predict_loader, model, device,
+                                     min_max_norm=min_max_norm)
 
     # Checks.
     c_ws_scores = len(ws_scores)
@@ -1700,9 +1726,8 @@ def main_eval(args):
         # Load data again.
         print("Load negative training set for --report ... ")
         neg_seqs_dic, idx2negid_dic, all_neg_feat, ch_info_neg_dic = rplib.load_eval_data(args,
-                                                                   load_negatives=True,
-                                                                   num_features=num_features,
-                                                                   str_mode=str_mode)
+                                                                     kmer2idx_dic=kmer2idx_dic,
+                                                                     load_negatives=True)
 
         # Check # features.
         check_num_feat = 0
@@ -1714,12 +1739,12 @@ def main_eval(args):
         c_neg_feat = len(all_neg_feat)
         all_neg_labels = [1]*c_neg_feat
         predict_dataset = RNNDataset(all_neg_feat, all_neg_labels)
-        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
         # Predict.
         print("Predict whole-site scores for negatives ... ")
-        neg_ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                            min_max_norm=min_max_norm)
+        neg_ws_scores = rnn_util.test_scores(predict_loader, model, device,
+                                             min_max_norm=min_max_norm)
 
         # Checks.
         assert neg_ws_scores, "neg_ws_scores empty"
@@ -1729,9 +1754,9 @@ def main_eval(args):
 
     """
     Additional model given via --add-train-in
-    Check model and parameters
-    Read in positive training data as graphs
-    Predict on whole-site graphs and store predictions in add_ws_scores
+    - Check model and parameters
+    - Read in positive training data as graphs
+    - Predict on whole sites and store predictions in add_ws_scores
 
     """
 
@@ -1743,47 +1768,71 @@ def main_eval(args):
         model_file2 = args.add_train_folder + "/final.model"
         # Read in model parameters.
         params_dic2 = rplib.read_settings_into_dic(params_file2)
-        # Check parameters.
-        assert "n_hidden_dim" in params_dic2, "n_hidden_dim info missing in model parameter file %s" %(params_dic2)
-        assert "n_hidden_layers" in params_dic2, "n_hidden_layers info missing in model parameter file %s" %(params_dic2)
-        assert "batch_size" in params_dic2, "batch_size info missing in model parameter file %s" %(params_dic2)
-        assert "num_features" in params_dic2, "num_features info missing in model parameter file %s" %(params_dic2)
-        assert "dr" in params_dic2, "dropout rate info missing in model parameter file %s" %(params_dic2)
-        assert "lr" in params_dic2, "learning rate info missing in model parameter file %s" %(params_dic2)
-        assert "weight_decay" in params_dic2, "weight_decay info missing in model parameter file %s" %(params_dic2)
 
-        # Set parameters.
-        n_hidden_dim2 = int(params_dic2["n_hidden_dim"])
-        n_hidden_layers2 = int(params_dic2["n_hidden_layers"])
-        batch_size2 = int(params_dic2["batch_size"])
-        num_features2 = int(params_dic2["num_features"])
-        weight_decay_str2 = params_dic2["weight_decay"]
-        dr2 = float(params_dic2["dr"])
-        dr_str2 = params_dic2["dr"]
-        lr_str2 = params_dic2["lr"]
+        # Check additional model parameters.
+        assert "rnn_type" in params_dic2, "rnn_type info missing in model parameter file %s" %(params_file2)
+        assert "n_rnn_dim" in params_dic2, "n_rnn_dim info missing in model parameter file %s" %(params_file2)
+        assert "n_rnn_layers" in params_dic2, "n_rnn_layers info missing in model parameter file %s" %(params_file2)
+        assert "bidirect" in params_dic2, "bidirect info missing in model parameter file %s" %(params_file2)
+        assert "add_fc_layer" in params_dic2, "add_fc_layer info missing in model parameter file %s" %(params_file2)
+        assert "add_feat" in params_dic2, "add_feat info missing in model parameter file %s" %(params_file2)
+        assert "embed" in params_dic2, "embed info missing in model parameter file %s" %(params_file2)
+        assert "embed_k" in params_dic2, "embed_k info missing in model parameter file %s" %(params_file2)
+        assert "embed_vocab_size" in params_dic2, "embed_vocab_size info missing in model parameter file %s" %(params_file2)
+        assert "embed_dim" in params_dic2, "embed_dim info missing in model parameter file %s" %(params_file2)
+        assert "n_class" in params_dic2, "n_class info missing in model parameter file %s" %(params_file2)
+        assert "n_feat" in params_dic2, "n_feat info missing in model parameter file %s" %(params_file2)
+        assert "batch_size" in params_dic2, "batch_size info missing in model parameter file %s" %(params_file2)
+        assert "dropout_rate" in params_dic2, "dropout_rate info missing in model parameter file %s" %(params_file2)
+
+        # Store model 2 parameters in m2p_dic.
+        m2p_dic = {}
+        m2p_dic["batch_size"] = int(params_dic2["batch_size"])
+        m2p_dic["rnn_type"] = int(params_dic2["rnn_type"])
+        m2p_dic["n_rnn_dim"] = int(params_dic2["n_rnn_dim"])
+        m2p_dic["n_rnn_layers"] = int(params_dic2["n_rnn_layers"])
+        m2p_dic["dropout_rate"] = float(params_dic2["dropout_rate"])
+        m2p_dic["bidirect"] = False
+        if params_dic2["bidirect"] == "True":
+            m2p_dic["bidirect"] = True
+        m2p_dic["add_fc_layer"] = False
+        if params_dic2["add_fc_layer"] == "True":
+            m2p_dic["add_fc_layer"] = True
+        m2p_dic["embed"] = False
+        if params_dic2["embed"] == "True":
+            m2p_dic["embed"] = True
+        m2p_dic["add_feat"] = False
+        if params_dic2["add_feat"] == "True":
+            m2p_dic["add_feat"] = True
+        m2p_dic["embed_k"] = int(params_dic2["embed_k"])
+        m2p_dic["n_class"] = int(params_dic2["n_class"])
+        m2p_dic["n_feat"] = int(params_dic2["n_feat"])
+
+        # Embedding.
+        if not m2p_dic["embed"]:
+            assert "rnaprot eval so far only works / has been tested with models using embedding"
+        kmer2idx_dic = False
+        if m2p_dic["embed"]:
+            kmer2idx_dic = rplib.get_kmer_dic(m2p_dic["embed_k"], rna=True, fill_idx=True)
 
         # Get rnaprot train parameters for additional checks.
         rp_train_settings_file = args.add_train_folder + "/settings.rnaprot_train.out"
         assert os.path.isfile(rp_train_settings_file), "missing --add-train-in settings file %s" %(rp_train_settings_file)
-        rp_train_settings_dic = {}
-        with open(rp_train_settings_file) as f:
-            for line in f:
-                row = line.strip()
-                cols = line.strip().split("\t")
-                rp_train_settings_dic[cols[0]] = cols[1]
-        f.closed
+        rp_train_settings_dic = rplib.read_settings_into_dic(rp_train_settings_file)
 
         assert "str_mode" in rp_train_settings_dic, "str_mode info missing in --add-train-in settings file %s" %(rp_train_settings_file)
         str_mode2 = int(rp_train_settings_dic["str_mode"])
         str_mode_check = [1,2,3,4]
         assert str_mode2 in str_mode_check, "invalid str_mode2 given"
+        m2p_dic["str_mode"] = str_mode2
 
         # Load data again.
         print("Load positive training set from --gt-in for --add-train-in model ... ")
         seqs_dic2, idx2id_dic2, all_features2, ch_info_dic2 = rplib.load_eval_data(args,
                                                                     train_folder=args.add_train_folder,
-                                                                    num_features=num_features2,
-                                                                    str_mode=str_mode2)
+                                                                    kmer2idx_dic=kmer2idx_dic,
+                                                                    num_features=m2p_dic["n_feat"],
+                                                                    str_mode=m2p_dic["str_mode"])
 
         # Check # features.
         check_num_feat = 0
@@ -1799,23 +1848,23 @@ def main_eval(args):
             assert seq_id1 in seqs_dic2, "--train-in sequence ID %s not found in --add-train-in sequence set. Please train two models on the same training set in order to compare the models" %(seq_id1)
             assert seqs_dic[seq_id1] == seqs_dic2[seq_id1],  "--train-in sequence %s is not equal to --add-train-in sequence %s. Please train two models on the same training set in order to compare the models" %(seq_id1, seq_id1)
 
-        # Load trained model.
-        print("Load --add-train-in model ... ")
-        add_model = GRUModel(num_features2, n_hidden_dim2, n_hidden_layers2,
-                             2, device, dr=dr2).to(device)
-        add_model.load_state_dict(torch.load(model_file2))
-
         # Load dataset.
         c_all_feat2 = len(all_features2)
         all_labels2 = [1]*c_all_feat2
         predict_dataset = RNNDataset(all_features2, all_labels2)
-        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=m2p_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
+
+        # Define and Load model.
+        print("Load --add-train-in model ... ")
+        add_model = rnn_util.define_model(args, device,
+                                          opt_dic=m2p_dic)
+        add_model.load_state_dict(torch.load(model_file2))
 
         # Predict.
         print("Predict whole sites with --add-train-in model ... ")
-        add_ws_scores = rnn_util.get_scores(predict_loader, add_model, criterion,
-                                            min_max_norm=min_max_norm)
-
+        add_ws_scores = rnn_util.test_scores(predict_loader, add_model, device,
+                                             load_model=True,
+                                             min_max_norm=min_max_norm)
         # Checks.
         c_add_ws_scores = len(add_ws_scores)
         assert c_all_feat == c_all_feat2, "c_all_feat != c_all_feat2 (%i != %i)" %(c_all_feat, c_all_feat2)
@@ -1825,73 +1874,9 @@ def main_eval(args):
     if add_ws_scores:
         assert len(add_ws_scores) == len(ws_scores), "len(add_ws_scores) != len(ws_scores) (%i != %i)" %(len(add_ws_scores), len(ws_scores))
 
-    """
-    Window predictions.
-
-    """
-
-    # Create window graphs.
-    all_win_feat = []
-    seq_len_list = []
-    c_all_seq_len = 0
-
-    print("Create windows ... ")
-    for feat_list in all_feat_tens:
-        l_seq = len(feat_list)
-        # l_seq == window graphs for sequence.
-        seq_len_list.append(l_seq)
-        c_all_seq_len += l_seq
-        # For each position in feat_list.
-        l_feat = len(feat_list)
-        for wi in range(l_feat):
-            reg_s = wi - win_extlr
-            reg_e = wi + win_extlr + 1
-            if reg_e > l_feat:
-                reg_e = l_feat
-            if reg_s < 0:
-                reg_s = 0
-            #all_win_feat.append(torch.tensor(feat_list[reg_s:reg_e], dtype=torch.float))
-            all_win_feat.append(feat_list[reg_s:reg_e])
-
-    # Checks.
-    c_all_win_feat = len(all_win_feat)
-    assert c_all_win_feat, "no windows extracted (size of window features list == 0)"
-    assert c_all_seq_len == c_all_win_feat, "total sequence length != # of windows (%i != %i)" %(c_all_seq_len, c_all_win_feat)
-
-    # Load dataset.
-    all_win_feat_labels = [1]*c_all_win_feat
-    predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
-    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
-
-    # Predict.
-    print("Predict windows ... ")
-    win_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                     min_max_norm=min_max_norm)
-
-    # Checks.
-    c_win_scores = len(win_scores)
-    assert c_win_scores == c_all_seq_len, "# window graph scores != total sequence length (%i != %i)" %(c_win_scores, c_all_seq_len)
-
-    # Create list of profile scores.
-    profile_scores_ll = []
-    si = 0
-    for l in seq_len_list:
-        se = si + l
-        profile_scores_ll.append(win_scores[si:se])
-        si += l
-    assert profile_scores_ll, "profile_scores_ll list empty"
-    assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
-
-    # Connect whole-site indices to scores.
-    si2sc_dic = {}
-    for i, sc in enumerate(ws_scores):
-        si2sc_dic[i] = sc
-    assert len(si2sc_dic) == len(seqs_dic), "length si2sc_dic != length seqs_dic"
-
     # Print out two model scores stats.
     if add_ws_scores:
         print("Output whole-site scores for both models ... ")
-        two_model_scores_out = args.out_folder + "/two_model_scores.out"
         TMOUT = open(two_model_scores_out, "w")
         TMOUT.write("model1_score_rank\tsequence_id\tmodel1_score\tmodel2_score\tscore_diff\tsequence\n")
         ws_sc_rank = 0
@@ -1903,6 +1888,28 @@ def main_eval(args):
             abs_diff = abs(ws_sc - add_ws_sc)
             TMOUT.write("%i\t%s\t%.6f\t%.6f\t%.6f\t%s\n" %(ws_sc_rank, seq_id, ws_sc, add_ws_sc, abs_diff, seq))
         TMOUT.close()
+
+    """
+    Window predictions.
+
+    """
+
+    print("Create and predict windows ... ")
+    profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+                                                        all_feat_tens, win_extlr,
+                                                        load_model=False,
+                                                        min_max_norm=min_max_norm,
+                                                        got_tensors=True)
+
+    # Check.
+    assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
+
+    # Connect whole-site indices to scores.
+    si2sc_dic = {}
+    for i, sc in enumerate(ws_scores):
+        si2sc_dic[i] = sc
+    assert len(si2sc_dic) == len(seqs_dic), "length si2sc_dic != length seqs_dic"
+
 
     """
     Plot profiles and motifs
@@ -1951,6 +1958,25 @@ def main_eval(args):
         seq = seqs_dic[seq_id]
         l_sc = len(profile_scores)
 
+        # Saliency.
+        sal_feat_list = []
+        sal_feat_list.append(all_feat_tens[si])
+        sal_dataset = RNNDataset(sal_feat_list, [1])
+        sal_loader = DataLoader(dataset=sal_dataset, batch_size=1, collate_fn=rnn_util.pad_collate, pin_memory=True)
+        sal_ll = rnn_util.get_saliency(sal_loader, model, device)
+        # Get mean / max saliency.
+        mean_sal_list = []
+        max_sal_list = []
+        for scl in sal_ll[0]:
+            mean_sal_list.append(statistics.mean(scl))
+            max_sal_list.append(max(scl))
+        l_sal = len(mean_sal_list)
+        assert l_sal == l_sc, "length saliency list != length profile scores list (%i != %i)" %(l_sal, l_sc)
+
+        print("profile_scores:", profile_scores)
+        print("max(profile_scores):", max(profile_scores))
+        print("min(profile_scores):", min(profile_scores))
+
         # Get maximum score position.
         max_pos = 0
         max_sc = -1000000
@@ -1983,8 +2009,15 @@ def main_eval(args):
             # Plot profile.
             rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
                                                 ch_info_dic, plot_out_file,
+                                                sal_list=mean_sal_list,
                                                 seq_label_plot=False)
+
+
+        sys.exit()
+
     RSOUT.close()
+
+    # hallo 123
 
     # Plot bottom profiles too.
     if args.bottoms_up:
@@ -2755,48 +2788,90 @@ def main_predict(args):
     # --in folder containing prediction data.
     assert os.path.isdir(args.in_folder), "--in folder does not exist"
     # --train-in folder containing trained model.
-    assert os.path.isdir(args.train_in_folder), "--train-in folder does not exist"
+    assert os.path.isdir(args.in_train_folder), "--train-in folder does not exist"
 
     # Model and model parameter file.
-    params_file = args.train_in_folder + "/final.params"
-    model_file = args.train_in_folder + "/final.model"
+    params_file = args.in_train_folder + "/final.params"
+    model_file = args.in_train_folder + "/final.model"
     assert os.path.isfile(params_file), "missing model training parameter file %s" %(params_file)
     assert os.path.isfile(params_file), "missing model file %s" %(model_file)
     # Read in and check model parameters.
     params_dic = rplib.read_settings_into_dic(params_file)
 
-    # Check parameters.
-    assert "n_hidden_dim" in params_dic, "n_hidden_dim info missing in model parameter file %s" %(params_file)
-    assert "n_hidden_layers" in params_dic, "n_hidden_layers info missing in model parameter file %s" %(params_file)
+    assert "rnn_type" in params_dic, "rnn_type info missing in model parameter file %s" %(params_file)
+    assert "n_rnn_dim" in params_dic, "n_rnn_dim info missing in model parameter file %s" %(params_file)
+    assert "n_rnn_layers" in params_dic, "n_rnn_layers info missing in model parameter file %s" %(params_file)
+    assert "bidirect" in params_dic, "bidirect info missing in model parameter file %s" %(params_file)
+    assert "add_fc_layer" in params_dic, "add_fc_layer info missing in model parameter file %s" %(params_file)
+    assert "add_feat" in params_dic, "add_feat info missing in model parameter file %s" %(params_file)
+    assert "embed" in params_dic, "embed info missing in model parameter file %s" %(params_file)
+    assert "embed_k" in params_dic, "embed_k info missing in model parameter file %s" %(params_file)
+    assert "embed_vocab_size" in params_dic, "embed_vocab_size info missing in model parameter file %s" %(params_file)
+    assert "embed_dim" in params_dic, "embed_dim info missing in model parameter file %s" %(params_file)
+    assert "n_class" in params_dic, "n_class info missing in model parameter file %s" %(params_file)
+    assert "n_feat" in params_dic, "n_feat info missing in model parameter file %s" %(params_file)
     assert "batch_size" in params_dic, "batch_size info missing in model parameter file %s" %(params_file)
-    assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
-    assert "dr" in params_dic, "dropout rate info missing in model parameter file %s" %(params_file)
+    assert "dropout_rate" in params_dic, "dropout_rate info missing in model parameter file %s" %(params_file)
 
-    # Set parameters.
-    n_hidden_dim = int(params_dic["n_hidden_dim"])
-    n_hidden_layers = int(params_dic["n_hidden_layers"])
-    batch_size = int(params_dic["batch_size"])
-    num_features = int(params_dic["num_features"])
-    args.num_features = num_features
+    # Store model parameters in args.
+    args.rnn_type = int(params_dic["rnn_type"])
+    args.n_rnn_dim = int(params_dic["n_rnn_dim"])
+    args.n_rnn_layers = int(params_dic["n_rnn_layers"])
+    args.bidirect = False
+    if params_dic["bidirect"] == "True":
+        args.bidirect = True
+    args.add_fc_layer = False
+    if params_dic["add_fc_layer"] == "True":
+        args.add_fc_layer = True
+    args.add_feat = False
+    if params_dic["add_feat"] == "True":
+        args.add_feat = True
+    args.embed = False
+    if params_dic["embed"] == "True":
+        args.embed = True
+    args.embed_k = int(params_dic["embed_k"])
+    args.embed_vocab_size = int(params_dic["embed_vocab_size"])
+    args.embed_dim = int(params_dic["embed_dim"])
+    args.n_class = int(params_dic["n_class"])
+    args.n_feat = int(params_dic["n_feat"])
+    args.batch_size = int(params_dic["batch_size"])
+    args.dropout_rate = float(params_dic["dropout_rate"])
 
-    dr = float(params_dic["dr"])
-    onlyseq = False
-    if args.num_features == 4:
-        onlyseq = True
-    # Loss criterion.
-    criterion = nn.CrossEntropyLoss()
-    # Min-max normalization for scores.
-    min_max_norm = True
+    # Get additional model training run parameters.
+    rp_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
+    assert os.path.exists(rp_train_settings_file), "rnaprot train settings file %s not found" %(rp_train_settings_file)
+    train_settings_dic = rplib.read_settings_into_dic(rp_train_settings_file)
+    assert "str_mode" in train_settings_dic, "dropout_rate info missing in train run parameter file %s" %(rp_train_settings_file)
+    assert "only_seq" in train_settings_dic, "only_seq info missing in train run parameter file %s" %(rp_train_settings_file)
+    args.only_seq = False
+    if params_dic["only_seq"] == "True":
+        args.only_seq = True
+    onlyseq = args.only_seq
+    # Checks.
+    if onlseq:
+        if args.embed:
+            assert args.n_feat == 1, "onlyseq = True and embed = True, but # features != 1 (found %i)" %(args.n_feat)
+        else:
+            assert args.n_feat == 4, "onlyseq = True and embed = False, but # features != 4 (found %i)" %(args.n_feat)
+    # Structure mode.
+    args.str_mode = int(train_settings_dic["str_mode"])
+    str_mode_check = [1, 2, 3, 4]
+    assert args.str_mode in str_mode_check, "invalid str_mode setting found in train run parameter file %s" %(rp_train_settings_file)
+
+    # Get model feature info dictionary.
+    #import ast
+    #feat_info_dic = ast.literal_eval(model_params_dic["model_params_dic"])
+    # Get prediction set features.
 
     """
     Make sure --model-in and --in features.out are compatible.
     Features model was trained on need to be available / the same
-    in --in folder.
+    as in --in folder.
 
     """
 
     # Get model feature infos from --model-in.
-    rp_train_features_file = args.train_in_folder + "/features.out"
+    rp_train_features_file = args.in_train_folder + "/features.out"
     train_fid_dic = {}
     with open(rp_train_features_file) as f:
         for line in f:
@@ -2817,21 +2892,33 @@ def main_predict(args):
     f.closed
     assert gp_fid_dic, "train_fid_dic empty"
     assert "fa" in gp_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_gp_features_file)
-    # Pairwise feature comparison.
-    # assert len(train_fid_dic) == len(gp_fid_dic), "differing # of features encountered in --in and --model-in features.out (%i vs %i). --in and --model need to be compatible with each other regarding used features" %(len(gp_fid_dic), len(train_fid_dic))
+
+    # Pairwise feature comparison (note that --gp can have more features, but should have the same!).
     for fid in train_fid_dic:
         assert fid in gp_fid_dic, "feature ID %s found in --train-in but missing in --in features.out file. --in and --model need to be compatible with each other regarding used features" %(fid)
-        assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
+        # Structure can differ between gp/gt and train features.out (depending on set --str-mode in train).
+        if fid != "str":
+            assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
+
+    # Loss criterion.
+    criterion = nn.BCEWithLogitsLoss()
+    # Min-max normalization for scores.
+    min_max_norm = False # ?
 
     # Generate results output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
-    model_folder = args.train_in_folder
+    model_folder = args.in_train_folder
 
     # Whole-site predictions output files.
     ws_scores_out = out_folder + "/" + "whole_site_scores.out"
     ws_scores_bed = out_folder + "/" + "whole_site_scores.bed"
+
+
+    # hallo 123
+
+
     # Profile predictions output files.
     score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)
     peak_regions_bed = out_folder + "/" + "profiles.winext%i.peak_regions.bed" %(args.win_ext)
@@ -2903,16 +2990,11 @@ def main_predict(args):
     seqs_dic, idx2id_dic, all_features = rplib.load_predict_data(args,
                                                         store_tensors=True)
     # Number of features (feature vector length).
-    check_num_features = len(all_features[0][0])
-    assert check_num_features, "invalid check_num_features (%s)" %(check_num_features)
-    assert num_features == check_num_features, "num_features != check_num_features (%i != %i)" %(num_features, check_num_features)
-    print("# dataset features:  %i" %(num_features))
+    check_n_feat = len(all_features[0][0])
+    assert check_n_feat, "invalid check_n_feat extracted from all_features (%s)" %(check_n_feat)
+    assert args.n_feat == check_n_feat, "args.n_feat != check_n_feat (%i != %i)" %(args.n_feat, check_n_feat)
+    print("# dataset features:  %i" %(args.n_feat))
     print("Dataset size:        %i" %(len(all_features)))
-
-    print("Load model ... ")
-    model = GRUModel(num_features, n_hidden_dim, n_hidden_layers,
-                     2, device, dr=dr).to(device)
-    model.load_state_dict(torch.load(model_file))
 
 
     """
@@ -2930,12 +3012,12 @@ def main_predict(args):
         c_all_feat = len(all_features)
         all_labels = [1]*c_all_feat
         predict_dataset = RNNDataset(all_features, all_labels)
-        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+        predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
         # Predict.
         print("Predict whole sites ... ")
-        ws_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                        min_max_norm=min_max_norm)
+        ws_scores = rnn_util.test_scores(predict_loader, model, device,
+                                         min_max_norm=min_max_norm)
 
         # Checks.
         c_ws_scores = len(ws_scores)
@@ -2970,6 +3052,44 @@ def main_predict(args):
       top position sites) by --max-merge-dist
     - If genomic or transcript regions given as input, map peak regions
       and top-scoring sites to reference (update coordinates).
+Sliding window:
+1+20
+ 1+1+20
+  2+1+20
+
+and make sliding window with mean/median length of positives, good idea!
+This way, the positive whole-site scores can be better compared to the
+sliding window scores.
+
+Maybe one short sliding window too ? to detect local motifs ... ?
+
+long_slide_extlr = 20
+short_slide_extlr = 4
+sal_win = 40
+Or by default use the median / mean length of positive seqs
+
+
+win_extlr = 20
+
+sal_win = 40
+
+
+Sliding saliency:
+40
+ 40
+  40
+   40
+Add scores to vector.
+[0]
+[0,0]
+[0,0,0] ...
+
+For both long_slide, short_slide, and sal_slide we get position-wise scores
+bedgraph format ? to display in IGV would be goode
+
+
+After this:
+Tackle eval!
 
     """
     peaks_found = False
@@ -4435,6 +4555,8 @@ def main_gt(args):
     Path to BED file to annotate feature regions.
 
     """
+    feat_id_list = []
+
     if args.feat_in:
 
         print("Extracting additional BED features from --feat-in ... ")
@@ -4575,6 +4697,7 @@ def main_gt(args):
                 rplib.feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
                                                      p_values=p_values,
                                                      int_whole_nr=True)
+            feat_id_list.append(feat_id)
 
     FEATOUT.close()
 
@@ -4735,6 +4858,12 @@ def main_gt(args):
     if args.rep_reg_annot:
         print("Positives repeat region annotations .rra:\n%s" %(pos_rra_out))
         print("Negatives repeat region annotations .rra:\n%s" %(neg_rra_out))
+    if feat_id_list:
+        for add_fid in feat_id_list:
+            pos_feat_out = args.out_folder + "/" + "positives." + add_fid
+            neg_feat_out = args.out_folder + "/" + "negatives." + add_fid
+            print("Positives --feat-in annotations .%s:\n%s" %(add_fid, pos_feat_out))
+            print("Positives --feat-in annotations .%s:\n%s" %(add_fid, neg_feat_out))
     if args.report:
         print("Training set generation report .html:\n%s" %(html_report_out))
     print("")
@@ -4779,19 +4908,19 @@ def main_gp(args):
     test_transcript_to_genome_bed = args.out_folder + "/" + "test_transcript_to_genome.bed"
 
     # Checks.
-    assert os.path.exists(args.train_in_folder), "--train in folder not found"
-    check_model_file = args.train_in_folder + "/final.model"
-    check_params_file = args.train_in_folder + "/final.params"
+    assert os.path.exists(args.in_train_folder), "--train in folder not found"
+    check_model_file = args.in_train_folder + "/final.model"
+    check_params_file = args.in_train_folder + "/final.params"
     assert os.path.exists(check_model_file), "--train-in contains no .model file (final.model missing). Please train model without --gen-cv option"
     assert os.path.exists(check_params_file), "--train-in contains no .params file (final.params missing). Please train model without --gen-cv option"
 
     # Get infos from rnaprot train settings (partly ported over from gt).
-    rp_train_settings_file = args.train_in_folder + "/settings.rnaprot_train.out"
+    rp_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
     assert os.path.exists(rp_train_settings_file), "rnaprot train settings file %s not found" %(rp_train_settings_file)
     train_settings_dic = rplib.read_settings_into_dic(rp_train_settings_file)
 
     # Get used model features.
-    rp_train_features_file = args.train_in_folder + "/features.out"
+    rp_train_features_file = args.in_train_folder + "/features.out"
     train_fid_dic = rplib.read_settings_into_dic(rp_train_features_file,
                                                  val_col2=True)
     assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
@@ -4811,6 +4940,8 @@ def main_gp(args):
                 feat_in_file = train_settings_dic["feat_in"]
     # Get additional feature IDs.
     add_fid_dic = {}
+    args.feat_in_norm = False
+    args.feat_in_1h = False
     if feat_in_file:
         with open(feat_in_file) as f:
             for line in f:
@@ -4820,6 +4951,10 @@ def main_gp(args):
                 add_fid_dic[feat_id] = 1
                 assert feat_id in train_fid_dic, "--feat-in \"%s\" ID not a feature of --train-in model" %(feat_id)
         f.closed
+        if train_settings_dic["feat_in_norm"] == "True":
+            args.feat_in_norm = True
+        if train_settings_dic["feat_in_1h"] == "True":
+            args.feat_in_1h = True
     assert add_fid_dic, "no additional features read in from specified --feat-in %s" %(feat_in_file)
 
     # Region features.
@@ -4937,6 +5072,7 @@ def main_gp(args):
             add_feat_found = True
             assert feat_in_file, "--train-in model was trained with additional features, but no additional feature file set (please provide same --feat-in file)"
             assert fid in add_fid_dic, "feature ID %s not found in additional feature file %s. Please provide correct --feat-in file" %(fid, feat_in_file)
+
 
     """
     Temporary output files.
@@ -5098,6 +5234,7 @@ def main_gp(args):
     # Get chromsome lengths from --gen.
     print("Get chromosome lengths from --gen ... ")
     chr_len_dic = rplib.get_chromosome_lengths_from_2bit(args.in_2bit, chr_lengths_file)
+    gen_chr_len_dic = chr_len_dic
     # Get chromosome IDs.
     print("Get chromosome IDs from --in ... ")
     chr_ids_dic = rplib.bed_get_chromosome_ids(args.in_sites)
@@ -5405,6 +5542,7 @@ def main_gp(args):
     test_eia_stats_dic = None
     test_tra_stats_dic = None
     test_rra_stats_dic = None
+    add_feat_dic_list = None
     if args.report and args.add_str:
         test_str_stats_dic = {}
     if args.report and args.pc_bw:
@@ -5450,7 +5588,6 @@ def main_gp(args):
         FEATOUT.write("eia\tC\t%s\t-\n" %(lls))
     if args.rep_reg_annot:
         FEATOUT.write("rra\tC\tN,R\t-\n")
-    FEATOUT.close()
 
     """
     1) Secondary structure features.
@@ -5637,6 +5774,161 @@ def main_gp(args):
                                                   stats_dic=test_rra_stats_dic)
 
     """
+    6) Additional BED features.
+
+    Feature ID (column 1):
+    Up to 20 characters, ID for features, used as file ending
+    Feature type (column 2):
+    C (categorical), N (numerical)
+    Feature format (column 3):
+        0 (treat feature as categorical == no normalization, do not change values)
+        1 (col5 value == score), meaning apply min-max normalization
+        2 (col5 value == p-value)
+    Feature BED file path (column 4):
+    Path to BED file to annotate feature regions.
+
+    """
+    feat_id_list = []
+
+    if feat_in_file:
+
+        print("Extracting additional BED features from --feat-in ... ")
+
+        # Store dataset infos.
+        fids_dic = {}
+        fid2type_dic = {} # C,N
+        fid2format_dic = {} # 0,1,2
+        fid2path_dic = {}
+        # Read in infos.
+        with open(feat_in_file) as f:
+            for line in f:
+                row = line.strip()
+                cols = line.strip().split("\t")
+                feat_id = cols[0]
+                feat_type = cols[1]
+                feat_format = int(cols[2])
+                bed_path = cols[3]
+                # Convert to valid file ending.
+                new_feat_id = rplib.get_valid_file_ending(feat_id)
+                if feat_id != new_feat_id:
+                    print("Converted feature ID \"%s\" to \"%s\" to have valid file ending" %(feat_id, new_feat_id))
+                assert new_feat_id not in fids_dic, "non-unique feature ID \"%s\" in --feat-in table file" %(new_feat_id)
+                fids_dic[new_feat_id] = 1
+                fid2type_dic[new_feat_id] = feat_type
+                fid2format_dic[new_feat_id] = feat_format
+                fid2path_dic[new_feat_id] = bed_path
+        f.closed
+        assert fids_dic, "no features read in from --feat-in table"
+
+        if args.report:
+            add_feat_dic_list = []
+
+        for feat_id in fids_dic:
+            bed_path = fid2path_dic[feat_id]
+            feat_type = fid2type_dic[feat_id]
+            feat_format = fid2format_dic[feat_id]
+            p_values = False
+            if feat_format == 2:
+                p_values = True
+            # If all BED features should be treated as one-hot.
+            if args.feat_in_1h:
+                feat_type = "C"
+            # Output feature info.
+            if feat_type == "C":
+                FEATOUT.write("%s\tC\t0,1\tone_hot\n" %(feat_id))
+            else:
+                if feat_format:
+                    if p_values:
+                        FEATOUT.write("%s\tN\tbed_score\tprob\n" %(feat_id))
+                    else:
+                        FEATOUT.write("%s\tN\tbed_score\tminmax_norm\n" %(feat_id))
+                else:
+                    FEATOUT.write("%s\tN\tbed_score\t-\n" %(feat_id))
+
+            # Stats dictionaries.
+            test_stats_dic = None
+            if args.report:
+                test_stats_dic = {}
+
+            """
+            Check if --feat-in regions are purely genomic or transcript,
+            and whether mapping to transcriptome is necessary.
+            """
+
+            bed_ids_dic = rplib.bed_get_chromosome_ids(bed_path)
+            if transcript_regions:
+                print("Check whether \"%s\" feature BED contains exclusively genomic or transcript regions ..." %(feat_id))
+                # Check if IDs are transcript IDs.
+                need_to_map = False
+                if not rplib.check_dic1_keys_in_dic2(bed_ids_dic, tr_len_dic):
+                    print("Regions not exclusively transcript in \"%s\" feature BED, check for genomic regions ... " %(feat_id))
+                    # Check if IDs are genomic IDs.
+                    if rplib.check_dic1_keys_in_dic2(bed_ids_dic, gen_chr_len_dic):
+                        need_to_map = True
+                    else:
+                        assert False, "Regions not exclusively genomic in in \"%s\" feature BED. Supply either solely transcript or solely genomic regions (no mixed regions allowed so far)" %(feat_id)
+                if need_to_map:
+                    # Temp mapping folder.
+                    map_out_folder = args.out_folder + "/" + "tmp_map_out"
+                    if os.path.exists(map_out_folder):
+                        shutil.rmtree(map_out_folder)
+                    os.makedirs(map_out_folder)
+
+                    print("\"%s\" feature BED contains genomic regions ... " %(feat_id))
+                    #print("Get all transript IDs from --gtf ...")
+                    #all_tr_ids_dic =  dsglib.gtf_get_transcript_ids(args.in_gtf)
+                    print("Map \"%s\" feature BED regions to transcriptome, using all --gtf transcripts ... " %(feat_id))
+
+                    # Map feature BED genomic regions to transcriptome.
+                    rplib.convert_genome_positions_to_transcriptome(bed_path,
+                                                                    map_out_folder,
+                                                                    args.in_gtf,
+                                                                    tr_len_dic)
+
+                    all_comp_transcript_hits_bed = map_out_folder + "/" + "transcript_hits_complete.bed"
+                    all_incomp_transcript_hits_bed = map_out_folder + "/" + "transcript_hits_incomplete.bed"
+                    assert os.path.exists(all_comp_transcript_hits_bed), "Mapping file %s not found" %(all_comp_transcript_hits_bed)
+                    assert os.path.exists(all_incomp_transcript_hits_bed), "Mapping file %s not found" %(all_incomp_transcript_hits_bed)
+                    merge_list = []
+                    merge_list.append(all_comp_transcript_hits_bed)
+                    merge_list.append(all_incomp_transcript_hits_bed)
+                    rplib.merge_files(merge_list, bed_path)
+
+            else:
+                # Check if IDs are genomic IDs.
+                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in in \"%s\" feature BED. Please provide genomic regions matching --gtf and --gen files" %(feat_id)
+
+
+            print("Annotating \"%s\" feature ... " %(feat_id))
+
+            # Training set.
+            test_feat_out = args.out_folder + "/" + "test." + feat_id
+            rplib.bed_get_feature_annotations(test_bed_out, bed_path, test_feat_out,
+                                              feat_type=feat_type,
+                                              stats_dic=test_stats_dic,
+                                              disable_pol=False)
+            # Add additional stats to pos_stats_dic.
+            if args.report:
+                test_stats_dic["set"] = "test"
+                test_stats_dic["feat_id"] = feat_id
+                add_feat_dic_list.append(test_stats_dic)
+            neg_feat_out = args.out_folder + "/" + "negatives." + feat_id
+            # Normalize feature values.
+            if args.feat_in_norm and feat_format and feat_type == "N":
+                print("Min-max normalizing \"%s\" feature values ... " %(feat_id))
+                rplib.feat_min_max_norm_test_scores(test_feat_out,
+                                                    p_values=p_values,
+                                                    int_whole_nr=True)
+            feat_id_list.append(feat_id)
+
+    FEATOUT.close()
+
+    # Delete feature BED transcript mapping folder if present.
+    map_out_folder = args.out_folder + "/" + "tmp_map_out"
+    if os.path.exists(map_out_folder):
+        shutil.rmtree(map_out_folder)
+
+    """
     Generate HTML report including various training dataset statistics.
 
     """
@@ -5696,6 +5988,7 @@ def main_gp(args):
                                          test_eia_stats_dic=test_eia_stats_dic,
                                          test_tra_stats_dic=test_tra_stats_dic,
                                          test_rra_stats_dic=test_rra_stats_dic,
+                                         add_feat_dic_list=add_feat_dic_list,
                                          target_gbtc_dic=target_gbtc_dic,
                                          all_gbtc_dic=all_gbtc_dic,
                                          t2hc_dic=t2hc_dic,
@@ -5745,6 +6038,10 @@ def main_gp(args):
         print("Transcript region annotations .tra:\n%s" %(test_tra_out))
     if args.rep_reg_annot:
         print("Repeat region annotations .rra:\n%s" %(test_rra_out))
+    if feat_id_list:
+        for add_fid in feat_id_list:
+            test_feat_out = args.out_folder + "/" + "test." + add_fid
+            print("Additional --feat-in annotations .%s:\n%s" %(add_fid, test_feat_out))
     if args.report:
         print("Prediction set generation report .html:\n%s" %(html_report_out))
     print("")
