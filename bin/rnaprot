@@ -72,6 +72,7 @@ def setup_argument_parser():
 
     # Add required arguments group.
     p_trm = p_tr.add_argument_group("required arguments")
+
     # Required arguments for train.
     p_trm.add_argument("--in",
                    dest="in_folder",
@@ -157,7 +158,7 @@ def setup_argument_parser():
                    type = float,
                    metavar='float',
                    default = 0.2,
-                   help = "Validation set size for training final model as percentage of all training sites. NOTE that if --add-test is set, the test set will have the same size (so if --val-size 0.2, train on 60%, validate on 20%, and test on 20%) (default: 0.2)")
+                   help = "Validation set size for training final model as percentage of all training sites. NOTE that if --add-test is set, the test set will have the same size (so if --val-size 0.2, train on 60 percent, validate on 20 percent, and test on 20 percent) (default: 0.2)")
     p_tra.add_argument("--add-test",
                    dest="add_test",
                    default = False,
@@ -172,7 +173,7 @@ def setup_argument_parser():
                    dest="keep_order",
                    default = False,
                    action = "store_true",
-                   help = "Use same train / validation (/ test) split for each call to train final model. Test split only if --add-test or --test-ids (default: False)")
+                   help = "Use same train-validation(-test) split for each call to train final model. Test split only if --add-test or --test-ids (default: False)")
     p_tra.add_argument("--plot-lc",
                    dest = "plot_lc",
                    default = False,
@@ -329,6 +330,11 @@ def setup_argument_parser():
                    default = 7,
                    metavar='int',
                    help = "Windows size for calculating position-wise scoring profiles (default: 7)")
+    p_ev.add_argument("--lookup-id",
+                   dest="lookup_id",
+                   type=str,
+                   metavar='str',
+                   help = "Provide site ID for which to plot the feature profile in addition to --nr-top-profiles. Site ID needs to be in positive set from --gt-in")
     p_ev.add_argument("--bottoms-up",
                    dest = "bottoms_up",
                    default = False,
@@ -836,9 +842,6 @@ def main_train(args):
     kmer2idx_dic = False
     if args.embed:
         kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
-    args.add_feat = False
-    if indiv_feat_check:
-        args.add_feat = True
 
     # Number of classes.
     args.n_class = 1
@@ -889,6 +892,16 @@ def main_train(args):
     n_feat = len(all_features[0][0])
     assert n_feat, "invalid number of features (%s)" %(n_feat)
     args.n_feat = n_feat
+    # Additional features switch.
+    args.add_feat = False
+    if args.embed:
+        if args.n_feat > 1:
+            args.add_feat = True
+    else:
+        if args.n_feat > 4:
+            args.add_feat = True
+    if args.add_feat:
+        print("Training model using additional features ... ")
 
     # Reverse mapping.
     id2idx_dic = {}
@@ -1671,6 +1684,9 @@ def main_eval(args):
     l_dataset = len(all_features)
     print("Positive set size:     %i" %(l_dataset))
 
+    if args.lookup_id:
+        assert args.lookup_id in seqs_dic, "given --lookup-id not found in --gt-in positive set"
+
     # Convert to tensors for prediction, keep all_features for motif extraction later.
     all_feat_tens = []
     for feat in all_features:
@@ -1698,7 +1714,7 @@ def main_eval(args):
     c_all_feat = len(all_feat_tens)
     all_labels = [1]*c_all_feat
     predict_dataset = RNNDataset(all_feat_tens, all_labels)
-    predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=50, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
     # Define and load --train-in model.
     print("Load --train-in model ... ")
@@ -1733,7 +1749,7 @@ def main_eval(args):
         check_num_feat = 0
         for fid in ch_info_neg_dic:
             check_num_feat += len(ch_info_neg_dic[fid][1])
-        assert num_features == check_num_feat, "num_features != check_num_feat (%i != %i)" %(num_features, check_num_feat)
+        assert args.n_feat == check_num_feat, "num_features != check_num_feat (%i != %i)" %(num_features, check_num_feat)
 
         # Load dataset.
         c_neg_feat = len(all_neg_feat)
@@ -1933,20 +1949,25 @@ def main_eval(args):
     if args.bottoms_up:
         os.makedirs(bottom_profiles_folder)
 
-    win_info_st = "w%i" %(args.win_size)
-
     # Sort graphs by score to evaluate top sites.
     rank_scores_out = args.out_folder + "/whole_site_scores.out"
     RSOUT = open(rank_scores_out, "w")
     site_count = 0
     id_i = 10 ** len(str(args.nr_top_profiles))
-    # Store max score positions for each sequence.
-    id2maxpos_dic = {}
-    # Store min score positions for each sequence.
+    # Store min/max score positions for each sequence.
     id2minpos_dic = {}
+    id2maxpos_dic = {}
+    # Store min/max saliency positions for each sequence.
+    id2minsalpos_dic = {}
+    id2maxsalpos_dic = {}
+    c_maxsal_borders = 0
+    c_maxsal_center = 0
+
+    # All dataset saliencies (mean saliencies).
+    all_mean_sal = []
 
     # Plot top --nr-top-profiles profiles and output all site scores.
-    print("Plot top %i profiles ... " %(args.nr_top_profiles))
+    print("Plot top %i profiles and extract saliencies ... " %(args.nr_top_profiles))
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
         # Profile scores.
         profile_scores = profile_scores_ll[si]
@@ -1958,7 +1979,7 @@ def main_eval(args):
         seq = seqs_dic[seq_id]
         l_sc = len(profile_scores)
 
-        # Saliency.
+        # Get saliency scores list.
         sal_feat_list = []
         sal_feat_list.append(all_feat_tens[si])
         sal_dataset = RNNDataset(sal_feat_list, [1])
@@ -1972,18 +1993,31 @@ def main_eval(args):
             max_sal_list.append(max(scl))
         l_sal = len(mean_sal_list)
         assert l_sal == l_sc, "length saliency list != length profile scores list (%i != %i)" %(l_sal, l_sc)
+        all_mean_sal.append(mean_sal_list)
 
-        print("profile_scores:", profile_scores)
-        print("max(profile_scores):", max(profile_scores))
-        print("min(profile_scores):", min(profile_scores))
+        #print("profile_scores:", profile_scores)
+        #print("max(profile_scores):", max(profile_scores))
+        #print("min(profile_scores):", min(profile_scores))
 
         # Get maximum score position.
         max_pos = 0
         max_sc = -1000000
         min_pos = 0
         min_sc = 1000000
+        max_sal_pos = 0
+        max_sal_sc = -1000000
+        min_sal_pos = 0
+        min_sal_sc = 1000000
+        max_sal_sc_no_bord = -1000000
+        max_sal_pos_no_bord = 0
 
         for i,psc in enumerate(profile_scores):
+            # Get highest saliency score.
+            ssc = mean_sal_list[i]
+            if ssc > max_sal_sc_no_bord:
+                max_sal_sc_no_bord = ssc
+                max_sal_pos_no_bord = i
+            # Ignore borders.
             if i < max_motif_extlr:
                 continue
             if i >= l_sc-max_motif_extlr:
@@ -1994,12 +2028,35 @@ def main_eval(args):
             if psc < min_sc:
                 min_sc = psc
                 min_pos = i
+            # Saliency ignoring borders.
+            if ssc > max_sal_sc:
+                max_sal_sc = ssc
+                max_sal_pos = i
+            if ssc < min_sal_sc:
+                min_sal_sc = ssc
+                min_sal_pos = i
 
-        id2maxpos_dic[seq_id] = max_pos # 0-based.
-        id2minpos_dic[seq_id] = min_pos
+         # 0-based positions.
+        id2maxsalpos_dic[seq_id] = max_pos
+        id2minsalpos_dic[seq_id] = min_pos
+        id2maxpos_dic[seq_id] = max_sal_pos
+        id2minpos_dic[seq_id] = min_sal_pos
+        if max_sal_pos_no_bord != max_pos:
+            c_maxsal_borders += 1
+        else:
+            c_maxsal_center += 1
 
         # Store rank + site ID + score in file.
         RSOUT.write("%i\t%s\t%f\t%s\n" %(site_count, seq_id, ws_sc, seq))
+
+        # Plot profile for lookup site ID.
+        if args.lookup_id and seq_id == args.lookup_id:
+            plot_out_file = args.out_folder + "/" + args.lookup_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
+            # Plot profile.
+            rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
+                                                ch_info_dic, plot_out_file,
+                                                sal_list=mean_sal_list,
+                                                seq_label_plot=False)
 
         # Print only top --nr-top-profiles profiles.
         if site_count <= args.nr_top_profiles:
@@ -2012,12 +2069,10 @@ def main_eval(args):
                                                 sal_list=mean_sal_list,
                                                 seq_label_plot=False)
 
-
-        sys.exit()
-
     RSOUT.close()
 
-    # hallo 123
+    print("# top saliencies borders:", c_maxsal_borders)
+    print("# top saliencies center: ", c_maxsal_center)
 
     # Plot bottom profiles too.
     if args.bottoms_up:
@@ -2032,6 +2087,10 @@ def main_eval(args):
             id_i += 1
             seq_id = idx2id_dic[si]
             seq = seqs_dic[seq_id]
+            l_sc = len(profile_scores)
+
+            # Saliency.
+            mean_sal_list = all_mean_sal[si]
 
             # Print only top --nr-top-profiles profiles.
             if site_count <= args.nr_top_profiles:
@@ -2041,16 +2100,35 @@ def main_eval(args):
                 # Plot profile.
                 rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
                                                     ch_info_dic, plot_out_file,
+                                                    sal_list=mean_sal_list,
                                                     seq_label_plot=False)
             else:
                 break
+
+    """
+    Format of ch_info_dic:
+    ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'],
+    'CTFC': ['C', [1, 2], ['0', '1'], 'one_hot'],
+    'pc.con': ['N', [3], ['phastcons_score'], 'prob'],
+    'pp.con': ['N', [4], ['phylop_score'], 'minmax2'],
+    'rra': ['C', [5, 6], ['N', 'R'], '-'],
+    'str': ['N', [7, 8, 9, 10, 11], ['E', 'H', 'I', 'M', 'S'], 'prob'],
+    'tra': ['C', [12, 13, 14, 15, 16, 17, 18, 19, 20], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
+    """
+    # Convert ch_info_dic if args.embed and get new # features.
+    n_feat_matrix = args.n_feat
+    if args.embed:
+        ch_info_dic = rplib.conv_ch_info_dic(ch_info_dic, conv_mode=1)
+        # For plotting we need sequence feature as one-hot again.
+        n_feat_matrix = args.n_feat + 3
 
     # Numerical features with standard deviations.
     stdev_fid2fidx_dic = {}
     stdev_fidx2fid_dic = {}
     for fid in ch_info_dic:
-        feat_type = ch_info_dic[fid][0]
-        feat_idxs = ch_info_dic[fid][1]
+        feat_type = ch_info_dic[fid][0] # C or N.
+        feat_idxs = ch_info_dic[fid][1] # channel numbers occupied by feature.
         l_idxs = len(feat_idxs)
         if feat_type == "N" and l_idxs == 1:
             stdev_fid2fidx_dic[fid] = feat_idxs[0]
@@ -2061,6 +2139,8 @@ def main_eval(args):
     Plot top-scoring motifs.
 
     """
+
+
 
     print("Plot top motifs ... ")
 
@@ -2084,7 +2164,7 @@ def main_eval(args):
             motif_matrix = []
 
             for i in range(motif_size):
-                motif_matrix.append([0.0]*args.num_features)
+                motif_matrix.append([0.0]*n_feat_matrix)
             l_mm = len(motif_matrix) # Motif length.
             l_sv = len(motif_matrix[0]) # site vector length.
 
@@ -2100,7 +2180,11 @@ def main_eval(args):
             for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
 
                 # Feature list.
-                feat_list = all_features[si]
+                if args.embed:
+                    feat_list = rplib.conv_embed_feature_list(all_features[si])
+                else:
+                    feat_list = all_features[si]
+
                 # Profile scores.
                 profile_scores = profile_scores_ll[si]
                 if not profile_scores:
@@ -2109,7 +2193,7 @@ def main_eval(args):
                 seq_id = idx2id_dic[si]
                 seq = seqs_dic[seq_id]
                 l_seq = len(seq)
-                max_pos = id2maxpos_dic[seq_id]  # 0-based.
+                max_pos = id2maxpos_dic[seq_id] # 0-based.
                 max_sc = profile_scores[max_pos]
                 # If max_pos == 0, no top scoring site extracted, skip this sequence.
                 if not max_pos:
@@ -2180,6 +2264,45 @@ def main_eval(args):
             top_motif_file_dic[motif_out_file] = 1
 
 
+
+    """
+
+
+# motif sites extracted:           200
+# sites skipped (--motif-sc-thr):  240
+fl_dic: {21: 35559, 24: 35640}
+INVESTIGATE ....
+
+    phastcons + phylop plotted from 1 to .. instead from 0 to ... (?)
+
+motif_matrix[0]: [0.265, 0.15, 0.3, 0.285, 1.0, 0.0, 0.812765, 0.37611250000000007, 0.98, 0.02, 0.08512925499999997, 0.09797658500000002, 0.05295604000000001, 0.019393650000000005, 0.7445445149999996, 0.0, 0.015, 0.88, 0.0, 0.02, 0.005, 0.0, 0.08, 0.0]
+len(motif_matrix[0]): 24
+motif_matrix[1]: [0.235, 0.235, 0.2, 0.33, 1.0, 0.0, 0.805775, 0.3881699999999999, 0.98, 0.02, 0.08425141500000001, 0.11461877000000004, 0.04979506999999996, 0.02082011500000001, 0.7305146799999995, 0.0, 0.015, 0.88, 0.0, 0.02, 0.005, 0.0, 0.08, 0.0]
+motif_matrix[2]: [0.235, 0.08, 0.12, 0.565, 1.0, 0.0, 0.7901600000000001, 0.2990674999999998, 0.985, 0.015, 0.08601288000000001, 0.096460675, 0.06146663500000002, 0.019583385000000005, 0.7364764050000003, 0.0, 0.01, 0.885, 0.0, 0.02, 0.005, 0.0, 0.08, 0.0]
+fid2stdev_dic: {'pc.con': [0.3615982386655529, 0.37039015742672343, 0.38175036490555925, 0.37393580240678753, 0.35882918361676686, 0.3689855875152441, 0.3762026736124636], 'pp.con': [0.34052431770505387, 0.33745294285754285, 0.3285518928957447, 0.3607840682280551, 0.3539530479179435, 0.3371724225252679, 0.3562587208150615]}
+ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC': ['C', [4, 5], ['0', '1'], 'one_hot'], 'pc.con': ['N', [6], ['phastcons_score'], 'prob'], 'pp.con': ['N', [7], ['phylop_score'], 'minmax2'], 'rra': ['C', [8, 9], ['N', 'R'], '-'], 'str': ['N', [10, 11, 12, 13, 14], ['E', 'H', 'I', 'M', 'S'], 'prob'], 'tra': ['C', [15, 16, 17, 18, 19, 20, 21, 22, 23], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
+
+    print("motif_matrix:", motif_matrix)
+    print("ch_info_dic:", ch_info_dic)
+    print("fid2stdev_dic:", fid2stdev_dic)
+
+    motif_matrix: [[0.265, 0.15, 0.3, 0.285, 1.0, 0.0, 0.812765, 0.37611250000000007, 0.98, 0.02, 0.08512925499999997, 0.09797658500000002, 0.05295604000000001, 0.019393650000000005, 0.7445445149999996, 0.0, 0.015, 0.88, 0.0, 0.02, 0.005], [0.235, 0.235, 0.2, 0.33, 1.0, 0.0, 0.805775, 0.3881699999999999, 0.98, 0.02, 0.08425141500000001, 0.11461877000000004, 0.04979506999999996, 0.02082011500000001, 0.7305146799999995, 0.0, 0.015, 0.88, 0.0, 0.02, 0.005], [0.235, 0.08, 0.12, 0.565, 1.0, 0.0, 0.7901600000000001, 0.2990674999999998, 0.985, 0.015, 0.08601288000000001, 0.096460675, 0.06146663500000002, 0.019583385000000005, 0.7364764050000003, 0.0, 0.01, 0.885, 0.0, 0.02, 0.005], [0.085, 0.305, 0.445, 0.165, 1.0, 0.0, 0.8028399999999999, 0.3905865000000002, 0.985, 0.015, 0.08840357500000001, 0.09450228500000005, 0.06388078499999997, 0.02036382, 0.7328494550000002, 0.0, 0.01, 0.885, 0.0, 0.02, 0.005], [0.56, 0.055, 0.145, 0.24, 1.0, 0.0, 0.8198300000000001, 0.43087949999999964, 0.985, 0.015, 0.08624503499999997, 0.10677079999999999, 0.06697489, 0.018173995000000002, 0.721835215, 0.0, 0.005, 0.89, 0.0, 0.02, 0.005], [0.435, 0.06, 0.27, 0.235, 1.0, 0.0, 0.8109449999999999, 0.34075099999999997, 0.985, 0.015, 0.09352080500000003, 0.11932234999999995, 0.08037490499999998, 0.019856950000000012, 0.6869249249999997, 0.0, 0.01, 0.885, 0.0, 0.02, 0.005], [0.38, 0.085, 0.305, 0.23, 1.0, 0.0, 0.8044750000000002, 0.40006800000000003, 0.985, 0.015, 0.09550320999999996, 0.11592726999999999, 0.07343648499999998, 0.02077943, 0.6943536350000002, 0.0, 0.02, 0.875, 0.0, 0.02, 0.005]]
+
+    ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'],
+    'CTFC': ['C', [4, 5], ['0', '1'], 'one_hot'],
+    'pc.con': ['N', [6], ['phastcons_score'], 'prob'],
+    'pp.con': ['N', [7], ['phylop_score'], 'minmax2'],
+    'rra': ['C', [8, 9], ['N', 'R'], '-'],
+    'str': ['N', [10, 11, 12, 13, 14], ['E', 'H', 'I', 'M', 'S'], 'prob'],
+    'tra': ['C', [15, 16, 17, 18, 19, 20, 21, 22, 23], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
+    fid2stdev_dic: {'pc.con': [0.3615982386655529, 0.37039015742672343, 0.38175036490555925, 0.37393580240678753, 0.35882918361676686, 0.3689855875152441, 0.3762026736124636], 'pp.con': [0.34052431770505387, 0.33745294285754285, 0.3285518928957447, 0.3607840682280551, 0.3539530479179435, 0.3371724225252679, 0.3562587208150615]}
+
+
+    """
+
+
     """
     Optionally plot lowest-scoring (bottom) motifs.
 
@@ -2209,7 +2332,7 @@ def main_eval(args):
                 motif_matrix = []
 
                 for i in range(motif_size):
-                    motif_matrix.append([0.0]*args.num_features)
+                    motif_matrix.append([0.0]*n_feat_matrix)
                 l_mm = len(motif_matrix) # Motif length.
                 l_sv = len(motif_matrix[0]) # site vector length.
 
@@ -2225,7 +2348,11 @@ def main_eval(args):
                 for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=False):
 
                     # Feature list.
-                    feat_list = all_features[si]
+                    if args.embed:
+                        feat_list = rplib.conv_embed_feature_list(all_features[si])
+                    else:
+                        feat_list = all_features[si]
+
                     # Profile scores.
                     profile_scores = profile_scores_ll[si]
                     if not profile_scores:
@@ -2291,7 +2418,6 @@ def main_eval(args):
 
                 bottom_motif_file_dic[motif_out_file] = 1
 
-
     """
     Generate --report statistics and plots.
 
@@ -2300,13 +2426,12 @@ def main_eval(args):
         - If additional features, get average brick scores (containing k-mer),
           and bricks for plotting. Also get top scoring bricks and scores
           for each k-mer.
-        - Jaccard index calculation to get an idea which k-mers are clustered
         - HTML report
 
     """
     lookup_kmer = False
     lookup_plot_file = False
-    c_top_kmers = 30
+    c_top_kmers = 20
 
     if args.report:
 
@@ -2319,14 +2444,8 @@ def main_eval(args):
         kmer2bestmm_dic = {}
         # Store top scores for each k-mer.
         kmer2bestsc_dic = {}
-        # k-mer to k-mer containing sequence IDs dictionary of lists.
-        kmer2seqids_dic = {}
-        # To store k-mer hit positions in sequences.
-        kmerseqid2hits_dic = {}
         # k-mer score stdev.
         kmer2scstdev_dic = {}
-        # Minimum k-mer score for Jaccard calculations.
-        min_kmer_score = 0.1
 
         print("--report set. Gather more results ... ")
         print("Score k-mers ... ")
@@ -2353,51 +2472,41 @@ def main_eval(args):
 
         kmer_list = []
         for kmer, kmerc in sorted(kmer2c_dic.items()):
-            kmer_list.append(kmer)
+            if kmerc != 0:
+                kmer_list.append(kmer)
 
         # If only sequence features.
         if onlyseq:
             print("--train-in model trained on sequences only. Generate k-mer features ... ")
             # Construct sequence kmer graphs.
             for kmer in kmer_list:
-                feat_list = rplib.string_vectorizer(kmer, custom_alphabet=['A','C','G','U'])
+                if args.embed:
+                    feat_list = rplib.convert_seq_to_kmer_embedding(kmer, args.embed_k, kmer2idx_dic,
+                                                                     l2d=True)
+                else:
+                    feat_list = rplib.string_vectorizer(kmer, custom_alphabet=['A','C','G','U'])
                 kmer_feat.append(torch.tensor(feat_list, dtype=torch.float))
             # Score kmers.
             c_kmer_feat = len(kmer_feat)
             kmer_feat_labels = [1]*c_kmer_feat
             predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
-            predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+            predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
             print("Score k-mers present in sequences ... ")
-
-            kmer_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                              min_max_norm=min_max_norm)
+            kmer_scores = rnn_util.test_scores(predict_loader, model, device,
+                                               min_max_norm=min_max_norm)
 
             assert c_kmer_feat == len(kmer_scores), "size k-mer features list != # k-mer scores"
+
             for i,kmer in enumerate(kmer_list):
                 kmer_score = kmer_scores[i]
                 kmer2sc_dic[kmer] = kmer_score
-                if kmer_score >= min_kmer_score:
-                    kmer2seqids_dic[kmer] = []
-                if lookup_kmer and lookup_kmer == kmer:
-                    kmer2seqids_dic[kmer] = []
-            # Fill kmer2seqids_dic and store k-mer hit positions in sequences.
-            for seq_id in seqs_dic:
-                seq = seqs_dic[seq_id]
-                for kmer in kmer2seqids_dic:
-                    if re.search(kmer, seq):
-                        kmer2seqids_dic[kmer].append(seq_id)
-                        kmerseqid = "%s,%s" %(kmer,seq_id)
-                        hit_list = rplib.get_kmer_hit_ends(seq, kmer)
-                        kmerseqid2hits_dic[kmerseqid] = hit_list
-
-            c_kmers_higher_zero = len(kmer2seqids_dic)
-            print("# k-mers with scores >= %s:  %i" %(str(min_kmer_score), c_kmers_higher_zero))
 
         else:
 
             # More features comin at ya.
             print("--train-in model trained on sequences + additional features. Generate k-mer features ... ")
+
             for feat_list in all_feat_tens:
                 # For each position in feat_list.
                 l_feat = len(feat_list)
@@ -2406,20 +2515,18 @@ def main_eval(args):
                     reg_e = wi + args.kmer_size
                     if reg_e > l_feat:
                         break
-                    feat_list_win = feat_list[reg_s:reg_e]
                     kmer_feat.append(feat_list[reg_s:reg_e])
-
 
             # Score kmers.
             c_kmer_feat = len(kmer_feat)
             kmer_feat_labels = [1]*c_kmer_feat
             predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
-            predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+            predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
             print("Score k-mers ... ")
+            kmer_scores = rnn_util.test_scores(predict_loader, model, device,
+                                               min_max_norm=min_max_norm)
 
-            kmer_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                              min_max_norm=min_max_norm)
             assert len(kmer_feat) == len(kmer_scores), "len(kmer_feat) != len(kmer_scores)"
 
             """
@@ -2438,19 +2545,19 @@ def main_eval(args):
 
             # Motif matrix sizes.
             l_mm = args.kmer_size
-            l_sv = args.num_features
+            l_sv = n_feat_matrix
 
             # Init dictionaries.
             for kmer in kmer_list:
                 # Init motif matrix for kmer.
                 motif_matrix = []
                 for i in range(args.kmer_size):
-                    motif_matrix.append([0.0]*args.num_features)
+                    motif_matrix.append([0.0]*n_feat_matrix)
                 kmer2mm_dic[kmer] = motif_matrix
                 # Init best scoring brick for k-mer matrix.
                 best_motif_matrix = []
                 for i in range(args.kmer_size):
-                    best_motif_matrix.append([0.0]*args.num_features)
+                    best_motif_matrix.append([0.0]*n_feat_matrix)
                 kmer2bestmm_dic[kmer] = best_motif_matrix
                 # Init dictionary to store scores for stdev calculations.
                 if calc_stdev:
@@ -2466,6 +2573,11 @@ def main_eval(args):
             sc_i = 0
             kmer2sclist_dic = {}
             for si,feat_list in enumerate(all_features):
+
+                # If embed, convert feature list to sequence one-hot containing list.
+                if args.embed:
+                    feat_list = rplib.conv_embed_feature_list(feat_list)
+
                 seq_id = idx2id_dic[si]
                 seq = seqs_dic[seq_id]
                 # For each position in feat_list.
@@ -2478,23 +2590,13 @@ def main_eval(args):
                     if brick_e > l_feat:
                         break
                     feat_list_win = feat_list[brick_s:brick_e]
-                    win_score = kmer_scores[sc_i]
+                    win_score = float(kmer_scores[sc_i])
                     win_kmer = seq[brick_s:brick_e]
                     win_lookup_kmer = False
                     if lookup_kmer:
                         if win_kmer == lookup_kmer:
                             win_lookup_kmer = True
-                    # Store sequence IDs for k-mers score > 0.
-                    if win_score > min_kmer_score or win_lookup_kmer:
-                        if win_kmer not in kmer2seqids_dic:
-                            kmer2seqids_dic[win_kmer] = [seq_id]
-                        else:
-                            kmer2seqids_dic[win_kmer].append(seq_id)
-                        # Get hit end positions.
-                        kmerseqid = "%s,%s" %(win_kmer,seq_id)
-                        if kmerseqid not in kmerseqid2hits_dic:
-                            hit_list = rplib.get_kmer_hit_ends(seq,win_kmer)
-                            kmerseqid2hits_dic[kmerseqid] = hit_list
+
                     # Record score for average score calculation later.
                     if win_kmer not in kmer2sclist_dic:
                         kmer2sclist_dic[win_kmer] = [win_score]
@@ -2535,6 +2637,7 @@ def main_eval(args):
                 kmer_sc_avg = kmer2sclist_dic[kmer][0]
                 kmer_sc_stdev = 0.0
                 if len(kmer2sclist_dic[kmer]) != 1:
+                    #print(kmer2sclist_dic[kmer])
                     kmer_sc_avg = statistics.mean(kmer2sclist_dic[kmer])
                     kmer_sc_stdev = statistics.stdev(kmer2sclist_dic[kmer])
                 kmer2sc_dic[kmer] = kmer_sc_avg
@@ -2555,102 +2658,6 @@ def main_eval(args):
         for kmer, kmerc in sorted(kmer2c_dic.items(), key=lambda item: item[1], reverse=True):
             kmer_rank += 1
             kmer2rank_dic[kmer] = kmer_rank
-
-        """
-        Jaccard index calculation.
-
-        len(kmer2seqids_dic) == number of k-mers with score > 0
-        Number of pairs to check:
-        n! / (n-k)! * k!
-        with n = 4^(kmer_size), e.g. kmer_size = 5, n = 1024,
-        and k = 2 (selecting two k-mers from n without replacement)
-        NOTE that in our case n is smaller since we only look at subset
-        of k-mers (e.g. ones with score > 0). Also some k-mers do not
-        have intersections (c_zero_intersects).
-        ALSO, not all k-mers might be present in the positive training set.
-
-        Could also be tried:
-        Simple matching coefficient:
-        https://en.wikipedia.org/wiki/Simple_matching_coefficient
-        https://en.wikipedia.org/wiki/Jaccard_index (Jaccard vs SMC difference described)
-
-        """
-        min_jacc_sc = 0.1
-
-        print("Calculate k-mer Jaccard index stats ... ")
-        for kmer in kmer2seqids_dic:
-            # Convert lists to sets.
-            ids_list = kmer2seqids_dic[kmer]
-            assert kmer2seqids_dic[kmer], "kmer2seqids_dic empty for k-mer %s" %(kmer)
-            kmer2seqids_dic[kmer] = set(ids_list)
-        kmer_pair_dic = {}
-        jacc_scores_dic = {}
-        jacc_stats_dic = {}
-        c_zero_intersects = 0
-        for kmer1, ids1 in sorted(kmer2seqids_dic.items()):
-            for kmer2, ids2 in sorted(kmer2seqids_dic.items()):
-                if kmer1 == kmer2:
-                    continue
-                kmer_pair1 = "%s,%s" %(kmer1,kmer2)
-                kmer_pair2 = "%s,%s" %(kmer2,kmer1)
-                if kmer_pair1 in kmer_pair_dic:
-                    continue
-                kmer_pair_dic[kmer_pair1] = 1
-                kmer_pair_dic[kmer_pair2] = 1
-                # Compare.
-                intersects = ids1.intersection(ids2)
-                if len(intersects) == 0:
-                    c_zero_intersects += 1
-                    continue
-                # Jaccard index.
-                union = ids1.union(ids2)
-                c_intersects = len(intersects)
-                c_union = len(union)
-                jaccard_idx = float(c_intersects / c_union)
-                if jaccard_idx < min_jacc_sc:
-                    continue
-                min_dist_list = []
-
-                # Go over all sequences containing both to get min distances.
-                for seq_id in intersects:
-                    kmer1sid = "%s,%s" %(kmer1,seq_id)
-                    kmer2sid = "%s,%s" %(kmer2,seq_id)
-                    min_dist = rplib.get_min_hit_end_distance(kmerseqid2hits_dic[kmer1sid],kmerseqid2hits_dic[kmer2sid])
-                    min_dist_list.append(min_dist)
-
-                # Checks.
-                if not min_dist_list:
-                    print("ERROR: min_dist_list empty")
-                    print(kmer1, kmer2, jaccard_idx)
-                    print("Intersects were:")
-                    for seq_id in intersects:
-                        kmer1sid = "%s,%s" %(kmer1,seq_id)
-                        kmer2sid = "%s,%s" %(kmer2,seq_id)
-                        print(kmer1sid, kmerseqid2hits_dic[kmer1sid])
-                        print(kmer2sid, kmerseqid2hits_dic[kmer2sid])
-                        print("min_dist:", min_dist)
-                    sys.exit()
-
-                # Statistics.
-                min_dist_mean = min_dist_list[0]
-                min_dist_stdev = 0.0
-                if len(min_dist_list) != 1:
-                    min_dist_mean = statistics.mean(min_dist_list)
-                    min_dist_stdev = statistics.stdev(min_dist_list)
-                jacc_id = "%s,%s" %(kmer1,kmer2)
-                # k-mer scores.
-                kmer1_sc = kmer2sc_dic[kmer1]
-                kmer2_sc = kmer2sc_dic[kmer2]
-                if not onlyseq:
-                    kmer1_sc = kmer2bestsc_dic[kmer1]
-                    kmer2_sc = kmer2bestsc_dic[kmer2]
-                sum_sc = kmer1_sc + kmer2_sc
-                jacc_scores_dic[jacc_id] = jaccard_idx
-                jacc_stats_dic[jacc_id] = [kmer1, kmer2, kmer1_sc, kmer2_sc, jaccard_idx, min_dist_mean, min_dist_stdev, c_intersects, c_union]
-
-        c_jacc_sc = len(jacc_scores_dic)
-        print("# k-mer pairs with intersections:     %i" %(c_jacc_sc))
-        print("# k-mer pairs without intersections:  %i" %(c_zero_intersects))
 
         """
         Output k-mer stats tables.
@@ -2733,8 +2740,6 @@ def main_eval(args):
                                            kmer_stdev_dic=kmer_stdev_dic,
                                            kmer2bestmm_dic=kmer2bestmm_dic,
                                            kmer2c_dic=kmer2c_dic,
-                                           min_kmer_score=min_kmer_score,
-                                           min_jacc_sc=min_jacc_sc,
                                            kmer_size=args.kmer_size,
                                            ch_info_dic=ch_info_dic,
                                            top_motif_file_dic=top_motif_file_dic,
@@ -2744,8 +2749,6 @@ def main_eval(args):
                                            onlyseq=onlyseq,
                                            theme=args.theme,
                                            lookup_kmer=lookup_kmer,
-                                           jacc_scores_dic=jacc_scores_dic,
-                                           jacc_stats_dic=jacc_stats_dic,
                                            plots_subfolder=plots_subfolder)
 
     print("")

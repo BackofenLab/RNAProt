@@ -7871,8 +7871,6 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   kmer2bestmm_dic=False,
                                   ch_info_dic=False,
                                   kmer_size=5,
-                                  min_kmer_score=0.1,
-                                  min_jacc_sc=0.1,
                                   top_motif_file_dic=False,
                                   bottom_motif_file_dic=False,
                                   kmer_top_n=25,
@@ -7880,8 +7878,6 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   add_ws_scores=False,
                                   theme=1,
                                   lookup_kmer=False,
-                                  jacc_scores_dic=False,
-                                  jacc_stats_dic=False,
                                   plots_subfolder="html_plots"):
     """
     Generate HTML report for rnaprot eval, showing stats and plots regarding
@@ -7892,12 +7888,10 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
         - whole site scores density plot (+ vs -)
         - kmer scores density plot
         - top scoring kmer stats table
-        - jaccard index analysis (co-occuring positive top scoring kmers)
     For additional features:
         - above and:
         - extended stats with plots (avg scores vs top scores for each kmer)
         - avg vs top scores correlation plot (like scatter plot)
-        - jaccard index using top scores for ranking
 
     """
     # Checks.
@@ -7909,8 +7903,6 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     assert kmer2sc_dic, "kmer2sc_dic needed"
     assert kmer2c_dic, "kmer2c_dic needed"
     assert kmer2scrank_dic, "kmer2scrank_dic needed"
-    assert jacc_scores_dic, "jacc_scores_dic needed"
-    assert jacc_stats_dic, "jacc_stats_dic needed"
     if not onlyseq:
         assert kmer2bestsc_dic, "kmer2bestsc_dic needed in case of additional features"
         assert kmer2scstdev_dic, "kmer2scstdev_dic needed in case of additional features"
@@ -7999,12 +7991,9 @@ by RNAProt (rnaprot eval):
         mdtext += "- [k-mer score distributions](#kmer-scores-plots)"
     mdtext += "\n"
     mdtext += "- [k-mer statistics](#kmer-stats)"
-    mdtext += "\n"
-    mdtext += "- [k-mer co-occurrence statistics](#kmer-cooc-stats)"
     if lookup_kmer:
         mdtext += "\n"
         mdtext += "- [Lookup k-mer statistics](#lookup-kmer-stats)\n"
-        mdtext += "- [Lookup k-mer co-occurrence statistics](#lookup-kmer-cooc-stats)"
     if add_ws_scores:
         mdtext += "\n"
         mdtext += "- [Model comparison](#model-comp-plot)"
@@ -8113,48 +8102,6 @@ count rank) for the top %i scoring sequence %i-mers (ranked by k-mer score).
             mdtext += "| %i | %s | %.6f | %i | %i |\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank)
         mdtext += "\n&nbsp;\n&nbsp;\n"
 
-        # k-mer co-occurrence statistics table for onlyseq.
-        mdtext += """
-## k-mer co-occurrence statistics ### {#kmer-cooc-stats}
-
-**Table:** sequence k-mer co-occurrence statistics (Jaccard index (JI) rank, k-mer 1,
-k-mer 2, Jaccard index, k-mer 1 score (sc), k-mer 2 score, mean minimum distance
-of k-mers on sequences containing both k-mers with standard deviation, number
-of intersections (sequences containing both k-mers), size of union of sequences
-containing the two k-mers).
-Entries are sorted by the Jaccard index of the two k-mers (where set is defined
-as the set of sequences containing the k-mer). Only the top %i k-mer pairs
-are shown, with a minimum Jaccard index of %s, a minimum k-mer score of
-%s, and a minimum # of intersections of 10, and a minimum mean minimum distance
-(yes!) of %i. An empty table means that no pairs have met the filtering criteria.
-
-""" %(kmer_top_n, str(min_jacc_sc), str(min_kmer_score), kmer_size)
-
-        mdtext += "| JI rank | &nbsp; k-mer 1 &nbsp; |  &nbsp; k-mer 2 &nbsp; | JI | k-mer 1 sc | k-mer 2 sc | mean min dist (+- stdev) | # intersect | # union | \n"
-        mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | \n"
-        jacc_rank = 0
-        kmers2sumsc_dic = {}
-        for kmers, jacc_idx in sorted(jacc_scores_dic.items(), key=lambda item: item[1], reverse=True):
-            min_dist_mean = jacc_stats_dic[kmers][5]
-            c_intersects = jacc_stats_dic[kmers][7]
-            if min_dist_mean < kmer_size:
-                continue
-            if c_intersects < 10:
-                continue
-            jacc_rank += 1
-            if jacc_rank > kmer_top_n:
-                break
-            kmer1 = jacc_stats_dic[kmers][0]
-            kmer2 = jacc_stats_dic[kmers][1]
-            kmer1_sc = jacc_stats_dic[kmers][2]
-            kmer2_sc = jacc_stats_dic[kmers][3]
-            sum_sc = kmer1_sc + kmer2_sc
-            kmers2sumsc_dic[kmers] = sum_sc
-            min_dist_stdev = jacc_stats_dic[kmers][6]
-            c_union = jacc_stats_dic[kmers][8]
-            mdtext += "| %i | %s | %s | %.6f | %.6f | %.6f | %.6f (+- %.6f) | %i | %i |\n" %(jacc_rank, kmer1, kmer2, jacc_idx, kmer1_sc, kmer2_sc, min_dist_mean, min_dist_stdev, c_intersects, c_union)
-        mdtext += "\n&nbsp;\n&nbsp;\n"
-
         if lookup_kmer:
             # Lookup k-mer stats table for onlyseq.
             print("Generate --lookup-kmer stats and plots ... ")
@@ -8173,38 +8120,6 @@ count rank) for lookup k-mer %s.
             lk_count_rank = kmer2rank_dic[lookup_kmer]
             lk_count = kmer2c_dic[lookup_kmer]
             mdtext += "| %i | %s | %.6f | %i | %i |\n" %(lk_sc_rank, lookup_kmer, lk_sc, lk_count, lk_count_rank)
-            mdtext += "\n&nbsp;\n&nbsp;\n"
-
-            # Lookup k-mer co-occurrence statistics table for onlyseq.
-            mdtext += """
-## Lookup k-mer co-occurrence statistics ### {#lookup-kmer-cooc-stats}
-
-**Table:** Lookup sequence k-mer co-occurrence statistics.
-Entries are sorted by the Jaccard index (JI) of the two k-mers.
-Only the top %i k-mer pairs are shown, with a minimum Jaccard index
-of %s, a minimum k-mer score (sc) of %s, and a minimum # of intersections of 10.
-
-""" %(kmer_top_n, str(min_jacc_sc), str(min_kmer_score))
-
-            mdtext += "| JI rank | &nbsp; k-mer 1 &nbsp; |  &nbsp; k-mer 2 &nbsp; | JI | k-mer 1 sc | k-mer 2 sc | mean min dist (+- stdev) | # intersect | # union | \n"
-            mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | \n"
-            jacc_rank = 0
-            kmers2sumsc_dic = {}
-            for kmers, jacc_idx in sorted(jacc_scores_dic.items(), key=lambda item: item[1], reverse=True):
-                jacc_rank += 1
-                kmer1 = jacc_stats_dic[kmers][0]
-                kmer2 = jacc_stats_dic[kmers][1]
-                if kmer1 != lookup_kmer and kmer2 != lookup_kmer:
-                    continue
-                kmer1_sc = jacc_stats_dic[kmers][2]
-                kmer2_sc = jacc_stats_dic[kmers][3]
-                sum_sc = kmer1_sc + kmer2_sc
-                kmers2sumsc_dic[kmers] = sum_sc
-                min_dist_mean = jacc_stats_dic[kmers][5]
-                min_dist_stdev = jacc_stats_dic[kmers][6]
-                c_intersects = jacc_stats_dic[kmers][7]
-                c_union = jacc_stats_dic[kmers][8]
-                mdtext += "| %i | %s | %s | %.6f | %.6f | %.6f | %.6f (+- %.6f) | %i | %i |\n" %(jacc_rank, kmer1, kmer2, jacc_idx, kmer1_sc, kmer2_sc, min_dist_mean, min_dist_stdev, c_intersects, c_union)
             mdtext += "\n&nbsp;\n&nbsp;\n"
 
     else:
@@ -8310,6 +8225,7 @@ also shown.
             sc_diff = abs(best_sc-avg_sc)
             # Generate average score motif.
             avg_sc_plot_file = avg_motif_plots_folder + "/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
+
             make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, avg_sc_plot_file,
                             fid2stdev_dic=kmer_stdev_dic[kmer])
             pp1 = plots_folder + "/avg_motif_plots/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
@@ -8319,48 +8235,6 @@ also shown.
                             fid2stdev_dic=False)
             pp2 = plots_folder + "/best_motif_plots/" + str(kmer_i)[1:] + "_" + kmer + ".best_sc.png"
             mdtext += '| %i | %s | %.6f | <image src = "%s" width="150px"></image> | %i | %.6f | %.6f | <image src = "%s" width="150px"></image> | %.6f | %.6f | %i | %i |\n' %(sc_rank, kmer, best_sc, pp2, avg_sc_rank, avg_sc, avg_sc_stdev, pp1, sc_sum, sc_diff, kmer_count, kmer_count_rank)
-        mdtext += "\n&nbsp;\n&nbsp;\n"
-
-        # k-mer co-occurrence statistics table for additional features.
-        mdtext += """
-## k-mer co-occurrence statistics ### {#kmer-cooc-stats}
-
-**Table:** sequence k-mer co-occurrence statistics with additional features
-(Jaccard index (JI) rank, k-mer 1, k-mer 2, Jaccard index, best k-mer 1 score (sc),
-best k-mer 2 score, mean minimum distance of k-mers on sequences containing both
-k-mers with standard deviation, number of intersections (sequences containing
-both k-mers), size of union of sequences containing the two k-mers).
-Entries are sorted by the Jaccard index of the two k-mers (where set is defined
-as the set of sequences containing the k-mer). Only the top %i k-mer pairs
-are shown, with a minimum Jaccard index of %s a minimum k-mer score of
-%s, a minimum # of intersections of 10, , and a minimum mean minimum distance
-(yes!) of %i. An empty table means that no pairs have met the filtering criteria.
-
-""" %(kmer_top_n, str(min_jacc_sc), str(min_kmer_score), kmer_size)
-
-        mdtext += "| JI rank | &nbsp; k-mer 1 &nbsp; |  &nbsp; k-mer 2 &nbsp; | JI | k-mer 1 sc | k-mer 2 sc | mean min dist | dist stdev | # intersect | # union | \n"
-        mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | \n"
-        jacc_rank = 0
-        kmers2sumsc_dic = {}
-        for kmers, jacc_idx in sorted(jacc_scores_dic.items(), key=lambda item: item[1], reverse=True):
-            min_dist_mean = jacc_stats_dic[kmers][5]
-            c_intersects = jacc_stats_dic[kmers][7]
-            if c_intersects < 10:
-                continue
-            if min_dist_mean < kmer_size:
-                continue
-            jacc_rank += 1
-            if jacc_rank > kmer_top_n:
-                break
-            kmer1 = jacc_stats_dic[kmers][0]
-            kmer2 = jacc_stats_dic[kmers][1]
-            kmer1_sc = jacc_stats_dic[kmers][2]
-            kmer2_sc = jacc_stats_dic[kmers][3]
-            sum_sc = kmer1_sc + kmer2_sc
-            kmers2sumsc_dic[kmers] = sum_sc
-            min_dist_stdev = jacc_stats_dic[kmers][6]
-            c_union = jacc_stats_dic[kmers][8]
-            mdtext += "| %i | %s | %s | %.6f | %.6f | %.6f | %.3f | %.3f | %i | %i |\n" %(jacc_rank, kmer1, kmer2, jacc_idx, kmer1_sc, kmer2_sc, min_dist_mean, min_dist_stdev, c_intersects, c_union)
         mdtext += "\n&nbsp;\n&nbsp;\n"
 
         if lookup_kmer:
@@ -8394,43 +8268,6 @@ count rank) for lookup k-mer %s and training data with additional features.
                             fid2stdev_dic=False)
             pp2 = plots_folder + "/lookup_kmer_%s.best_sc.png" %(lookup_kmer)
             mdtext += '| %i | %i | %s | %.6f | %.6f | %.6f | <image src = "%s" width="150px"></image> | <image src = "%s" width="150px"></image> | %i | %i |\n' %(lk_best_sc_rank, lk_avg_sc_rank, kmer, lk_best_sc, lk_avg_sc, lk_avg_sc_stdev, pp2, pp1, kmer_count, kmer_count_rank)
-            mdtext += "\n&nbsp;\n&nbsp;\n"
-
-            # Lookup k-mer co-occurrence statistics table for additional features.
-            mdtext += """
-## Lookup k-mer co-occurrence statistics ### {#lookup-kmer-cooc-stats}
-
-**Table:** Lookup k-mer co-occurrence statistics for for lookup k-mer %s and
-training data with additional features.
-Entries are sorted by the Jaccard index (JI) of the two k-mers. The Jaccard index of
-two k-mers is calculated based on the two sequence sets that contain the
-two k-mers, with each sequence ID being a set member. Scores are best k-mer scores.
-Only the top %i k-mer pairs including %s are shown, with a minimum Jaccard index
-of %s and a minimum k-mer score of %s.
-
-""" %(lookup_kmer, kmer_top_n, lookup_kmer, str(min_jacc_sc), str(min_kmer_score))
-
-            mdtext += "| JI rank | &nbsp; k-mer 1 &nbsp; |  &nbsp; k-mer 2 &nbsp; | JI | k-mer 1 score | k-mer 2 score | mean min dist (+- stdev) | # intersect | # union | \n"
-            mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | \n"
-            jacc_rank = 0
-            kmers2sumsc_dic = {}
-            for kmers, jacc_idx in sorted(jacc_scores_dic.items(), key=lambda item: item[1], reverse=True):
-                kmer1 = jacc_stats_dic[kmers][0]
-                kmer2 = jacc_stats_dic[kmers][1]
-                if kmer1 != lookup_kmer and kmer2 != lookup_kmer:
-                    continue
-                jacc_rank += 1
-                if jacc_rank > kmer_top_n:
-                    break
-                kmer1_sc = jacc_stats_dic[kmers][2]
-                kmer2_sc = jacc_stats_dic[kmers][3]
-                sum_sc = kmer1_sc + kmer2_sc
-                kmers2sumsc_dic[kmers] = sum_sc
-                min_dist_mean = jacc_stats_dic[kmers][5]
-                min_dist_stdev = jacc_stats_dic[kmers][6]
-                c_intersects = jacc_stats_dic[kmers][7]
-                c_union = jacc_stats_dic[kmers][8]
-                mdtext += "| %i | %s | %s | %.6f | %.6f | %.6f | %.6f (+- %.6f) | %i | %i |\n" %(jacc_rank, kmer1, kmer2, jacc_idx, kmer1_sc, kmer2_sc, min_dist_mean, min_dist_stdev, c_intersects, c_union)
             mdtext += "\n&nbsp;\n&nbsp;\n"
 
     """
@@ -11063,13 +10900,13 @@ def read_str_feat_into_dic(str_feat_file,
 
     >>> str_feat_file = "test_data/test.elem_p.str"
     >>> read_str_feat_into_dic(str_feat_file, str_mode=1)
-    {'CLIP_01' : [[0.1, 0.2, 0.4, 0.2, 0.1], [0.2, 0.3, 0.2, 0.1, 0.2]]}
+    {'CLIP_01': [[0.1, 0.2, 0.4, 0.2, 0.1], [0.2, 0.3, 0.2, 0.1, 0.2]]}
     >>> read_str_feat_into_dic(str_feat_file, str_mode=2)
-    {'CLIP_01' : [[0, 0, 1, 0, 0], [0, 1, 0, 0, 0]]}
+    {'CLIP_01': [[0, 0, 1, 0, 0], [0, 1, 0, 0, 0]]}
     >>> read_str_feat_into_dic(str_feat_file, str_mode=3)
-    {'CLIP_01' : [[0.9], [0.8]]}
+    {'CLIP_01': [[0.9], [0.8]]}
     >>> read_str_feat_into_dic(str_feat_file, str_mode=4)
-    {'CLIP_01' : [[0, 1], [0, 1]]}
+    {'CLIP_01': [[0, 1], [0, 1]]}
 
     """
 
@@ -11114,7 +10951,7 @@ def read_str_feat_into_dic(str_feat_file,
                     u_p = 1 - vl[4]
                     if u_p < 0:
                         u_p = 0.0
-                    if up > 1 :
+                    if u_p > 1:
                         u_p = 1.0
                     if feat_dic_given:
                         feat_dic[seq_id][pos_i].append(u_p)
@@ -11124,7 +10961,7 @@ def read_str_feat_into_dic(str_feat_file,
                     u_p = 1 - vl[4]
                     if u_p < 0:
                         u_p = 0.0
-                    if up > 1 :
+                    if u_p > 1:
                         u_p = 1.0
                     vl_1h = [1, 0]
                     if u_p > vl[4]:
@@ -11593,7 +11430,7 @@ def read_settings_into_dic(settings_file,
 
     >>> test_in = "test_data/test_settings.out"
     >>> read_settings_into_dic(test_in)
-    {'peyote': '20.5', 'china_white': '43.1', 'bolivian_marching_powder' : '1000.0'}
+    {'peyote': '20.5', 'china_white': '43.1', 'bolivian_marching_powder': '1000.0'}
 
     """
     assert settings_file, "file name expected"
@@ -12093,7 +11930,7 @@ def scores_to_plot_df(scores,
     else:
         data = {'pos': [], 'score': []}
     for i,s in enumerate(scores):
-        data['pos'].append(i+1)
+        data['pos'].append(i) # i+1 ?
         data['score'].append(s)
         if stdev:
             data['stdev'].append(stdev[i])
@@ -12273,6 +12110,15 @@ def make_motif_label_plot_df(feat_id, ch_info_dic, motif_matrix):
     Label data: sequence, eia, tra, rra, elem_p.str,
                 and additional categorical features
 
+    Format of ch_info_dic:
+    ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'],
+    'CTFC': ['C', [1, 2], ['0', '1'], 'one_hot'],
+    'pc.con': ['N', [3], ['phastcons_score'], 'prob'],
+    'pp.con': ['N', [4], ['phylop_score'], 'minmax2'],
+    'rra': ['C', [5, 6], ['N', 'R'], '-'],
+    'str': ['N', [7, 8, 9, 10, 11], ['E', 'H', 'I', 'M', 'S'], 'prob'],
+    'tra': ['C', [12, 13, 14, 15, 16, 17, 18, 19, 20], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
     """
     data = {}
     assert feat_id in ch_info_dic, "feat_id %s not in ch_info_dic" %(feat_id)
@@ -12284,7 +12130,6 @@ def make_motif_label_plot_df(feat_id, ch_info_dic, motif_matrix):
     for fv in motif_matrix:
         for i,fi in enumerate(feat_idxs):
             data[feat_alphabet[i]].append(fv[fi])
-
     feat_plot_df = pd.DataFrame(data, columns = feat_alphabet)
     feat_plot_df.index.name = "pos"
     return feat_plot_df
@@ -12317,7 +12162,7 @@ def make_motif_scores_plot_df(feat_id, ch_info_dic, motif_matrix,
     else:
         data = {'pos': [], 'score': []}
     for i,s in enumerate(scores):
-        data['pos'].append(i+1)
+        data['pos'].append(i) # i+1 ?
         data['score'].append(s)
         if stdev:
             data['stdev'].append(stdev[i])
@@ -12386,7 +12231,10 @@ def add_phastcons_scores_plot(df, fig, gs, i,
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     #ax.spines['bottom'].set_visible(False)
-    ax.set_xlim(-0.5, max(df['pos']-0.5))
+    #ax.set_xlim(-0.5, max(df['pos']-0.5))
+    #ax.set_xlim(-0.6, max(df['pos']-0.6))
+    ax.set_xlim(-0.5, max(df['pos']+0.5))
+
     if stdev:
         ax.errorbar(x=df['pos'], y=df['score'], yerr=df['stdev'], ecolor='grey', ls='none')
     ax.set_ylabel(y_label, labelpad=12, fontsize=y_label_size)
@@ -12439,7 +12287,7 @@ def add_phylop_scores_plot(df, fig, gs, i,
     ax.spines['top'].set_visible(False)
     ax.spines['bottom'].set_visible(False)
     #ax.spines['bottom'].set_visible(False)
-    ax.set_xlim(-0.5, max(df['pos']-0.5))
+    ax.set_xlim(-0.5, max(df['pos']+0.5))
     if stdev:
         ax.errorbar(x=df['pos'], y=df['score'], xerr=None, yerr=df['stdev'], ecolor='grey', ls='none')
     ax.set_ylabel(y_label, labelpad=9, fontsize=y_label_size)
@@ -12970,7 +12818,7 @@ def make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
                 add_phylop_scores_plot(pp_df, fig, gs, i_plot,
                                        stdev=stdev,
                                        y_label_size=4)
-            elif fid == "elem_p.str":
+            elif fid == "str":
                 elem_df = make_motif_label_plot_df(fid, ch_info_dic, motif_matrix)
                 add_motif_label_plot(elem_df, fig, gs, i_plot,
                                      color_dict=color_dict,
@@ -14796,6 +14644,96 @@ def get_major_lc_len_from_seqs_dic(seqs_dic):
             major_len = lcl
             break
     return major_len
+
+
+################################################################################
+
+def conv_ch_info_dic(ch_info_dic,
+                     conv_mode=1):
+    """
+    Convert ch_info_dic, storing channel infos.
+
+    conv_mode:
+        If 1, convert from sequence embed to one-hot.
+        If 2, convert from one-hot to embed.
+
+    Example ch_info_dic format with embedded "fa":
+    ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'],
+    'CTFC': ['C', [1, 2], ['0', '1'], 'one_hot'],
+    'pc.con': ['N', [3], ['phastcons_score'], 'prob'],
+    'pp.con': ['N', [4], ['phylop_score'], 'minmax2'],
+    'rra': ['C', [5, 6], ['N', 'R'], '-'],
+    'str': ['N', [7, 8, 9, 10, 11], ['E', 'H', 'I', 'M', 'S'], 'prob'],
+    'tra': ['C', [12, 13, 14, 15, 16, 17, 18, 19, 20], ['A', 'B', 'C', 'E', 'F', 'N', 'S', 'T', 'Z'], '-']}
+
+    >>> ch_info_dic = {'fa': ['C', [0], ['embed'], 'embed'], 'rra': ['C', [1, 2], ['N', 'R'], '-']}
+    >>> new_ch_info_dic = conv_ch_info_dic(ch_info_dic, conv_mode=1)
+    >>> new_ch_info_dic
+    {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'rra': ['C', [4, 5], ['N', 'R'], '-']}
+    >>> conv_ch_info_dic(new_ch_info_dic, conv_mode=2)
+    {'fa': ['C', [0], ['embed'], 'embed'], 'rra': ['C', [1, 2], ['N', 'R'], '-']}
+
+    """
+    assert ch_info_dic, "given ch_info_dic empty"
+    ch_idx = 0
+    for fid in ch_info_dic:
+        feat_type = ch_info_dic[fid][0] # C or N.
+        feat_idxs = ch_info_dic[fid][1] # channel numbers occupied by feature.
+        #feat_alphabet = ch_info_dic[fid][2]
+        #feat_encoding = ch_info_dic[fid][3]
+        if fid == "fa":
+            if conv_mode == 1:
+                ch_info_dic[fid][1] = [0, 1, 2, 3]
+                ch_info_dic[fid][2] = ['A', 'C', 'G', 'U']
+                ch_info_dic[fid][3] = "one_hot"
+                for i in range(4):
+                    ch_info_dic[fid][1][i] = ch_idx
+                    ch_idx += 1
+            else:
+                ch_info_dic[fid][1] = [0]
+                ch_info_dic[fid][2] = ["embed"]
+                ch_info_dic[fid][3] = "embed"
+                ch_info_dic[fid][1][0] = ch_idx
+                ch_idx += 1
+        else:
+            for i,feat_idx in enumerate(feat_idxs):
+                ch_info_dic[fid][1][i] = ch_idx
+                ch_idx += 1
+    return ch_info_dic
+
+
+################################################################################
+
+def conv_embed_feature_list(feat_list,
+                            l1d=False):
+    """
+    Assuming feature list with first feature being sequence embedding,
+    convert to new feature list with one-hot encoding as first 4 features.
+
+    l1d:
+        If input is 1D-list, not 2D.
+
+    >>> feat_list = [[3, 0, 1, 0.2], [4, 1, 0, 0.5]]
+    >>> conv_embed_feature_list(feat_list)
+    [[0, 0, 1, 0, 0, 1, 0.2], [0, 0, 0, 1, 1, 0, 0.5]]
+    >>> feat_list = [3, 0, 1, 0.2]
+    >>> conv_embed_feature_list(feat_list, l1d=True)
+    [0, 0, 1, 0, 0, 1, 0.2]
+
+    """
+    assert feat_list, "given feat_list empty"
+
+    conv_dic = {1: [1,0,0,0], 2: [0,1,0,0], 3: [0,0,1,0], 4: [0,0,0,1]}
+    new_feat_list = []
+
+    if l1d:
+        new_fl = conv_dic[feat_list[0]] + feat_list[1:]
+        return new_fl
+    else:
+        for fl in feat_list:
+            new_fl = conv_dic[fl[0]] + fl[1:]
+            new_feat_list.append(new_fl)
+        return new_feat_list
 
 
 ################################################################################

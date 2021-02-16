@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pack_padded_sequence
 import torch.nn as nn
 import torch.nn.functional as F
-
+import sys
 
 ###############################################################################
 
@@ -270,6 +270,7 @@ class RNNModel(nn.Module):
             x_embed = self.embedding(batch_data[:, :, 0].long()).clone().detach().requires_grad_(True)
             if self.add_feat:
                 x_embed = torch.cat([x_embed, batch_data[:, :, 1:]], dim=2)
+                x_embed = x_embed.clone().detach().requires_grad_(True)
         else:
             # Without embedding.
             x_embed = batch_data.clone().detach().requires_grad_(True)
