@@ -8225,7 +8225,6 @@ also shown.
             sc_diff = abs(best_sc-avg_sc)
             # Generate average score motif.
             avg_sc_plot_file = avg_motif_plots_folder + "/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
-
             make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, avg_sc_plot_file,
                             fid2stdev_dic=kmer_stdev_dic[kmer])
             pp1 = plots_folder + "/avg_motif_plots/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
