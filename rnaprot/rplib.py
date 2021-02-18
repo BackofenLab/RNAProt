@@ -12018,6 +12018,29 @@ def seq_to_plot_df(seq, alphabet,
     return plot_df
 
 
+
+
+
+################################################################################
+
+def perturb_to_plot_df(perturb_sc_list):
+    """
+    Convert perturbation scores list into dataframe.
+
+    """
+    assert perturb_sc_list, "empty perturb_sc_list given"
+    alphabet = ["A", "C", "G", "U"]
+    data = {}
+    for c in alphabet:
+        data[c] = []
+    for psv in perturb_sc_list:
+        for idx,nt in enumerate(alphabet):
+            data[nt].append(psv[idx])
+    plot_df = pd.DataFrame(data, columns = alphabet)
+    plot_df.index.name = "pos"
+    return plot_df
+
+
 ################################################################################
 
 def add_importance_scores_plot(df, fig, gs, i,
@@ -12310,6 +12333,7 @@ def add_phylop_scores_plot(df, fig, gs, i,
 def make_feature_attribution_plot(seq, profile_scores, feat_list,
                                   ch_info_dic, plot_out_file,
                                   sal_list=False,
+                                  perturb_sc_list=False,
                                   seq_label_plot=False):
     """
     Make a feature attribution plot, showing for each sequence position
@@ -12332,6 +12356,8 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     assert ch_info_dic, "given ch_info_dic list empty"
     assert plot_out_file, "given plot_out_file empty"
 
+    assert len(seq) == len(feat_list), "len(seq) != len(feat_list)"
+
     # Dataframe for importance scores.
     seq_alphabet = ["A", "C", "G", "U"]
 
@@ -12342,9 +12368,16 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     height_ratios = [2]
 
     if sal_list:
+        assert len(seq) == len(sal_list), "len(seq) != len(sal_list)"
         sal_df = seq_to_plot_df(seq, seq_alphabet, scores=sal_list)
         n_subplots += 1
         height_ratios.append(1)
+
+    if perturb_sc_list:
+        assert len(seq) == len(perturb_sc_list), "len(seq) != len(perturb_sc_list)"
+        pert_df = perturb_to_plot_df(perturb_sc_list)
+        n_subplots += 1
+        height_ratios.append(2)
 
     # Optional sequence label plot.
     if seq_label_plot:
@@ -12378,6 +12411,14 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
         add_saliency_scores_plot(sal_df, fig, gs, i_plot,
                                  color_dict=color_dict,
                                  y_label="saliency",
+                                 y_label_size=5.5)
+
+    # Saliency plot.
+    if perturb_sc_list:
+        i_plot += 1
+        add_saliency_scores_plot(pert_df, fig, gs, i_plot,
+                                 color_dict=color_dict,
+                                 y_label="mutation scores",
                                  y_label_size=5.5)
 
     # Plot optional sequence label plot.
@@ -12473,7 +12514,6 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
                                               y_label_size=4)
                 else:
                     assert False, "invalid feature normalization string given for additional numerical %s feature (got: %s)" %(fid, feat_encoding)
-
 
     # Store plot.
     fig.savefig(plot_out_file, dpi=150, transparent=False)

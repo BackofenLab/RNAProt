@@ -169,6 +169,10 @@ class MyWorker(Worker):
     The parameters being optimized need to be defined. HpBandSter relies
     on the ConfigSpace package for that.
 
+    Example of conditional HPs:
+    https://automl.github.io/HpBandSter/build/html/auto_examples/
+    example_5_pytorch_worker.html#sphx-glr-auto-examples-example-5-pytorch-worker-py
+
     """
     @staticmethod
     def get_configspace():
@@ -177,14 +181,16 @@ class MyWorker(Worker):
         wd = CSH.UniformFloatHyperparameter(name='weight_decay', lower=1e-8, upper=1e-1, default_value='5e-4', log=True)
         embed_dim = CSH.UniformIntegerHyperparameter('embed_dim', lower=4, upper=24, default_value=10)
         n_rnn_dim = CSH.CategoricalHyperparameter('n_rnn_dim', choices=[32, 64, 96], default_value=32)
-        n_rnn_layers = CSH.CategoricalHyperparameter('n_rnn_layers', choices=[1, 2, 3], default_value=2)
+        n_rnn_layers = CSH.CategoricalHyperparameter('n_rnn_layers', choices=[1, 2], default_value=2)
         dr = CSH.UniformFloatHyperparameter('dropout_rate', lower=0.0, upper=0.8, default_value=0.5, log=False)
         bidirect = CSH.CategoricalHyperparameter('bidirect', choices=[False, True], default_value=True)
         add_fc_layer = CSH.CategoricalHyperparameter('add_fc_layer', choices=[False, True], default_value=True)
         rnn_type = CSH.CategoricalHyperparameter('rnn_type', choices=[1, 2], default_value=1)
         batch_size = CSH.CategoricalHyperparameter('batch_size', choices=[30, 50, 80], default_value=50)
-        cs.add_hyperparameters([lr, wd, embed_dim, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
-
+        if self.embed:
+            cs.add_hyperparameters([lr, wd, embed_dim, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
+        else:
+            cs.add_hyperparameters([lr, wd, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
         return cs
 
 
@@ -398,16 +404,16 @@ def define_model(args, device,
 
     # Define model.
     if opt_dic:
-        model = RNNModel(args.n_feat, args.n_class, device,
+        model = RNNModel(opt_dic["n_feat"], opt_dic["n_class"], device,
                          rnn_type=opt_dic["rnn_type"],
                          rnn_n_layers=opt_dic["n_rnn_layers"],
                          rnn_hidden_dim=opt_dic["n_rnn_dim"],
                          bidirect=opt_dic["bidirect"],
                          dropout_rate=opt_dic["dropout_rate"],
                          add_fc_layer=opt_dic["add_fc_layer"],
-                         add_feat=args.add_feat,
-                         embed=args.embed,
-                         embed_vocab_size=args.embed_vocab_size,
+                         add_feat=opt_dic["add_feat"],
+                         embed=opt_dic["embed"],
+                         embed_vocab_size=opt_dic["embed_vocab_size"],
                          embed_dim=opt_dic["embed_dim"]).to(device)
     else:
         model = RNNModel(args.n_feat, args.n_class, device,
@@ -476,6 +482,117 @@ def get_saliency(loader, model, device):
 
 ################################################################################
 
+def get_single_nt_perturb_scores(args, seq, feat_list,
+                                 model_path, device,
+                                 load_model=True,
+                                 min_max_norm=False,
+                                 model_hp_dic=False):
+    """
+    Get perturbation scores list containing score changes for each
+    nucleotide at each sequence position.
+
+
+    seq:
+        Nucleotide sequence string, corresponding to feat_list.
+    feat_list:
+        List of feature vectors corresponding to seq, so
+        len(feat_list) == len(seq)
+
+
+    """
+    # Checks.
+    assert len(seq) == len(feat_list), "seq length != feat_list length (%i != %i)" %(len(seq), len(feat_list))
+
+    # To deepcopy lists.
+    import copy
+
+    # If model object given, set model_path to model.
+    model = model_path
+    # If load_model set, treat model_path as path to model file and load model.
+    if load_model:
+        # Define and load model.
+        model = define_model(args, device,
+                             opt_dic=model_hp_dic)
+        model.load_state_dict(torch.load(model_path))
+
+    # Perturbations on embedded or one-hot sequences.
+    embed = args.embed
+    if model_hp_dic:
+        embed = model_hp_dic["embed"]
+    # Batch size.
+    batch_size = args.batch_size
+    if model_hp_dic:
+        batch_size = model_hp_dic["batch_size"]
+
+    # List to store perturbation scores for plotting.
+    perturb_sc_list = []
+    for fv in feat_list:
+        perturb_sc_list.append([0.0,0.0,0.0,0.0])
+
+    # Alphabet.
+    ab = ["A", "C", "G", "U"]
+
+    # Nucleotide encoding (embed or one-hot).
+    nt_enc_dic = {'A' : [1,0,0,0],  'C' : [0,1,0,0], 'G' : [0,0,1,0], 'U' : [0,0,0,1]}
+    if embed:
+        nt_enc_dic = {'A' : [1],  'C' : [2], 'G' : [3], 'U' : [4]}
+
+    """
+    # To map mutated site ID (score) to perturb_sc_list position.
+    Each list entry with format: [idx1, idx2],
+    where idx1 = sequence idx and idx2 = mutated nucleotide index.
+    """
+    map_sc2idxs = []
+
+    # Create mutated sequences and mappings.
+    sl = list(seq)
+    new_seqs = []
+    for idx1,nt in enumerate(sl):
+        for idx2,c in enumerate(ab):
+            if c != nt:
+                nsl = list(seq)
+                nsl[idx1] = c
+                new_seqs.append(nsl)
+                map_sc2idxs.append([idx1,idx2])
+
+    # Create feature lists from mutated sequences.
+    all_mut_feat = []
+    # First add the original sequence / feature list to score.
+    all_mut_feat.append(torch.tensor(feat_list, dtype=torch.float))
+    for new_seq in new_seqs:
+        #nfl = list(feat_list)
+        nfl = copy.deepcopy(feat_list)
+        for idx1,nt in enumerate(new_seq):
+            nt_1h = nt_enc_dic[nt]
+            for idx2,oh in enumerate(nt_1h):
+                nfl[idx1][idx2] = oh
+        all_mut_feat.append(torch.tensor(nfl, dtype=torch.float))
+
+    c_all_mut_feat = len(all_mut_feat)
+    assert c_all_mut_feat == len(new_seqs)+1, "len(all_mut_feat) != len(new_seqs)+1"
+
+    # Predict on mutated sequences.
+    all_mut_feat_labels = [1]*c_all_mut_feat
+    predict_dataset = RNNDataset(all_mut_feat, all_mut_feat_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=pad_collate, pin_memory=True)
+    mut_scores = test_scores(predict_loader, model, device,
+                             min_max_norm=min_max_norm)
+    c_mut_scores = len(mut_scores)
+    assert c_mut_scores == c_all_mut_feat, "c_mut_scores != c_all_mut_feat (%i != %i)" %(c_mut_scores, c_all_mut_feat)
+
+    # Original sequence score.
+    orig_sc = mut_scores.pop(0)
+    # Fill perturb_sc_list.
+    for idx,pos in enumerate(map_sc2idxs):
+        seq_idx = pos[0]
+        nt_idx = pos[1]
+        mut_sc = mut_scores[idx]
+        perturb_sc_list[seq_idx][nt_idx] = mut_sc - orig_sc
+    return perturb_sc_list
+
+
+################################################################################
+
 def get_window_predictions(args, model_path, device,
                            all_features, win_extlr,
                            model_hp_dic=False,
@@ -521,6 +638,11 @@ def get_window_predictions(args, model_path, device,
                              opt_dic=model_hp_dic)
         model.load_state_dict(torch.load(model_path))
 
+    # Batch size from args or model hp dic.
+    batch_size = args.batch_size
+    if model_hp_dic:
+        batch_size = model_hp_dic["batch_size"]
+
     # Create window graphs.
     all_win_feat = []
     seq_len_list = []
@@ -553,7 +675,7 @@ def get_window_predictions(args, model_path, device,
     # Load dataset.
     all_win_feat_labels = [1]*c_all_win_feat
     predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
-    predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=pad_collate, pin_memory=True)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=pad_collate, pin_memory=True)
 
     # Predict.
     win_scores = test_scores(predict_loader, model, device,
