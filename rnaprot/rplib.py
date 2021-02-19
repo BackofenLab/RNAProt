@@ -8428,6 +8428,9 @@ def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     tra_plot = "transcript_region_plot.png"
     rra_plot = "repeat_region_plot.png"
     bed_cov_plot = "bed_feat_coverage_plot.png"
+    plotly_3mer_plot = "plotly_scatter_3mer.html"
+    plotly_4mer_plot = "plotly_scatter_4mer.html"
+    plotly_5mer_plot = "plotly_scatter_5mer.html"
     lengths_plot_out = plots_out_folder + "/" + lengths_plot
     entropy_plot_out = plots_out_folder + "/" + entropy_plot
     dint_plot_out = plots_out_folder + "/" + dint_plot
@@ -8438,7 +8441,9 @@ def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
     tra_plot_out = plots_out_folder + "/" + tra_plot
     rra_plot_out = plots_out_folder + "/" + rra_plot
     bed_cov_plot_out = plots_out_folder + "/" + bed_cov_plot
-
+    plotly_3mer_plot_out = plots_out_folder + "/" + plotly_3mer_plot
+    plotly_4mer_plot_out = plots_out_folder + "/" + plotly_4mer_plot
+    plotly_5mer_plot_out = plots_out_folder + "/" + plotly_5mer_plot
 
     print("Generate statistics for HTML report ... ")
 
@@ -8555,6 +8560,7 @@ by RNAProt (rnaprot gt):
 - [Site length distribution](#len-plot)
 - [Sequence complexity distribution](#ent-plot)
 - [Di-nucleotide distribution](#dint-plot)
+- [Top k-mer frequency distributions](#kmer-plotly)
 - [Top k-mer statistics](#kmer-stats)"""
 
     if pos_str_stats_dic and neg_str_stats_dic:
@@ -8697,6 +8703,34 @@ Di-nucleotide percentages are shown for both the positive and negative dataset.
 &nbsp;
 
 """
+
+
+
+    mdtext += """
+## k-mer frequency distributions ### {#kmer-plotly}
+
+Frequency distributions of k-mers for the positive and negative set.
+
+"""
+
+    # Create 3-mer plotly scatter plot.
+    create_kmer_sc_plotly_scatter_plot()
+    create_dint_ratios_grouped_bar_plot(pos_dintr_dic, neg_dintr_dic, dint_plot_out,
+                                        theme=theme,
+                                        disable_title=True)
+    dint_plot_path = plots_folder + "/" + dint_plot
+
+
+
+    plotly_3mer_plot_out = plots_out_folder + "/" + plotly_3mer_plot
+    plotly_4mer_plot_out = plots_out_folder + "/" + plotly_4mer_plot
+    plotly_5mer_plot_out = plots_out_folder + "/" + plotly_5mer_plot
+
+
+    # hallo 123
+
+
+
     # Make the k-mer tables.
     top3mertab = generate_top_kmer_md_table(pos_3mer_dic, neg_3mer_dic,
                                             top=kmer_top,
@@ -11027,7 +11061,7 @@ def load_training_data(args,
     eia	C	E,I	-
     rra	C	N,R	-
     """
-    # HALLO 123
+
     # Channel info output file.
     channel_infos_out = args.out_folder + "/" + "channel_infos.out"
     channel_info_list = []
