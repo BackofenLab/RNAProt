@@ -3,8 +3,9 @@
 from distutils.spawn import find_executable
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import plotly.express as px
 import seaborn as sns
-from math import log
+from math import log, ceil
 import pandas as pd
 import numpy as np
 import statistics
@@ -926,7 +927,7 @@ def calc_str_elem_p(in_fasta, out_str,
 
     """
 
-    # Import RNA.py library.
+    # Need more li(m)bs.
     try:
         import RNA
     except:
@@ -8329,6 +8330,97 @@ on the positive training set for the two input models. Model 1: model from
 
 ################################################################################
 
+def create_kmer_sc_plotly_scatter_plot(pos_mer_dic, neg_mer_dic, k,
+                                       out_html, plotly_js,
+                                       theme=1):
+    """
+    Create plotly graph plot, containing k-mer scores of positive
+    and negative set, and store in .html file.
+
+    pos_mer_dic:
+        dic with k-mer percentages of positive set.
+    neg_mer_dic:
+        dic with k-mer percentages of negative set.
+    k:
+        k in k-mer.
+    out_html:
+        Output .html path to store interactive (!) plotly graph.
+    plotly_js:
+        Path to plotly js plotly-latest.min.js.
+
+    """
+    assert pos_mer_dic, "given pos_mer_dic empty"
+    assert neg_mer_dic, "given neg_mer_dic empty"
+    assert len(pos_mer_dic) == len(neg_mer_dic), "len(pos_mer_dic) != len(neg_mer_dic)"
+
+    pos_label = "k-mer % positives"
+    neg_label = "k-mer % negatives"
+    kmer_label = "k-mer"
+    data = {pos_label : [], neg_label : [], kmer_label : []}
+
+    max_pos_perc = 0
+    max_neg_perc = 0
+
+    for kmer in pos_mer_dic:
+        pos_perc = pos_mer_dic[kmer]
+        neg_perc = neg_mer_dic[kmer]
+        if pos_perc != 0:
+            pos_perc = round(pos_perc, k)
+        if neg_perc != 0:
+            neg_perc = round(neg_perc, k)
+        if pos_perc > max_pos_perc:
+            max_pos_perc = pos_perc
+        if neg_perc > max_neg_perc:
+            max_neg_perc = neg_perc
+        data[pos_label].append(pos_perc)
+        data[neg_label].append(neg_perc)
+        data[kmer_label].append(kmer)
+
+    # Get min and max axis values for scaling.
+    min_perc = 0
+    max_perc = max_pos_perc
+    if max_neg_perc > max_pos_perc:
+        max_perc = max_neg_perc
+
+    # Find out how to round up max_perc.
+    if re.search("\d+\.\d+", str(max_perc)):
+        m = re.search("(\d+)\.(\d+)", str(max_perc))
+        left = str(m.group(1))
+        right = str(m.group(2))
+    else:
+        assert False, "no pattern match on max_perc"
+    if left == "0":
+        for i,c in enumerate(right):
+            prec = i + 1
+            if c != "0":
+                # Custom decimal round up.
+                max_perc = decimal_ceil(max_perc, prec)
+                break
+    else:
+        # Round up to whole number with math.ceil.
+        max_perc = ceil(max_perc)
+
+    df = pd.DataFrame(data, columns = [pos_label, neg_label, kmer_label])
+
+    # Color of dots.
+    dot_col = "#69e9f6"
+    if theme == 2:
+        dot_col = "blue"
+
+    plot = px.scatter(data_frame=df, x=pos_label, y=neg_label, hover_name=kmer_label,
+                      color_discrete_sequence=[dot_col])
+    plot.layout.template = 'seaborn'
+
+    plot.update_layout(yaxis_range=[min_perc, max_perc])
+    plot.update_layout(xaxis_range=[min_perc, max_perc])
+
+    plot.write_html(out_html,
+                    full_html=False,
+                    include_plotlyjs=plotly_js)
+
+
+################################################################################
+
 def rp_gt_generate_html_report(pos_seqs_dic, neg_seqs_dic, out_folder,
                             dataset_type, rplib_path,
                             html_report_out=False,
@@ -8560,7 +8652,7 @@ by RNAProt (rnaprot gt):
 - [Site length distribution](#len-plot)
 - [Sequence complexity distribution](#ent-plot)
 - [Di-nucleotide distribution](#dint-plot)
-- [Top k-mer frequency distributions](#kmer-plotly)
+- [k-mer distributions](#kmer-plotly)
 - [Top k-mer statistics](#kmer-stats)"""
 
     if pos_str_stats_dic and neg_str_stats_dic:
@@ -8704,32 +8796,76 @@ Di-nucleotide percentages are shown for both the positive and negative dataset.
 
 """
 
-
-
     mdtext += """
-## k-mer frequency distributions ### {#kmer-plotly}
+## k-mer distributions ### {#kmer-plotly}
 
-Frequency distributions of k-mers for the positive and negative set.
+Frequency distributions of k-mers (in percent) for the positive and negative set.
+
+"""
+    # plotly js path.
+    plotly_js_path = rplib_path + "/content/plotly-latest.min.js"
+    assert os.path.exists(plotly_js_path), "plotly js %s not found" %(plotly_js_path)
+
+    # Create 3-mer plotly scatter plot.
+    create_kmer_sc_plotly_scatter_plot(pos_3mer_dic, neg_3mer_dic, 3,
+                                       plotly_3mer_plot_out,
+                                       plotly_js_path,
+                                       theme=theme)
+    # Create 4-mer plotly scatter plot.
+    create_kmer_sc_plotly_scatter_plot(pos_4mer_dic, neg_4mer_dic, 4,
+                                       plotly_4mer_plot_out,
+                                       plotly_js_path,
+                                       theme=theme)
+    # Create 5-mer plotly scatter plot.
+    create_kmer_sc_plotly_scatter_plot(pos_5mer_dic, neg_5mer_dic, 5,
+                                       plotly_5mer_plot_out,
+                                       plotly_js_path,
+                                       theme=theme)
+    # Plot paths inside html report.
+    plotly_3mer_plot_path = plots_folder + "/" + plotly_3mer_plot
+    plotly_4mer_plot_path = plots_folder + "/" + plotly_4mer_plot
+    plotly_5mer_plot_path = plots_folder + "/" + plotly_5mer_plot
+
+    # Include 3-mer code.
+    mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
+    mdtext += '<iframe src="' + plotly_3mer_plot_path + '" width="500" height="500"></iframe>' + "\n"
+    mdtext += '</div>'
+    mdtext += """
+
+**Figure:** 3-mer percentages in the positive and negative dataset. In case of
+a uniform distribution with all 3-mers present, each 3-mer would have a
+percentage = 1.5625.
+
+&nbsp;
+
+"""
+    # Include 4-mer code.
+    mdtext += '<div class="container-fluid" style="margin-top:40px">' + "\n"
+    mdtext += '<iframe src="' + plotly_4mer_plot_path + '" width="600" height="600"></iframe>' + "\n"
+    mdtext += '</div>'
+    mdtext += """
+
+**Figure:** 4-mer percentages in the positive and negative dataset. In case of
+a uniform distribution with all 4-mers present, each 4-mer would have a
+percentage = 0.390625.
+
+&nbsp;
 
 """
 
-    # Create 3-mer plotly scatter plot.
-    create_kmer_sc_plotly_scatter_plot()
-    create_dint_ratios_grouped_bar_plot(pos_dintr_dic, neg_dintr_dic, dint_plot_out,
-                                        theme=theme,
-                                        disable_title=True)
-    dint_plot_path = plots_folder + "/" + dint_plot
+    # Include 5-mer code.
+    mdtext += '<div class="container-fluid" style="margin-top:40px">' + "\n"
+    mdtext += '<iframe src="' + plotly_5mer_plot_path + '" width="700" height="700"></iframe>' + "\n"
+    mdtext += '</div>'
+    mdtext += """
 
+**Figure:** 5-mer percentages in the positive and negative dataset. In case of
+a uniform distribution with all 5-mers present, each 5-mer would have a
+percentage = 0.09765625.
 
+&nbsp;
 
-    plotly_3mer_plot_out = plots_out_folder + "/" + plotly_3mer_plot
-    plotly_4mer_plot_out = plots_out_folder + "/" + plotly_4mer_plot
-    plotly_5mer_plot_out = plots_out_folder + "/" + plotly_5mer_plot
-
-
-    # hallo 123
-
-
+"""
 
     # Make the k-mer tables.
     top3mertab = generate_top_kmer_md_table(pos_3mer_dic, neg_3mer_dic,
@@ -9494,6 +9630,21 @@ def create_conservation_scores_bar_plot(pos_con_dic, neg_con_dic, out_plot,
         if not disable_title:
             ax.axes.set_title(set_title, fontsize=20)
         fig.savefig(out_plot, dpi=100, bbox_inches='tight', transparent=True)
+
+
+################################################################################
+
+def decimal_ceil(a, prec):
+    """
+    Round up a given decimal number at a certain precision.
+
+    >>> a = 0.002489
+    >>> decimal_ceil(a, 3)
+    0.003
+    >>> decimal_ceil(a, 2)
+    0.01
+    """
+    return np.round(a + 0.5 * 10**(-prec), prec)
 
 
 ################################################################################
