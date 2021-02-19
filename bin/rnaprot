@@ -1925,19 +1925,14 @@ def main_eval(args):
                                                              batch_size=m2p_dic["batch_size"],
                                                              min_max_norm=min_max_norm,
                                                              got_tensors=True)
-                site_ps = site_ps_ll[0]
-                l_sc = len(site_ps)
-                # Get site saliency.
-                sal_feat_list = []
-                sal_feat_list.append(all_features2[si])
-                sal_dataset = RNNDataset(sal_feat_list, [1])
-                sal_loader = DataLoader(dataset=sal_dataset, batch_size=1, collate_fn=rnn_util.pad_collate, pin_memory=True)
-                sal_ll = rnn_util.get_saliency(sal_loader, add_model, device)
-                mean_sal_list = []
-                for scl in sal_ll[0]:
-                    mean_sal_list.append(statistics.mean(scl))
+
+                mean_sal_list = rnn_util.get_saliency_from_feat_list(all_features2[si],
+                                                            add_model, device,
+                                                            got_tensors=True,
+                                                            sal_type=1)
                 l_sal = len(mean_sal_list)
                 assert l_sal == l_sc, "length saliency list (--lookup-id, --add-train-in) != length profile scores list (%i != %i)" %(l_sal, l_sc)
+
                 # Lookup ID profile file.
                 plot_out_file = args.out_folder + "/" + args.lookup_profile + "_" + win_info_str + "_sc" + str(add_ws_sc) + ".add_model." + plot_format
                 all_feat2_no_tens = all_features2[si].tolist()
@@ -2017,19 +2012,13 @@ def main_eval(args):
         l_sc = len(profile_scores)
 
         # Get saliency scores list.
-        sal_feat_list = []
-        sal_feat_list.append(all_feat_tens[si])
-        sal_dataset = RNNDataset(sal_feat_list, [1])
-        sal_loader = DataLoader(dataset=sal_dataset, batch_size=1, collate_fn=rnn_util.pad_collate, pin_memory=True)
-        sal_ll = rnn_util.get_saliency(sal_loader, model, device)
-        # Get mean / max saliency.
-        mean_sal_list = []
-        max_sal_list = []
-        for scl in sal_ll[0]:
-            mean_sal_list.append(statistics.mean(scl))
-            max_sal_list.append(max(scl))
+        mean_sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
+                                                    model, device,
+                                                    got_tensors=True,
+                                                    sal_type=1)
         l_sal = len(mean_sal_list)
         assert l_sal == l_sc, "length saliency list != length profile scores list (%i != %i)" %(l_sal, l_sc)
+
         all_mean_sal.append(mean_sal_list)
 
         #print("profile_scores:", profile_scores)

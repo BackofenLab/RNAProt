@@ -482,6 +482,53 @@ def get_saliency(loader, model, device):
 
 ################################################################################
 
+def get_saliency_from_feat_list(feat_list, model, device,
+                                got_tensors=True,
+                                sal_type=1):
+    """
+    Given a features list from one instance, get saliencies of this instance.
+    Return list of saliencies.
+
+    feat_list:
+        Feature list of tensors (if not disable got_tensors).
+    model:
+        Loaded model.
+    got_tensors:
+        Set True if feat_list contains tensors.
+    sal_type:
+        Type of saliency returned. 1: mean saliencies, 2: max saliencies.
+
+    """
+    sal_feat_list = []
+    if got_tensors:
+        sal_feat_list.append(feat_list)
+    else:
+        sal_feat_list.append(torch.tensor(feat_list, dtype=torch.float))
+
+    sal_dataset = RNNDataset(sal_feat_list, [1])
+    sal_loader = DataLoader(dataset=sal_dataset, batch_size=1, collate_fn=pad_collate, pin_memory=True)
+    sal_ll = rnn_util.get_saliency(sal_loader, model, device)
+    mean_sal_list = []
+    max_sal_list = []
+    for scl in sal_ll[0]:
+        mean_sal_list.append(statistics.mean(scl))
+        max_sal_list.append(max(scl))
+
+    l_sl = len(mean_sal_list)
+    l_fl = len(feat_list)
+
+    assert l_sl == l_fl, "len(mean_sal_list) != len(feat_list) (%i != %i)" %(l_sl, l_fl)
+
+    if sal_type == 1:
+        return mean_sal_list
+    elif sal_type == 2:
+        return max_sal_list
+    else:
+        assert False, "invalid sal_type given"
+
+
+################################################################################
+
 def get_single_nt_perturb_scores(args, seq, feat_list,
                                  model_path, device,
                                  load_model=True,
