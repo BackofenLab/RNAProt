@@ -1958,6 +1958,8 @@ def main_eval(args):
     # Check.
     assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
 
+    # Get worst scoring window.
+    worst_sc_feat_win = rnn_util.get_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
 
     """
     Plot profiles and motifs
@@ -2548,7 +2550,7 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
         else:
 
             # More features comin at ya.
-            print("--train-in model trained on sequences + additional features. Generate k-mer features ... ")
+            print("--train-in model trained on sequences + additionrplib_pathal features. Generate k-mer features ... ")
 
             for feat_list in all_feat_tens:
                 # For each position in feat_list.
@@ -2592,7 +2594,7 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
 
             # Init dictionaries.
             for kmer in kmer_list:
-                # Init motif matrix for kmer.
+                # Init motif matrix for kmer.rplib_path
                 motif_matrix = []
                 for i in range(args.kmer_size):
                     motif_matrix.append([0.0]*n_feat_matrix)
@@ -2789,6 +2791,8 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
                                            bottom_motif_file_dic=bottom_motif_file_dic,
                                            kmer_top_n=c_top_kmers,
                                            add_ws_scores=add_ws_scores,
+                                           idx2id_dic=idx2id_dic,
+                                           seqs_dic=seqs_dic,
                                            onlyseq=onlyseq,
                                            theme=args.theme,
                                            lookup_kmer=lookup_kmer,
@@ -2963,7 +2967,6 @@ def main_predict(args):
 
 
     # hallo 123
-
 
     # Profile predictions output files.
     score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)

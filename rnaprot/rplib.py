@@ -7877,6 +7877,8 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   kmer_top_n=25,
                                   onlyseq=True,
                                   add_ws_scores=False,
+                                  idx2id_dic=False,
+                                  seqs_dic=False,
                                   theme=1,
                                   lookup_kmer=False,
                                   plots_subfolder="html_plots"):
@@ -7912,6 +7914,8 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
         assert kmer2bestmm_dic, "kmer2bestmm_dic needed in case of additional features"
         assert ch_info_dic, "ch_info_dic needed in case of additional features"
         assert kmer2avgscrank_dic, "kmer2avgscrank_dic needed in case of additional features"
+    if add_ws_scores:
+        assert idx2id_dic, "idx2id_dic needed if add_ws_scores given"
 
     # Import markdown to generate report.
     from markdown import markdown
@@ -7930,7 +7934,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     kmer_sc_plot = "kmer_scores_kde_plot.png"
     avg_best_kmer_kde_plot = "avg_best_kmer_scores_kde_plot.png"
     avg_best_kmer_scatter_plot = "avg_best_kmer_scores_scatter_plot.png"
-    model_comp_plot = "model_comparison_plot.png"
+    model_comp_plot = "model_comparison_plot.html"
     ws_sc_plot_out = plots_out_folder + "/" + ws_sc_plot
     kmer_sc_plot_out = plots_out_folder + "/" + kmer_sc_plot
     model_comp_plot_out = plots_out_folder + "/" + model_comp_plot
@@ -8277,14 +8281,20 @@ count rank) for lookup k-mer %s and training data with additional features.
 
     if add_ws_scores:
 
-        x_label = "Model 1 score"
-        y_label = "Model 2 score"
+        # plotly js path.
+        plotly_js_path = rplib_path + "/content/plotly-latest.min.js"
+        assert os.path.exists(plotly_js_path), "plotly js %s not found" %(plotly_js_path)
+
+        # Calculate R2.
+        correlation_matrix = np.corrcoef(ws_scores, add_ws_scores)
+        correlation_xy = correlation_matrix[0,1]
+        r_squared = correlation_xy**2
+
         print("Generate --train-in vs --add-train-in model comparison plot ... ")
-        create_eval_model_comp_scatter_plot(ws_scores, add_ws_scores,
-                                            model_comp_plot_out,
-                                            x_label=x_label,
-                                            y_label=y_label,
-                                            theme=theme)
+        create_m1m2sc_plotly_scatter_plot(ws_scores, add_ws_scores, idx2id_dic,
+                                          model_comp_plot_out, plotly_js_path,
+                                          seqs_dic=seqs_dic,
+                                          theme=theme)
         plot_path = plots_folder + "/" + model_comp_plot
 
         mdtext += """
@@ -8292,20 +8302,21 @@ count rank) for lookup k-mer %s and training data with additional features.
 
 To compare two models, the postive training set is scored with two models
 and the two model scores are displayed as a scatter plot. More similar
-models should show higher correlation, resulting in a higher R2 score
-(coeffient of determination).
+models should show higher correlation, resulting in a higher
+[R2 score](https://en.wikipedia.org/wiki/Coefficient_of_determination).
 
 """
-        mdtext += '<img src="' + plot_path + '" alt="model comparison plot"' + "\n"
-        mdtext += 'title="model comparison plot" width="500" />' + "\n"
+        mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
+        mdtext += '<iframe src="' + plot_path + '" width="1200" height="1200"></iframe>' + "\n"
+        mdtext += '</div>'
         mdtext += """
 
 **Figure:** Model comparison scatter plot, comparing whole-site model scores
 on the positive training set for the two input models. Model 1: model from
---train-in folder. Model 2: model from --add-train-in.
+--train-in folder. Model 2: model from --add-train-in. R2 = %.6f.
 &nbsp;
 
-"""
+""" %(r_squared)
 
     print("Generate HTML report ... ")
 
@@ -8326,6 +8337,99 @@ on the positive training set for the two input models. Model 1: model from
     if output:
         error = True
     assert error == False, "sed command returned error:\n%s" %(output)
+
+
+################################################################################
+
+def create_m1m2sc_plotly_scatter_plot(ws_scores, add_ws_scores, idx2id_dic,
+                                      out_html, plotly_js,
+                                      seqs_dic=False,
+                                      theme=1):
+    """
+    Create plotly graph plot, plotting model1 scores (ws_scores) against
+    model2 scores (add_ws_scores) for the positive set.
+
+    ws_scores:
+        List with positive set whole-site scores for model1.
+    add_ws_scores:
+        List with positive set whole-site scores for model2.
+    idx2id_dic:
+        List to sequence ID mapping dic.
+    out_html:
+        Output .html path to store interactive plotly graph.
+    plotly_js:
+        Path to plotly js plotly-latest.min.js.
+    seqs_dic:
+        Sequence ID to sequence mapping dic.
+
+    """
+    assert ws_scores, "given ws_scores empty"
+    assert add_ws_scores, "given add_ws_scores empty"
+    assert idx2id_dic, "given idx2id_dic empty"
+    assert len(ws_scores) == len(add_ws_scores), "len(ws_scores) != len(add_ws_scores)"
+
+    m1_label = "Model 1 score"
+    m2_label = "Model 2 score"
+    id_label = "Sequence ID"
+    seq_label = "Sequence"
+    data = {m1_label : [], m2_label : [], id_label : []}
+    if seqs_dic:
+        data[seq_label] = []
+
+    max_m1sc = -1000
+    min_m1sc = 1000
+    max_m2sc = -1000
+    min_m2sc = 1000
+
+    for idx, m1sc in enumerate(ws_scores):
+        m2sc = add_ws_scores[idx]
+        seq_id = idx2id_dic[idx]
+        if m1sc > max_m1sc:
+            max_m1sc = m1sc
+        if m1sc < min_m1sc:
+            min_m1sc = m1sc
+        if m2sc > max_m2sc:
+            max_m2sc = m2sc
+        if m2sc < min_m2sc:
+            min_m2sc = m2sc
+        data[m1_label].append(m1sc)
+        data[m2_label].append(m2sc)
+        data[id_label].append(seq_id)
+        if seqs_dic:
+            data[seq_label].append(seqs_dic[seq_id])
+
+    # Get min and max axis values for scaling.
+    min_sc = min_m1sc
+    max_sc = max_m1sc
+    if min_sc > min_m2sc:
+        min_sc = min_m2sc
+    if max_sc < max_m2sc:
+        max_sc = max_m2sc
+
+    # Color of dots.
+    dot_col = "#69e9f6"
+    if theme == 2:
+        dot_col = "blue"
+
+    if seqs_dic:
+        df = pd.DataFrame(data, columns = [m1_label, m2_label, id_label, seq_label])
+        plot = px.scatter(data_frame=df, x=m1_label, y=m2_label, hover_name=id_label,
+                          hover_data=[seq_label],
+                          color_discrete_sequence=[dot_col])
+    else:
+        df = pd.DataFrame(data, columns = [m1_label, m2_label, id_label])
+        plot = px.scatter(data_frame=df, x=m1_label, y=m2_label, hover_name=id_label,
+                          color_discrete_sequence=[dot_col])
+
+    plot.layout.template = 'seaborn'
+
+    plot.update_layout(yaxis_range=[min_sc, max_sc])
+    plot.update_layout(xaxis_range=[min_sc, max_sc])
+    plot.update_layout(hoverlabel=dict(font_size=12))
+
+    plot.write_html(out_html,
+                    full_html=False,
+                    include_plotlyjs=plotly_js)
 
 
 ################################################################################

@@ -499,6 +499,8 @@ def get_saliency_from_feat_list(feat_list, model, device,
         Type of saliency returned. 1: mean saliencies, 2: max saliencies.
 
     """
+    from statistics import mean
+
     sal_feat_list = []
     if got_tensors:
         sal_feat_list.append(feat_list)
@@ -507,11 +509,11 @@ def get_saliency_from_feat_list(feat_list, model, device,
 
     sal_dataset = RNNDataset(sal_feat_list, [1])
     sal_loader = DataLoader(dataset=sal_dataset, batch_size=1, collate_fn=pad_collate, pin_memory=True)
-    sal_ll = rnn_util.get_saliency(sal_loader, model, device)
+    sal_ll = get_saliency(sal_loader, model, device)
     mean_sal_list = []
     max_sal_list = []
     for scl in sal_ll[0]:
-        mean_sal_list.append(statistics.mean(scl))
+        mean_sal_list.append(mean(scl))
         max_sal_list.append(max(scl))
 
     l_sl = len(mean_sal_list)
@@ -636,6 +638,61 @@ def get_single_nt_perturb_scores(args, seq, feat_list,
         mut_sc = mut_scores[idx]
         perturb_sc_list[seq_idx][nt_idx] = mut_sc - orig_sc
     return perturb_sc_list
+
+
+################################################################################
+
+def get_worst_scoring_window(profile_scores_ll, all_features, win_extlr):
+
+    """
+    !!! GIMME YOUR WORST !!!
+
+    Go through profile scores list of lists (profile_scores_ll), to get
+    worst scoring window. Only look at full-length windows.
+    Return worst scoring feat_list block (stored as list, not tensor).
+
+    profile_scores_ll:
+        Profile scores list of lists (same order as all_features).
+    all_features:
+        All features list of lists.
+    win_extlr:
+        window left and right extension (so full window length ==
+        win_extlr*2 + 1).
+
+    """
+    assert profile_scores_ll, "profile_scores_ll empty"
+    assert all_features, "all_features empty"
+    assert win_extlr, "win_extlr False"
+
+    # Full window length.
+    full_win_len = win_extlr*2 + 1
+
+    # Go through profile scores list of lists, get worst scoring window.
+    worst_psl_idx = 0
+    worst_psl_pos = 0
+    worst_psl_score = 1000
+    for psl_idx,psl in enumerate(profile_scores_ll):
+        l_psl = len(psl)
+        for wi in range(l_psl):
+            block_s = wi - win_extlr
+            block_e = wi + win_extlr + 1
+            if block_s < 0:
+                continue
+            if block_e > l_psl:
+                break
+            psl_sc = psl[wi]
+            if psl_sc < worst_psl_score:
+                worst_psl_score = psl_sc
+                worst_psl_idx = psl_idx
+                worst_psl_pos = wi
+
+    # Extract and return worst scoring window.
+    block_s = worst_psl_pos - win_extlr
+    block_e = worst_psl_pos + win_extlr + 1
+    worst_sc_block = all_features[worst_psl_idx][block_s:block_e]
+    l_wsb = len(worst_sc_block)
+    assert len(worst_sc_block) == full_win_len, "len(worst_sc_block) != full_win_len (%i != %i)" %(l_wsb, full_win_len)
+    return worst_sc_block
 
 
 ################################################################################
