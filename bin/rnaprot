@@ -3,6 +3,8 @@
 from rnaprot.RNNNets import RNNModel, RNNDataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+from torch.nn import BCEWithLogitsLoss
+#from torch.nn.functional import nll_loss
 from rnaprot import rnn_util
 from rnaprot import rplib
 import numpy as np
@@ -38,6 +40,10 @@ rnaprot -h
 
 
 """
+
+
+# Loss criterion.
+criterion = BCEWithLogitsLoss()
 
 
 ################################################################################
@@ -323,12 +329,6 @@ def setup_argument_parser():
                    nargs='+',
                    default = [7],
                    help = "Motif size(s) (widths) for extracting and plotting motifs. Provide multiple sizes (e.g. --motif-size 5 7 9) to extract a motif for each size (default: 7)")
-    p_ev.add_argument("--motif-sc-thr",
-                   dest="motif_sc_thr",
-                   type = float,
-                   metavar='float',
-                   default = 0.3,
-                   help = "Minimum profile score of position to be included in motif (default: 0.3)")
     p_ev.add_argument("--win-size",
                    dest="win_size",
                    type = int,
@@ -789,7 +789,7 @@ def main_train(args):
         assert not args.add_test, "incompatible options --add-test and --gm-cv. --add-test only for training final model, not for --gm-cv cross validation"
         assert not args.test_ids, "incompatible options --test-ids and --gm-cv. --test-ids only for training final model, not for --gm-cv cross validation"
 
-    assert args.epochs >= 5 and args.epochs <= 500, "use reasonable number for --epochs (>= 5 and <= 500)"
+    assert args.epochs >= 1 and args.epochs <= 500, "use reasonable number for --epochs (>= 1 and <= 500)"
     assert args.patience > 0 and args.patience <= 100, "use reasonable number for --patience (> 0 and <= 100)"
 
     # Get additional infos from rnaprot gt settings.
@@ -926,9 +926,6 @@ def main_train(args):
 
     print("# dataset features:  %i" %(n_feat))
     print("Dataset size:        %i" %(len(all_features)))
-
-    # Loss criterion.
-    criterion = nn.BCEWithLogitsLoss()
 
     """
     Run cross validation (--gen-cv, --gen-cv-k) to estimate generalization
@@ -1446,6 +1443,15 @@ def main_train(args):
         print("Model test set accuracy:        %f" %(val_acc))
         print("Model test set AUC:             %f" %(val_auc))
 
+    # hallo 123
+    print("test_scores ... ")
+    test_model = rnn_util.define_model(args, device,
+                                       opt_dic=opt_dic)
+    test_scores = rnn_util.test_scores(val_loader, test_model, device)
+    print("test_scores:", test_scores)
+    print(max(test_scores))
+    print(min(test_scores))
+
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
 
@@ -1619,8 +1625,6 @@ def main_eval(args):
     # Motif output folder.
     motif_plots_folder = args.out_folder
 
-    # Loss criterion.
-    criterion = nn.BCEWithLogitsLoss()
     # Min-max normalization for scores.
     min_max_norm = False
 
@@ -1629,9 +1633,7 @@ def main_eval(args):
     if args.plot_format == 2:
         plot_format = "pdf"
 
-
     # More checks.
-    assert args.motif_sc_thr <= 1 and args.motif_sc_thr >= -1, "--motif-sc-thr must be within -1 and 1"
     # Window size.
     if (args.win_size-1) % 2:
         assert False, "only uneven window size values (--win-size) supported (5,7,9, ...)"
@@ -1690,6 +1692,12 @@ def main_eval(args):
     l_dataset = len(all_features)
     print("Positive set size:     %i" %(l_dataset))
 
+    # Check numbers of sites to extract.
+    max_nr_top_sites = max(args.list_nr_top_sites)
+    assert args.nr_top_profiles <= l_dataset, "set --nr-top-profiles > number of positive sites! Pleaser lower --nr-top-profiles"
+    assert args.nr_top_profiles <= max_nr_top_sites, "set --nr-top-profiles > maximum --nr-top-sites. Please adjust --nr-top-profiles or --nr-top-sites"
+    assert l_dataset >= max_nr_top_sites, "positive dataset size < maximum given --nr-top-sites. Please lower max --nr-top-sites"
+
     if args.lookup_profile:
         assert args.lookup_profile in seqs_dic, "given --lookup-id not found in --gt-in positive set"
 
@@ -1730,8 +1738,7 @@ def main_eval(args):
 
     # Predict.
     print("Predict whole sites ... ")
-    ws_scores = rnn_util.test_scores(predict_loader, model, device,
-                                     min_max_norm=min_max_norm)
+    ws_scores = rnn_util.test_scores(predict_loader, model, device)
 
     # Checks.
     c_ws_scores = len(ws_scores)
@@ -1771,8 +1778,7 @@ def main_eval(args):
 
         # Predict.
         print("Predict whole-site scores for negatives ... ")
-        neg_ws_scores = rnn_util.test_scores(predict_loader, model, device,
-                                             min_max_norm=min_max_norm)
+        neg_ws_scores = rnn_util.test_scores(predict_loader, model, device)
 
         # Checks.
         assert neg_ws_scores, "neg_ws_scores empty"
@@ -1891,8 +1897,7 @@ def main_eval(args):
 
         # Predict.
         print("Predict whole sites with --add-train-in model ... ")
-        add_ws_scores = rnn_util.test_scores(predict_loader, add_model, device,
-                                             min_max_norm=min_max_norm)
+        add_ws_scores = rnn_util.test_scores(predict_loader, add_model, device)
         # Checks.
         c_add_ws_scores = len(add_ws_scores)
         assert c_all_feat == c_all_feat2, "c_all_feat != c_all_feat2 (%i != %i)" %(c_all_feat, c_all_feat2)
@@ -2202,7 +2207,6 @@ def main_eval(args):
 
             print("Create motif (size %i) from top %i sites ... " %(motif_size, nr_top_sites))
             site_count = 0
-            c_thr_skipped = 0
             c_no_max_skipped = 0
 
             # Init motif score matrix.
@@ -2245,11 +2249,6 @@ def main_eval(args):
                     c_no_max_skipped += 1
                     continue
 
-                # Minimum window score for extracting motifs.
-                if max_sc < args.motif_sc_thr:
-                    c_thr_skipped += 1
-                    continue
-
                 # Minimum sequence length for extracting motifs.
                 site_l = len(profile_scores)
                 assert site_l == l_seq, "site_l != l_seq (%i != %i)" %(site_l, l_seq)
@@ -2283,8 +2282,6 @@ def main_eval(args):
             assert site_count, "no top motif information extracted for motif_size %i and nr_top_sites %i (site_count = 0)" %(motif_size, nr_top_sites)
 
             print("# motif sites extracted:           %i" %(site_count))
-            if c_thr_skipped:
-                print("# sites skipped (--motif-sc-thr):  %i" %(c_thr_skipped))
             if c_no_max_skipped:
                 print("# sites skipped (no max_pos):      %i" %(c_no_max_skipped))
 
@@ -2370,7 +2367,6 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
 
                 print("Create motif (size %i) from bottom %i sites ... " %(motif_size, nr_top_sites))
                 site_count = 0
-                c_thr_skipped = 0
                 c_no_min_skipped = 0
 
                 # Init motif score matrix.
@@ -2538,8 +2534,7 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
             predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
             print("Score k-mers present in sequences ... ")
-            kmer_scores = rnn_util.test_scores(predict_loader, model, device,
-                                               min_max_norm=min_max_norm)
+            kmer_scores = rnn_util.test_scores(predict_loader, model, device)
 
             assert c_kmer_feat == len(kmer_scores), "size k-mer features list != # k-mer scores"
 
@@ -2569,8 +2564,7 @@ ch_info_dic: {'fa': ['C', [0, 1, 2, 3], ['A', 'C', 'G', 'U'], 'one_hot'], 'CTFC'
             predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
 
             print("Score k-mers ... ")
-            kmer_scores = rnn_util.test_scores(predict_loader, model, device,
-                                               min_max_norm=min_max_norm)
+            kmer_scores = rnn_util.test_scores(predict_loader, model, device)
 
             assert len(kmer_feat) == len(kmer_scores), "len(kmer_feat) != len(kmer_scores)"
 
@@ -2950,10 +2944,8 @@ def main_predict(args):
         if fid != "str":
             assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
 
-    # Loss criterion.
-    criterion = nn.BCEWithLogitsLoss()
     # Min-max normalization for scores.
-    min_max_norm = False # ?
+    min_max_norm = False
 
     # Generate results output folder.
     out_folder = args.out_folder
@@ -3065,8 +3057,7 @@ def main_predict(args):
 
         # Predict.
         print("Predict whole sites ... ")
-        ws_scores = rnn_util.test_scores(predict_loader, model, device,
-                                         min_max_norm=min_max_norm)
+        ws_scores = rnn_util.test_scores(predict_loader, model, device)
 
         # Checks.
         c_ws_scores = len(ws_scores)

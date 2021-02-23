@@ -206,15 +206,6 @@ def pad_collate(batch):
 
 ###############################################################################
 
-def binary_accuracy(preds, y):
-    rounded_preds = torch.round(torch.sigmoid(preds))
-    correct = (rounded_preds == y).float()
-    acc = correct.sum()/len(correct)
-    return acc
-
-
-###############################################################################
-
 def train(model, optimizer, train_loader, criterion, device):
     model.train()
     loss_all = 0
@@ -232,7 +223,17 @@ def train(model, optimizer, train_loader, criterion, device):
 
 ###############################################################################
 
-def test(test_loader, model, criterion, device):
+def binary_accuracy(preds, y):
+    rounded_preds = torch.round(torch.sigmoid(preds))
+    correct = (rounded_preds == y).float()
+    acc = correct.sum()/len(correct)
+    return acc
+
+
+###############################################################################
+
+def test(test_loader, model, criterion, device,
+         apply_tanh=True):
     model.eval()
     loss_all = 0
     score_all = []
@@ -246,8 +247,15 @@ def test(test_loader, model, criterion, device):
         loss_all += loss.item() * len(batch_labels)
         acc = binary_accuracy(outputs[0], batch_labels)
         test_acc += acc.item()
-        score_all.extend(outputs[0].cpu().detach().numpy())
+        # Use tanh to normalize scores from -1 to 1.
+        if apply_tanh:
+            output = torch.tanh(outputs[0]).cpu().detach().numpy()
+        else:
+            output = outputs[0].cpu().detach().numpy()
+        score_all.extend(output)
         test_labels.extend(batch_labels.cpu().detach().numpy())
+    #print("score_all min:", min(score_all))
+    #print("score_all max:", max(score_all))
     test_acc = test_acc / len(test_loader)
     fpr, tpr, thresholds = metrics.roc_curve(test_labels, score_all, pos_label=1)
     test_auc = metrics.auc(fpr, tpr)
@@ -258,7 +266,7 @@ def test(test_loader, model, criterion, device):
 ################################################################################
 
 def test_scores(loader, model, device,
-                min_max_norm=False):
+                apply_tanh=True):
     model.eval()
     loss_all = 0
     score_all = []
@@ -267,14 +275,11 @@ def test_scores(loader, model, device,
         batch_data = batch_data.to(device)
         batch_labels = batch_labels.to(device)
         outputs, _ = model(batch_data, batch_lens, len(batch_labels))
-        # score_all.extend(outputs[0].cpu().detach().numpy())
-        output = outputs[0].cpu().detach().numpy()[:,0]
-        if min_max_norm:
-            for o in output:
-                o_norm = min_max_normalize_probs(o, 1, 0, borders=[-1, 1])
-                score_all.append(o_norm)
+        if apply_tanh:
+            output = torch.tanh(outputs[0][:,0]).cpu().detach().numpy()
         else:
-            score_all.extend(output)
+            output = outputs[0].cpu().detach().numpy()[:,0]
+        score_all.extend(output)
     return score_all
 
 
@@ -488,7 +493,7 @@ def get_saliency_from_feat_list(feat_list, model, device,
     """
     Given a features list from one instance, get saliencies of this instance.
     Return list of saliencies.
-
+n_class
     feat_list:
         Feature list of tensors (if not disable got_tensors).
     model:
@@ -624,8 +629,7 @@ def get_single_nt_perturb_scores(args, seq, feat_list,
     all_mut_feat_labels = [1]*c_all_mut_feat
     predict_dataset = RNNDataset(all_mut_feat, all_mut_feat_labels)
     predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=pad_collate, pin_memory=True)
-    mut_scores = test_scores(predict_loader, model, device,
-                             min_max_norm=min_max_norm)
+    mut_scores = test_scores(predict_loader, model, device)
     c_mut_scores = len(mut_scores)
     assert c_mut_scores == c_all_mut_feat, "c_mut_scores != c_all_mut_feat (%i != %i)" %(c_mut_scores, c_all_mut_feat)
 
@@ -782,8 +786,7 @@ def get_window_predictions(args, model_path, device,
     predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=pad_collate, pin_memory=True)
 
     # Predict.
-    win_scores = test_scores(predict_loader, model, device,
-                             min_max_norm=min_max_norm)
+    win_scores = test_scores(predict_loader, model, device)
 
     # Checks.
     c_win_scores = len(win_scores)

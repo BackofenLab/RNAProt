@@ -1,5 +1,17 @@
 
+
+Find the formula used to compute Shannon's entropy
+[here](https://www.ncbi.nlm.nih.gov/pubmed/15215465) (see CE formula).
+
+https://en.wikipedia.org/wiki/Coefficient_of_determination
+
+
+
 python -m pip install . --ignore-installed --no-deps -vv
+
+
+rnaprot gt --in test_in/positives.fa --out test_gt_out --neg-in test_in/negatives.fa --str --report
+
 
 
 # Train some full model.
@@ -10,6 +22,20 @@ rnaprot train --in RBFOX2_K562_gp2_orig_extlr40_gt_out --out RBFOX2_K562_gp2_ori
 
 --verbose-train
 
+
+rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq_simple_1h_train_out --out RBFOX2_K562_test_onlyseq_simple_1h_eval_out --add-train-in RBFOX2_K562_test_onlyseq_embed_train_out --bottoms-up
+
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_embed_train_out --only-seq
+
+
+fig.update_layout(
+    hoverlabel=dict(
+        bgcolor="white",
+        font_size=16,
+        font_family="Rockwell"
+    )
+)
 
 
 

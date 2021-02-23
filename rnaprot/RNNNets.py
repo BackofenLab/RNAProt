@@ -161,8 +161,6 @@ class GRUModel(nn.Module):
         else:
             x = self.fc(x)
 
-        # x = F.log_softmax(x, dim=-1)
-
         return x, x_embed
 
 
@@ -299,6 +297,8 @@ class RNNModel(nn.Module):
             x = self.fc2(x)
         else:
             x = self.fc(x)
+
+        #x = F.log_softmax(x, dim=-1)
 
         return x, x_embed
 
