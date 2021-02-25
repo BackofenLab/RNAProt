@@ -6,6 +6,23 @@ Find the formula used to compute Shannon's entropy
 https://en.wikipedia.org/wiki/Coefficient_of_determination
 
 
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_seq1h_train_out --only-seq --seq-1h --verbose-train
+
+# first model.
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_seq1h_train_out --only-seq --seq-1h --verbose-train
+# second model.
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_embed_train_out --only-seq --verbose-train
+
+rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq_seq1h_train_out --add-train-in RBFOX2_K562_test_onlyseq_embed_train_out --out RBFOX2_K562_test_onlyseq_seq1h_embed_eval_out --report --bottoms-up
+
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_1hplus_train_out --only-seq --seq-1h --verbose-train --n-rnn-layers 2 --n-fc-layers 2 --model-type 3
+
+rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq_1hplus_train_out --add-train-in RBFOX2_K562_test_onlyseq_seq1h_train_out --out RBFOX2_K562_test_onlyseq_1hplus_eval_out --report --bottoms-up
+
+
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_1hplus_train_out --only-seq --seq-1h --verbose-train --n-rnn-layers 2 --n-fc-layers 2 --model-type 3
 
 python -m pip install . --ignore-installed --no-deps -vv
 
@@ -19,6 +36,9 @@ rnaprot gt --in  gp_train_sets_gp2_orig_extlr40_in/RBFOX2_K562.positives.bed --o
 
 
 rnaprot train --in RBFOX2_K562_gp2_orig_extlr40_gt_out --out RBFOX2_K562_gp2_orig_extlr40_onlseq_train_out --only-seq
+
+
+
 
 --verbose-train
 

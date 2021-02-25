@@ -224,8 +224,8 @@ def setup_argument_parser():
                    dest="n_rnn_layers",
                    type=int,
                    metavar='int',
-                   default=2,
-                   help="Number of RNN layers (default: 2)")
+                   default=1,
+                   help="Number of RNN layers (default: 1)")
     p_tra.add_argument("--n-hidden-dim",
                    dest="n_rnn_dim",
                    type = int,
@@ -241,20 +241,26 @@ def setup_argument_parser():
     p_tra.add_argument("--n-fc-layers",
                    dest="n_fc_layers",
                    type = int,
-                   default = 2,
+                   default = 1,
                    choices = [1,2],
-                   help = "Number of fully connected layers following RNN layers (default: 2)")
+                   help = "Number of fully connected layers following RNN layers (default: 1)")
     p_tra.add_argument("--model-type",
                    dest="model_type",
                    type = int,
                    default = 1,
                    choices = [1,2,3,4],
-                   help = "RNN model type to use. 1: biGRU, 2: biLSTM, 3: GRU, 4: LSTM (default: 1)")
-    p_tra.add_argument("--seq-1h",
-                   dest = "seq_1h",
+                   help = "RNN model type to use. 1: GRU, 2: LSTM, 3: biGRU, 4: biLSTM (default: 1)")
+    p_tra.add_argument("--embed",
+                   dest = "embed",
                    default = False,
                    action = "store_true",
-                   help = "Use one-hot encoding for sequence feature, instead of embedding (default: False)")
+                   help = "Use embedding layer for sequence feature, instead of one-hot encoding (default: False)")
+    p_tra.add_argument("--embed-dim",
+                   dest="embed_dim",
+                   type = int,
+                   metavar='int',
+                   default = 10,
+                   help = "Dimension of embedding layer (default: 10)")
     p_tra.add_argument("--run-bohb",
                    dest = "run_bohb",
                    default = False,
@@ -328,7 +334,7 @@ def setup_argument_parser():
                    type = int,
                    nargs='+',
                    default = [7],
-                   help = "Motif size(s) (widths) for extracting and plotting motifs. Provide multiple sizes (e.g. --motif-size 5 7 9) to extract a motif for each size (default: 7)")
+                   help = "Motif size(s) (widths) for extracting and plotting motifs. Provide multiple sizes (e.g. --motif-size 5 7 9 ) to extract a motif for each size (default: 7)")
     p_ev.add_argument("--win-size",
                    dest="win_size",
                    type = int,
@@ -336,10 +342,11 @@ def setup_argument_parser():
                    metavar='int',
                    help = "Windows size for calculating position-wise scoring profiles (default: 7)")
     p_ev.add_argument("--lookup-profile",
-                   dest="lookup_profile",
+                   dest="list_lookup_ids",
                    type=str,
-                   metavar='str',
-                   help = "Provide site ID for which to plot the feature profile in addition to --nr-top-profiles. Site ID needs to be in positive set from --gt-in")
+                   nargs='+',
+                   default=False,
+                   help = "Provide site ID(s) for which to plot the feature profile in addition to --nr-top-profiles (e.g. --lookup-profile site_id1 site_id2 ). Site ID needs to be in positive set from --gt-in")
     p_ev.add_argument("--bottoms-up",
                    dest = "bottoms_up",
                    default = False,
@@ -840,12 +847,8 @@ def main_train(args):
     args.tr_reg_border_annot = gt_settings_dic["tr_reg_border_annot"]
 
     # Embedding (by default True).
-    args.embed = True
     args.embed_k = 1
     args.embed_vocab_size = 4**args.embed_k + 1
-    args.embed_dim = 10
-    if args.seq_1h:
-        args.embed = False
     kmer2idx_dic = False
     if args.embed:
         kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
@@ -858,7 +861,7 @@ def main_train(args):
     args.rnn_type = 1
     if args.model_type == 2 or args.model_type == 4:
         args.rnn_type = 2
-    if args.model_type == 1 or args.model_type == 2:
+    if args.model_type == 3 or args.model_type == 4:
         args.bidirect = True
 
     # Additional FC layer.
@@ -1443,15 +1446,6 @@ def main_train(args):
         print("Model test set accuracy:        %f" %(val_acc))
         print("Model test set AUC:             %f" %(val_auc))
 
-    # hallo 123
-    print("test_scores ... ")
-    test_model = rnn_util.define_model(args, device,
-                                       opt_dic=opt_dic)
-    test_scores = rnn_util.test_scores(val_loader, test_model, device)
-    print("test_scores:", test_scores)
-    print(max(test_scores))
-    print(min(test_scores))
-
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
 
@@ -1625,9 +1619,6 @@ def main_eval(args):
     # Motif output folder.
     motif_plots_folder = args.out_folder
 
-    # Min-max normalization for scores.
-    min_max_norm = False
-
     # Plot format.
     plot_format = "png"
     if args.plot_format == 2:
@@ -1698,8 +1689,12 @@ def main_eval(args):
     assert args.nr_top_profiles <= max_nr_top_sites, "set --nr-top-profiles > maximum --nr-top-sites. Please adjust --nr-top-profiles or --nr-top-sites"
     assert l_dataset >= max_nr_top_sites, "positive dataset size < maximum given --nr-top-sites. Please lower max --nr-top-sites"
 
-    if args.lookup_profile:
-        assert args.lookup_profile in seqs_dic, "given --lookup-id not found in --gt-in positive set"
+    if args.list_lookup_ids:
+        for seq_id in args.list_lookup_ids:
+            assert seq_id in seqs_dic, "given --lookup-profile ID %s not found in --gt-in positive set" %(seq_id)
+        lookup_out_folder = args.out_folder + "/lookup_profiles"
+        if not os.path.exists(lookup_out_folder):
+            os.makedirs(lookup_out_folder)
 
     # Convert to tensors for prediction, keep all_features for motif extraction later.
     all_feat_tens = []
@@ -1739,6 +1734,9 @@ def main_eval(args):
     # Predict.
     print("Predict whole sites ... ")
     ws_scores = rnn_util.test_scores(predict_loader, model, device)
+
+    print("Maximum whole-site score: ", max(ws_scores))
+    print("Minimum whole-site score: ", min(ws_scores))
 
     # Checks.
     c_ws_scores = len(ws_scores)
@@ -1862,12 +1860,12 @@ def main_eval(args):
 
         # Load data again.
         print("Load positive training set from --gt-in for --add-train-in model ... ")
-        seqs_dic2, idx2id_dic2, all_features2, ch_info_dic2 = rplib.load_eval_data(args,
-                                                                    train_folder=args.add_train_folder,
-                                                                    kmer2idx_dic=kmer2idx_dic,
-                                                                    embed=m2p_dic["embed"],
-                                                                    num_features=m2p_dic["n_feat"],
-                                                                    str_mode=m2p_dic["str_mode"])
+        seqs_dic2, idx2id_dic2, all_feat2, ch_info_dic2 = rplib.load_eval_data(args,
+                                                            train_folder=args.add_train_folder,
+                                                            kmer2idx_dic=kmer2idx_dic,
+                                                            embed=m2p_dic["embed"],
+                                                            num_features=m2p_dic["n_feat"],
+                                                            str_mode=m2p_dic["str_mode"])
 
         # Check # features.
         check_num_feat = 0
@@ -1884,9 +1882,9 @@ def main_eval(args):
             assert seqs_dic[seq_id1] == seqs_dic2[seq_id1],  "--train-in sequence %s is not equal to --add-train-in sequence %s. Please train two models on the same training set in order to compare the models" %(seq_id1, seq_id1)
 
         # Load dataset.
-        c_all_feat2 = len(all_features2)
+        c_all_feat2 = len(all_feat2)
         all_labels2 = [1]*c_all_feat2
-        predict_dataset = RNNDataset(all_features2, all_labels2)
+        predict_dataset = RNNDataset(all_feat2, all_labels2)
         predict_loader = DataLoader(dataset=predict_dataset, batch_size=m2p_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
 
         # Define and Load model.
@@ -1909,43 +1907,47 @@ def main_eval(args):
 
         # Print out two model scores stats.
         print("Output whole-site scores for both models ... ")
+
         TMOUT = open(two_model_scores_out, "w")
         TMOUT.write("model1_score_rank\tsequence_id\tmodel1_score\tmodel2_score\tscore_diff\tsequence\n")
+
         ws_sc_rank = 0
+
         for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
+
             ws_sc_rank += 1
             add_ws_sc = add_ws_scores[si]
             seq_id = idx2id_dic[si]
             seq = seqs_dic[seq_id]
             abs_diff = abs(ws_sc - add_ws_sc)
             TMOUT.write("%i\t%s\t%.6f\t%.6f\t%.6f\t%s\n" %(ws_sc_rank, seq_id, ws_sc, add_ws_sc, abs_diff, seq))
+
             # Plot lookup profile for --add-train-in model too.
-            if args.lookup_profile and seq_id == args.lookup_profile:
-                print("Generate --lookup-id profile plot for additional model ... ")
-                site_fl = []
-                site_fl.append(all_features2[si])
-                site_ps_ll = rnn_util.get_window_predictions(args, add_model, device,
-                                                             site_fl, win_extlr,
-                                                             load_model=False,
-                                                             batch_size=m2p_dic["batch_size"],
-                                                             min_max_norm=min_max_norm,
-                                                             got_tensors=True)
+            if args.list_lookup_ids and seq_id in args.list_lookup_ids:
 
-                mean_sal_list = rnn_util.get_saliency_from_feat_list(all_features2[si],
-                                                            add_model, device,
-                                                            got_tensors=True,
-                                                            sal_type=1)
-                l_sal = len(mean_sal_list)
-                assert l_sal == l_sc, "length saliency list (--lookup-id, --add-train-in) != length profile scores list (%i != %i)" %(l_sal, l_sc)
+                print("Generate lookup profile plot %s for additional model ... " %(seq_id))
 
-                # Lookup ID profile file.
-                plot_out_file = args.out_folder + "/" + args.lookup_profile + "_" + win_info_str + "_sc" + str(add_ws_sc) + ".add_model." + plot_format
-                all_feat2_no_tens = all_features2[si].tolist()
-                # Plot profile.
-                rplib.make_feature_attribution_plot(seq, site_ps, all_feat2_no_tens,
-                                                    ch_info_dic2, plot_out_file,
-                                                    sal_list=mean_sal_list,
-                                                    seq_label_plot=False)
+                sal_list = rnn_util.get_saliency_from_feat_list(all_feat2[si],
+                                            add_model, device,
+                                            got_tensors=True,
+                                            sal_type=1)
+                l_sal = len(sal_list)
+                assert l_sal == l_sc, "length saliency list (--lookup-profile, --add-train-in) != length profile scores list (%i != %i)" %(l_sal, l_sc)
+                all_feat2_no_tens = all_feat2[si].tolist()
+
+                single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
+                                            seq, all_feat2_no_tens,
+                                            add_model, device,
+                                            model_hp_dic=m2p_dic,
+                                            load_model=False)
+
+                plot_out_file = lookup_out_folder + "/" + seq_id + "_" + win_info_str + "_sc" + str(add_ws_sc) + ".add_model." + plot_format
+
+                rplib.make_feature_attribution_plot(seq, all_feat2_no_tens,
+                                            ch_info_dic2, plot_out_file,
+                                            sal_list=sal_list,
+                                            single_pert_list=single_pert_list)
+
         TMOUT.close()
 
     """
@@ -1957,14 +1959,12 @@ def main_eval(args):
     profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
                                                         all_feat_tens, win_extlr,
                                                         load_model=False,
-                                                        min_max_norm=min_max_norm,
                                                         got_tensors=True)
 
-    # Check.
     assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
 
-    # Get worst scoring window.
-    worst_sc_feat_win = rnn_util.get_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
+    # Get best + worst scoring window.
+    best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
 
     """
     Plot profiles and motifs
@@ -1988,27 +1988,29 @@ def main_eval(args):
     if args.bottoms_up:
         os.makedirs(bottom_profiles_folder)
 
-    # Sort graphs by score to evaluate top sites.
+    # Sort sites by score to evaluate top sites.
     rank_scores_out = args.out_folder + "/whole_site_scores.out"
     RSOUT = open(rank_scores_out, "w")
     site_count = 0
     id_i = 10 ** len(str(args.nr_top_profiles))
+
+    # Collect window perturbation scores lists.
+    worst_win_pert_dic = {}
+    worst_win_pos_dic = {}
+
     # Store min/max score positions for each sequence.
-    id2minpos_dic = {}
-    id2maxpos_dic = {}
+    # id2minpos_dic = {}
+    # id2maxpos_dic = {}
     # Store min/max saliency positions for each sequence.
-    id2minsalpos_dic = {}
-    id2maxsalpos_dic = {}
-    c_maxsal_borders = 0
-    c_maxsal_center = 0
+    # id2minsalpos_dic = {}
+    # id2maxsalpos_dic = {}
+    # c_maxsal_borders = 0
+    # c_maxsal_center = 0
 
-    # All dataset saliencies (mean saliencies).
-    all_mean_sal = []
-
-    # Plot top --nr-top-profiles profiles and output all site scores.
-    print("Plot top %i profiles and extract saliencies ... " %(args.nr_top_profiles))
+    # Go through positive sites by descending score.
+    print("Extract saliency and mutation info + plot top %i profiles ... " %(args.nr_top_profiles))
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
-        # Profile scores.
+
         profile_scores = profile_scores_ll[si]
         if not profile_scores:
             continue
@@ -2018,111 +2020,71 @@ def main_eval(args):
         seq = seqs_dic[seq_id]
         l_sc = len(profile_scores)
 
-        # Get saliency scores list.
-        mean_sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
-                                                    model, device,
-                                                    got_tensors=True,
-                                                    sal_type=1)
-        l_sal = len(mean_sal_list)
-        assert l_sal == l_sc, "length saliency list != length profile scores list (%i != %i)" %(l_sal, l_sc)
-
-        all_mean_sal.append(mean_sal_list)
-
-        #print("profile_scores:", profile_scores)
-        #print("max(profile_scores):", max(profile_scores))
-        #print("min(profile_scores):", min(profile_scores))
-
-        # Get maximum score position.
-        max_pos = 0
-        max_sc = -1000000
-        min_pos = 0
-        min_sc = 1000000
-        max_sal_pos = 0
-        max_sal_sc = -1000000
-        min_sal_pos = 0
-        min_sal_sc = 1000000
-        max_sal_sc_no_bord = -1000000
-        max_sal_pos_no_bord = 0
-
-        for i,psc in enumerate(profile_scores):
-            # Get highest saliency score.
-            ssc = mean_sal_list[i]
-            if ssc > max_sal_sc_no_bord:
-                max_sal_sc_no_bord = ssc
-                max_sal_pos_no_bord = i
-            # Ignore borders.
-            if i < max_motif_extlr:
-                continue
-            if i >= l_sc-max_motif_extlr:
-                break
-            if psc > max_sc:
-                max_sc = psc
-                max_pos = i
-            if psc < min_sc:
-                min_sc = psc
-                min_pos = i
-            # Saliency ignoring borders.
-            if ssc > max_sal_sc:
-                max_sal_sc = ssc
-                max_sal_pos = i
-            if ssc < min_sal_sc:
-                min_sal_sc = ssc
-                min_sal_pos = i
-
-         # 0-based positions.
-        id2maxsalpos_dic[seq_id] = max_pos
-        id2minsalpos_dic[seq_id] = min_pos
-        id2maxpos_dic[seq_id] = max_sal_pos
-        id2minpos_dic[seq_id] = min_sal_pos
-        if max_sal_pos_no_bord != max_pos:
-            c_maxsal_borders += 1
-        else:
-            c_maxsal_center += 1
-
-        # Store rank + site ID + score in file.
+        # Store whole-site rank + ID + score in file.
         RSOUT.write("%i\t%s\t%f\t%s\n" %(site_count, seq_id, ws_sc, seq))
 
-        # Plot profile for lookup site ID.
-        if args.lookup_profile and seq_id == args.lookup_profile:
-            # Lookup ID profile file.
-            plot_out_file = args.out_folder + "/" + args.lookup_profile + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
-
-            # Get perturbation scores.
-            perturb_sc_list = rnn_util.get_single_nt_perturb_scores(args,
-                                                seq, all_features[si],
-                                                model, device,
-                                                load_model=False)
-
-            # Plot profile.
-            rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
-                                                ch_info_dic, plot_out_file,
-                                                sal_list=mean_sal_list,
-                                                perturb_sc_list=perturb_sc_list,
-                                                seq_label_plot=False)
-
-        # Print only top --nr-top-profiles profiles.
+        # Decide what to extract for given site.
+        sal_list = False
+        single_pert_list = False
+        get_sal = False
+        get_single_pert = False
         if site_count <= args.nr_top_profiles:
-            # Plot file.
+            get_sal = True
+            get_single_pert = True
+        if args.list_lookup_ids and seq_id in args.list_lookup_ids:
+            get_sal = True
+            get_single_pert = True
+
+        # Get worst scoring window perturbation scores.
+        worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
+                                        all_features[si], worst_sc_win,
+                                        model, device,
+                                        avg_win_extlr=3,
+                                        load_model=False)
+
+        worst_win_pert_dic[seq_id] = worst_win_pert_list
+        # Get worst score position in site (with padding).
+        worst_sc_pos = rplib.get_top_sc_list_pos(worst_win_pert_list,
+                                                 get_lowest=True,
+                                                 padding=win_extlr)
+        worst_win_pos_dic[seq_id] = worst_sc_pos
+
+        if get_sal:
+            # Get mean saliency profile for site.
+            sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
+                                        model, device,
+                                        got_tensors=True,
+                                        sal_type=1)
+        if get_single_pert:
+            # Get single position perturbation scores.
+            single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
+                                        seq, all_features[si],
+                                        model, device,
+                                        load_model=False)
+
+        # Plot profile if site ID == lookup site ID.
+        if args.list_lookup_ids and seq_id in args.list_lookup_ids:
+            plot_out_file = lookup_out_folder + "/" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
+            rplib.make_feature_attribution_plot(seq, all_features[si],
+                                        ch_info_dic, plot_out_file,
+                                        sal_list=sal_list,
+                                        single_pert_list=single_pert_list,
+                                        worst_win_pert_list=worst_win_pert_list)
+
+        # Plot --nr-top-profiles profiles.
+        if site_count <= args.nr_top_profiles:
             plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
+            rplib.make_feature_attribution_plot(seq, all_features[si],
+                                        ch_info_dic, plot_out_file,
+                                        sal_list=sal_list,
+                                        single_pert_list=single_pert_list,
+                                        worst_win_pert_list=worst_win_pert_list)
 
-            # Get perturbation scores.
-            perturb_sc_list = rnn_util.get_single_nt_perturb_scores(args,
-                                                seq, all_features[si],
-                                                model, device,
-                                                load_model=False)
-
-            # Plot profile.
-            rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
-                                                ch_info_dic, plot_out_file,
-                                                sal_list=mean_sal_list,
-                                                perturb_sc_list=perturb_sc_list,
-                                                seq_label_plot=False)
+        # if not site_count % 100:
+        #     print("%i sites processed" %(site_count))
 
     RSOUT.close()
-
-    print("# top saliencies borders:", c_maxsal_borders)
-    print("# top saliencies center: ", c_maxsal_center)
 
     # Plot bottom profiles too.
     if args.bottoms_up:
@@ -2139,19 +2101,38 @@ def main_eval(args):
             seq = seqs_dic[seq_id]
             l_sc = len(profile_scores)
 
-            # Saliency.
-            mean_sal_list = all_mean_sal[si]
-
             # Print only top --nr-top-profiles profiles.
             if site_count <= args.nr_top_profiles:
+
+                # Get best scoring window perturbation scores.
+                best_win_pert_list = rnn_util.get_window_perturb_scores(args,
+                                                all_features[si], best_sc_win,
+                                                model, device,
+                                                avg_win_extlr=3,
+                                                load_model=False)
+
+                # Get mean saliency profile for site.
+                sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
+                                            model, device,
+                                            got_tensors=True,
+                                            sal_type=1)
+
+                # Get single position perturbation scores.
+                single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
+                                            seq, all_features[si],
+                                            model, device,
+                                            load_model=False)
+
                 # Plot file.
                 plot_file_name = str(id_i)[1:] + "_" + win_info_str + "_sc" + str(sc) + "." + plot_format
                 plot_out_file = bottom_profiles_folder + "/" + plot_file_name
-                # Plot profile.
-                rplib.make_feature_attribution_plot(seq, profile_scores, all_features[si],
-                                                    ch_info_dic, plot_out_file,
-                                                    sal_list=mean_sal_list,
-                                                    seq_label_plot=False)
+
+                rplib.make_feature_attribution_plot(seq, all_features[si],
+                                            ch_info_dic, plot_out_file,
+                                            sal_list=sal_list,
+                                            single_pert_list=single_pert_list,
+                                            best_win_pert_list=best_win_pert_list)
+
             else:
                 break
 
@@ -2190,11 +2171,12 @@ def main_eval(args):
 
     """
 
-
-
     print("Plot top motifs ... ")
 
     top_motif_file_dic = {}
+
+    weighted_motif = True
+    map_nt2idx_dix = {"A" : 0, "C" : 1, "G" : 2, "U" : 3}
 
     # For each motif size.
     for motif_size in args.list_motif_sizes:
@@ -2207,7 +2189,7 @@ def main_eval(args):
 
             print("Create motif (size %i) from top %i sites ... " %(motif_size, nr_top_sites))
             site_count = 0
-            c_no_max_skipped = 0
+            c_min_len_skipped = 0
 
             # Init motif score matrix.
             motif_matrix = []
@@ -2241,32 +2223,40 @@ def main_eval(args):
 
                 seq_id = idx2id_dic[si]
                 seq = seqs_dic[seq_id]
+                seq_list = seq.tolist()
                 l_seq = len(seq)
-                max_pos = id2maxpos_dic[seq_id] # 0-based.
-                max_sc = profile_scores[max_pos]
-                # If max_pos == 0, no top scoring site extracted, skip this sequence.
-                if not max_pos:
-                    c_no_max_skipped += 1
-                    continue
+
+                worst_win_pert_list = worst_win_pert_dic[seq_id]
+                max_pos = worst_win_pos_dic[seq_id] # 0-based.
 
                 # Minimum sequence length for extracting motifs.
-                site_l = len(profile_scores)
+                site_l = len(worst_win_pert_list)
                 assert site_l == l_seq, "site_l != l_seq (%i != %i)" %(site_l, l_seq)
                 if site_l < (motif_extlr*2 + 1):
+                    c_min_len_skipped += 1
                     continue # should be captured by if not max_pos check already.
 
                 # Extract max_pos motif brick.
                 s_brick = max_pos - motif_extlr
                 e_brick = max_pos + motif_extlr + 1 # 1-based, thus + 1.
+                worst_sc_brick = worst_win_pert_list[s_brick:e_brick]
+                seq_brick = seq_list[s_brick:e_brick]
+
                 assert s_brick >= 0, "s_brick <= 0 (s_brick = %i) which should not happen since max_pos selection takes care of this" %(s_brick)
                 assert e_brick <= site_l, "e_brick > site length (%i > %i) which should not happen since max_pos selection takes care of this" %(e_brick, site_l)
-                # .. and add values to motif_matrix.
-                # Checks.
-                #l11 = len(motif_matrix)
-                #l12 = len(feat_list[s_brick:e_brick])
-                #assert l11 == l12, "l11 != l12 (%i != %i) for %s (l_seq: %i, max_pos: %i, s_brick: %i, e_brick: %i)" %(l11, l12, seq_id, l_seq, max_pos, s_brick, e_brick)
+
+                start_j = 0
+                if weighted_motif:
+                    # Update sequence features in weigthed fashion.
+                    for i in range(l_mm):
+                        worst_sc = worst_sc_brick[i]
+                        worst_sc_nt = seq_brick[i]
+                        j = map_nt2idx_dix[worst_sc_nt]
+                        motif_matrix[i][j] = motif_matrix[i][j] - worst_sc
+                    start_j = 4
                 for i in range(l_mm):
-                    for j in range(l_sv):
+                    # If weighted_motif=True, just update additional features.
+                    for j in range(start_j, l_sv):
                         motif_matrix[i][j] += feat_list[s_brick:e_brick][i][j]
                         # For one-channel numerical features, store scores to calculate stdev.
                         if calc_stdev:
@@ -2281,11 +2271,16 @@ def main_eval(args):
             # Checks.
             assert site_count, "no top motif information extracted for motif_size %i and nr_top_sites %i (site_count = 0)" %(motif_size, nr_top_sites)
 
-            print("# motif sites extracted:           %i" %(site_count))
-            if c_no_max_skipped:
-                print("# sites skipped (no max_pos):      %i" %(c_no_max_skipped))
+            print("# motif sites extracted:    %i" %(site_count))
+            if c_min_len_skipped:
+                print("# sites skipped (min_len):  %i" %(c_min_len_skipped))
 
             # Average motif matrix values.
+            if weighted_motif:
+                for i in range(l_mm):
+                    # Hallo 123
+                    # Sum sum4 = sum(l[0:4]) and divide each of 4 elements by sum to normalize.
+
             for i in range(l_mm):
                 for j in range(l_sv):
                     motif_matrix[i][j] = motif_matrix[i][j] / site_count
@@ -2944,9 +2939,6 @@ def main_predict(args):
         if fid != "str":
             assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
 
-    # Min-max normalization for scores.
-    min_max_norm = False
-
     # Generate results output folder.
     out_folder = args.out_folder
     if not os.path.exists(out_folder):
@@ -3176,8 +3168,7 @@ Tackle eval!
 
         # Predict.
         print("Predict windows ... ")
-        win_scores = rnn_util.get_scores(predict_loader, model, criterion,
-                                         min_max_norm=min_max_norm)
+        win_scores = rnn_util.get_scores(predict_loader, model, criterion)
 
         # Checks.
         c_win_scores = len(win_scores)

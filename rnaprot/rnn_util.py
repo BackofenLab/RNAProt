@@ -8,11 +8,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+import statistics
 import shutil
+import copy
 import sys
 import re
 import os
-# BOHB.
+# >>> BOHB <<<.
 import ConfigSpace as CS
 import ConfigSpace.hyperparameters as CSH
 from hpbandster.core.worker import Worker
@@ -224,6 +226,11 @@ def train(model, optimizer, train_loader, criterion, device):
 ###############################################################################
 
 def binary_accuracy(preds, y):
+    """
+    Accuracy calculation:
+    Round scores > 0 to 1, and scores <= 0 to 0 (using sigmoid function).
+
+    """
     rounded_preds = torch.round(torch.sigmoid(preds))
     correct = (rounded_preds == y).float()
     acc = correct.sum()/len(correct)
@@ -233,7 +240,7 @@ def binary_accuracy(preds, y):
 ###############################################################################
 
 def test(test_loader, model, criterion, device,
-         apply_tanh=True):
+         apply_tanh=False):
     model.eval()
     loss_all = 0
     score_all = []
@@ -266,11 +273,9 @@ def test(test_loader, model, criterion, device,
 ################################################################################
 
 def test_scores(loader, model, device,
-                apply_tanh=True):
+                apply_tanh=False):
     model.eval()
-    loss_all = 0
     score_all = []
-    test_acc = 0.0
     for batch_data, batch_labels, batch_lens in loader:
         batch_data = batch_data.to(device)
         batch_labels = batch_labels.to(device)
@@ -536,15 +541,168 @@ n_class
 
 ################################################################################
 
+def list_moving_win_avg_values(in_list,
+                               win_extlr=5,
+                                method=1):
+    """
+    Take a list of numeric values, and calculate for each position a new value,
+    by taking the mean value of the window of positions -win_extlr and
+    +win_extlr. If full extension is not possible (at list ends), it just
+    takes what it gets.
+    Two implementations of the task are given, chose by method=1 or method=2.
+
+    >>> test_list = [2, 3, 5, 8, 4, 3, 7, 1]
+    >>> list_moving_window_average_values(test_list, win_extlr=2, method=1)
+    [3.3333333333333335, 4.5, 4.4, 4.6, 5.4, 4.6, 3.75, 3.6666666666666665]
+    >>> list_moving_window_average_values(test_list, win_extlr=2, method=2)
+    [3.3333333333333335, 4.5, 4.4, 4.6, 5.4, 4.6, 3.75, 3.6666666666666665]
+
+    """
+    l_list = len(in_list)
+    assert l_list, "Given list is empty"
+    new_list = [0] * l_list
+    if win_extlr == 0:
+        return l_list
+    if method == 1:
+        for i in range(l_list):
+            s = i - win_extlr
+            e = i + win_extlr + 1
+            if s < 0:
+                s = 0
+            if e > l_list:
+                e = l_list
+            # Extract portion and assign value to new list.
+            new_list[i] = statistics.mean(in_list[s:e])
+    elif method == 2:
+        for i in range(l_list):
+            s = i - win_extlr
+            e = i + win_extlr + 1
+            if s < 0:
+                s = 0
+            if e > l_list:
+                e = l_list
+            l = e-s
+            sc_sum = 0
+            for j in range(l):
+                sc_sum += in_list[s+j]
+            new_list[i] = sc_sum / l
+    else:
+        assert 0, "invalid method ID given (%i)" %(method)
+    return new_list
+
+
+################################################################################
+
+def get_window_perturb_scores(args, feat_list, feat_win,
+                              model_path, device,
+                              load_model=True,
+                              avg_win_extlr=False,
+                              model_hp_dic=False):
+    """
+    Get perturbation scores list containing score changes when sliding
+    worst scoring feature window over original feature list (stride 1).
+
+    feat_list:
+        List of feature vectors corresponding to seq, so
+        len(feat_list) == len(seq)
+    feat_win:
+        Best or worst scoring feature list window. 2nd dimension
+        has to be equal to feat_list, first dimension length of
+        window (<= feat_list length).
+
+    """
+    # Checks.
+    assert feat_win, "feat_win empty"
+    assert feat_list, "feat_list empty"
+    len_win = len(feat_win)
+    len_feat_list = len(feat_list)
+    # Demand window length to be <= feat_list length.
+    assert len_win <= len_feat_list, "len_win > len_feat_list (%i > %i)" %(len_win, len_feat_list)
+    # Check number of channel features for window and list.
+    c_win_feat = len(feat_win[0])
+    c_list_feat = len(feat_list[0])
+    assert c_win_feat == c_list_feat, "len(feat_win[0]) == len(feat_list[0]) (%i != %i)" %(c_win_feat, c_list_feat)
+
+    # If model object given, set model_path to model.
+    model = model_path
+    # If load_model set, treat model_path as path to model file and load model.
+    if load_model:
+        # Define and load model.
+        model = define_model(args, device,
+                             opt_dic=model_hp_dic)
+        model.load_state_dict(torch.load(model_path))
+
+    # Batch size.
+    batch_size = args.batch_size
+    if model_hp_dic:
+        batch_size = model_hp_dic["batch_size"]
+
+    # Number of sliding windows.
+    n_sl_win = (len_feat_list - len_win) + 1
+    # All new mutated feature lists.
+    all_mut_feat = []
+
+    # Create mutated sequences by inserting worst window in sliding window fashion.
+    si = 0
+    # First add the original sequence / feature list to score.
+    all_mut_feat.append(torch.tensor(feat_list, dtype=torch.float))
+    for i1 in range(n_sl_win):
+        nfl = copy.deepcopy(feat_list)
+        for i2,fv in enumerate(feat_win):
+            pos = i2 + si
+            nfl[pos] = feat_win[i2]
+        all_mut_feat.append(torch.tensor(nfl, dtype=torch.float))
+        si += 1
+    c_all_mut_feat = len(all_mut_feat)
+    assert c_all_mut_feat == n_sl_win+1, "c_all_mut_feat != n_sl_win+1"
+
+    # Predict on mutated sequences.
+    all_mut_feat_labels = [1]*c_all_mut_feat
+    predict_dataset = RNNDataset(all_mut_feat, all_mut_feat_labels)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=pad_collate, pin_memory=True)
+    mut_scores = test_scores(predict_loader, model, device)
+    c_mut_scores = len(mut_scores)
+    assert c_mut_scores == c_all_mut_feat, "c_mut_scores != c_all_mut_feat (%i != %i)" %(c_mut_scores, c_all_mut_feat)
+
+    # Original sequence score.
+    orig_sc = mut_scores.pop(0)
+
+    # Calculate mutation scores.
+    fl_sc = [0.0]*len_feat_list
+    fl_sc_avg_c = [0]*len_feat_list
+    for i1,sc in enumerate(mut_scores):
+        r1 = i1
+        r2 = i1 + len_win
+        for i2 in range(r1, r2):
+            fl_sc[i2] += sc - orig_sc
+            fl_sc_avg_c[i2] += 1
+
+    assert len(fl_sc) == len_feat_list, "len(fl_sc) != len_feat_list (%i != %i)" %(len(fl_sc), len_feat_list)
+
+    # Average score positions.
+    for i,sc in enumerate(fl_sc):
+        new_sc = sc / fl_sc_avg_c[i]
+        fl_sc[i] = new_sc
+
+    if avg_win_extlr:
+        # Return average-profiled window mutation scores.
+        return list_moving_win_avg_values(fl_sc,
+                                          win_extlr=avg_win_extlr,
+                                          method=1)
+    else:
+        # Return window mutation scores.
+        return fl_sc
+
+
+################################################################################
+
 def get_single_nt_perturb_scores(args, seq, feat_list,
                                  model_path, device,
                                  load_model=True,
-                                 min_max_norm=False,
                                  model_hp_dic=False):
     """
     Get perturbation scores list containing score changes for each
     nucleotide at each sequence position.
-
 
     seq:
         Nucleotide sequence string, corresponding to feat_list.
@@ -556,9 +714,6 @@ def get_single_nt_perturb_scores(args, seq, feat_list,
     """
     # Checks.
     assert len(seq) == len(feat_list), "seq length != feat_list length (%i != %i)" %(len(seq), len(feat_list))
-
-    # To deepcopy lists.
-    import copy
 
     # If model object given, set model_path to model.
     model = model_path
@@ -646,14 +801,36 @@ def get_single_nt_perturb_scores(args, seq, feat_list,
 
 ################################################################################
 
-def get_worst_scoring_window(profile_scores_ll, all_features, win_extlr):
+def get_sum_list_nt_perturb_scores(perturb_sc_list,
+                                   avg_win_extlr=False):
+    """
+    Take single nucleotide perturbation scores list (each list position
+    with 4 scores corresponding to mutated nucleotide), sum up scores,
+    and return summed scores list. Optionally, average-profile list before
+    returning (avg_win_extlr).
+    """
+    assert perturb_sc_list, "perturb_sc_list empty"
+    sum_sc_list = []
+    for scl in perturb_sc_list:
+        sum_sc_list.append(sum(scl))
+    if avg_win_extlr:
+        # Return average-profiled summed scores list.
+        return list_moving_win_avg_values(sum_sc_list,
+                                          win_extlr=avg_win_extlr,
+                                          method=1)
+    else:
+        # Return summed scores list.
+        return sum_sc_list
+
+
+################################################################################
+
+def get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr):
 
     """
-    !!! GIMME YOUR WORST !!!
-
     Go through profile scores list of lists (profile_scores_ll), to get
-    worst scoring window. Only look at full-length windows.
-    Return worst scoring feat_list block (stored as list, not tensor).
+    best and worst scoring window. Only look at full-length windows.
+    Return best+worst scoring feat_list block (stored as list, not tensor).
 
     profile_scores_ll:
         Profile scores list of lists (same order as all_features).
@@ -671,10 +848,14 @@ def get_worst_scoring_window(profile_scores_ll, all_features, win_extlr):
     # Full window length.
     full_win_len = win_extlr*2 + 1
 
-    # Go through profile scores list of lists, get worst scoring window.
+    # Find best + worst scoring window.
     worst_psl_idx = 0
     worst_psl_pos = 0
     worst_psl_score = 1000
+    best_psl_idx = 0
+    best_psl_pos = 0
+    best_psl_score = -1000
+
     for psl_idx,psl in enumerate(profile_scores_ll):
         l_psl = len(psl)
         for wi in range(l_psl):
@@ -689,14 +870,24 @@ def get_worst_scoring_window(profile_scores_ll, all_features, win_extlr):
                 worst_psl_score = psl_sc
                 worst_psl_idx = psl_idx
                 worst_psl_pos = wi
+            if psl_sc > best_psl_score:
+                best_psl_score = psl_sc
+                best_psl_idx = psl_idx
+                best_psl_pos = wi
 
-    # Extract and return worst scoring window.
+    # Extract best + worst scoring window.
     block_s = worst_psl_pos - win_extlr
     block_e = worst_psl_pos + win_extlr + 1
     worst_sc_block = all_features[worst_psl_idx][block_s:block_e]
     l_wsb = len(worst_sc_block)
-    assert len(worst_sc_block) == full_win_len, "len(worst_sc_block) != full_win_len (%i != %i)" %(l_wsb, full_win_len)
-    return worst_sc_block
+    assert l_wsb == full_win_len, "len(worst_sc_block) != full_win_len (%i != %i)" %(l_wsb, full_win_len)
+    block_s = best_psl_pos - win_extlr
+    block_e = best_psl_pos + win_extlr + 1
+    best_sc_block = all_features[best_psl_idx][block_s:block_e]
+    l_wsb = len(best_sc_block)
+    assert l_wsb == full_win_len, "len(best_sc_block) != full_win_len (%i != %i)" %(l_wsb, full_win_len)
+
+    return best_sc_block, worst_sc_block
 
 
 ################################################################################
@@ -787,6 +978,10 @@ def get_window_predictions(args, model_path, device,
 
     # Predict.
     win_scores = test_scores(predict_loader, model, device)
+
+    #win_size = win_extlr*2 + 1
+    print("Maximum window score: ", max(win_scores))
+    print("Maximum window score: ", min(win_scores))
 
     # Checks.
     c_win_scores = len(win_scores)

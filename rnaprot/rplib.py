@@ -8073,7 +8073,7 @@ negative (Negatives) sequence set, scored by the trained model.
 ## k-mer score distribution ### {#kmer-scores-plot}
 
 Score distribution of sequence k-mers (k = %i) found in the positive training set.
-k-mers are scored by the model, using the subgraph encompassing the k-mer.
+k-mers are scored by the model, using the sequence subregion encompassing the k-mer.
 
 """ %(kmer_size)
         mdtext += '<img src="' + plot_path + '" alt="k-mer score distribution"' + "\n"
@@ -11269,6 +11269,52 @@ def read_str_feat_into_dic(str_feat_file,
 
 ################################################################################
 
+def get_top_sc_list_pos(scores_list,
+                        get_lowest=False,
+                        padding=0):
+    """
+    Get highest (or if get_lowest lowest) scoring list position (zero-based).
+
+    scores_list:
+        1d list with scores.
+    get_lowest:
+        Set True to get lowest scoring position.
+    padding:
+        Do not look at first #padding and last #padding positions.
+
+    >>> sc_list = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
+    >>> get_top_sc_list_pos(sc_list)
+    0
+    >>> get_top_sc_list_pos(sc_list, padding=2)
+    2
+    >>> get_top_sc_list_pos(sc_list, get_lowest=True)
+    5
+
+    """
+    assert scores_list, "scores_list empty"
+    l_sc = len(scores_list)
+    assert l_sc >= (padding*2+1), "scores_list length needs to be >= padding*2+1 !"
+
+    top_pos = 0
+    top_sc = -1000
+    if get_lowest:
+        top_sc = 1000
+
+    for idx in range(padding, l_sc-padding):
+        pos_sc = scores_list[idx]
+        if get_lowest:
+            if pos_sc < top_sc:
+                top_sc = pos_sc
+                top_pos = idx
+        else:
+            if pos_sc > top_sc:
+                top_sc = pos_sc
+                top_pos = idx
+    return top_pos
+
+
+################################################################################
+
 def load_training_data(args,
                        store_tensors=True,
                        kmer2idx_dic=False,
@@ -12307,9 +12353,6 @@ def seq_to_plot_df(seq, alphabet,
     return plot_df
 
 
-
-
-
 ################################################################################
 
 def perturb_to_plot_df(perturb_sc_list):
@@ -12619,11 +12662,12 @@ def add_phylop_scores_plot(df, fig, gs, i,
 
 ################################################################################
 
-def make_feature_attribution_plot(seq, profile_scores, feat_list,
-                                  ch_info_dic, plot_out_file,
+def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
+                                  plot_out_file,
                                   sal_list=False,
-                                  perturb_sc_list=False,
-                                  seq_label_plot=False):
+                                  single_pert_list=False,
+                                  best_win_pert_list=False,
+                                  worst_win_pert_list=False):
     """
     Make a feature attribution plot, showing for each sequence position
     the importance score, as well as additional features in subplots.
@@ -12636,11 +12680,19 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     import matplotlib.gridspec as gridspec
     import logomaker
 
+remove:
+profile_scores
+seq_label_plot
+
+perturb_sc_list to single_pert_list
+
+avg_perturb_sc_list worst_win_pert_list
+
+best_win_pert_list
     """
 
     # Checks.
     assert seq, "given seq empty"
-    assert profile_scores, "given profile_scores list empty"
     assert feat_list, "given feat_list list empty"
     assert ch_info_dic, "given ch_info_dic list empty"
     assert plot_out_file, "given plot_out_file empty"
@@ -12650,11 +12702,12 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     # Dataframe for importance scores.
     seq_alphabet = ["A", "C", "G", "U"]
 
-    #seq_alphabet = ch_info_dic["fa"][2]
-    is_df = seq_to_plot_df(seq, seq_alphabet, scores=profile_scores)
+    #is_df = seq_to_plot_df(seq, seq_alphabet, scores=profile_scores)
+    sl_df = seq_to_plot_df(seq, seq_alphabet)
+
     # Number of plots.
     n_subplots = 1
-    height_ratios = [2]
+    height_ratios = [1]
 
     if sal_list:
         assert len(seq) == len(sal_list), "len(seq) != len(sal_list)"
@@ -12662,15 +12715,21 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
         n_subplots += 1
         height_ratios.append(1)
 
-    if perturb_sc_list:
-        assert len(seq) == len(perturb_sc_list), "len(seq) != len(perturb_sc_list)"
-        pert_df = perturb_to_plot_df(perturb_sc_list)
+    if single_pert_list:
+        assert len(seq) == len(single_pert_list), "len(seq) != len(single_pert_list)"
+        sing_pert_df = perturb_to_plot_df(single_pert_list)
         n_subplots += 1
         height_ratios.append(2)
 
-    # Optional sequence label plot.
-    if seq_label_plot:
-        sl_df = seq_to_plot_df(seq, seq_alphabet)
+    if worst_win_pert_list:
+        assert len(seq) == len(worst_win_pert_list), "len(seq) != len(worst_win_pert_list)"
+        worst_win_pert_df = seq_to_plot_df(seq, seq_alphabet, scores=worst_win_pert_list)
+        n_subplots += 1
+        height_ratios.append(1)
+
+    if best_win_pert_list:
+        assert len(seq) == len(best_win_pert_list), "len(seq) != len(best_win_pert_list)"
+        best_win_pert_df = seq_to_plot_df(seq, seq_alphabet, scores=best_win_pert_list)
         n_subplots += 1
         height_ratios.append(1)
 
@@ -12690,9 +12749,13 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
     # Plot subplots.
     i_plot = 0
     color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
-    add_importance_scores_plot(is_df, fig, gs, i_plot,
-                               color_dict=color_dict,
-                               y_label_size=5.5)
+
+    # Plot sequence label plot first.
+    add_label_plot(sl_df, fig, gs, i_plot, color_dict=color_dict, y_label="sequence",
+                   y_label_size=4)
+    # add_importance_scores_plot(is_df, fig, gs, i_plot,
+    #                            color_dict=color_dict,
+    #                            y_label_size=5.5)
 
     # Saliency plot.
     if sal_list:
@@ -12700,22 +12763,31 @@ def make_feature_attribution_plot(seq, profile_scores, feat_list,
         add_saliency_scores_plot(sal_df, fig, gs, i_plot,
                                  color_dict=color_dict,
                                  y_label="saliency",
-                                 y_label_size=5.5)
+                                 y_label_size=4)
 
-    # Saliency plot.
-    if perturb_sc_list:
+    # Single position perturbation scores plot.
+    if single_pert_list:
         i_plot += 1
-        add_saliency_scores_plot(pert_df, fig, gs, i_plot,
+        add_saliency_scores_plot(sing_pert_df, fig, gs, i_plot,
                                  color_dict=color_dict,
-                                 y_label="mutation scores",
-                                 y_label_size=5.5)
+                                 y_label="single_mut",
+                                 y_label_size=4)
 
-    # Plot optional sequence label plot.
-    if seq_label_plot:
+    # Worst window perturbation scores plot.
+    if worst_win_pert_list:
         i_plot += 1
-        color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
-        add_label_plot(sl_df, fig, gs, i_plot, color_dict=color_dict, y_label="sequence",
-                       y_label_size=4)
+        add_saliency_scores_plot(worst_win_pert_df, fig, gs, i_plot,
+                                 color_dict=color_dict,
+                                 y_label="worst_win_mut",
+                                 y_label_size=4)
+
+    # Best window perturbation scores plot.
+    if best_win_pert_list:
+        i_plot += 1
+        add_saliency_scores_plot(best_win_pert_df, fig, gs, i_plot,
+                                 color_dict=color_dict,
+                                 y_label="best_win_mut",
+                                 y_label_size=4)
 
     """
     Format of ch_info_dic:
