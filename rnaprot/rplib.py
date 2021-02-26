@@ -7757,26 +7757,30 @@ def get_jaccard_index(list1, list2):
 
 ################################################################################
 
-def create_eval_kmer_score_kde_plot(set_scores, out_plot,
-                                    set_label="Positives",
-                                    x_label="k-mer score",
-                                    y_label="Density",
-                                    theme=1):
+def create_eval_rank_vs_sc_plot(ws_scores, out_plot,
+                                x_label="site rank",
+                                y_label="whole-site score",
+                                theme=1):
     """
-    Create rnaprot eval kdeplot, plotting density for set of k-mer scores.
+    Plot rank of whole-site score (x-axis) vs score (y-axis).
 
     """
-    assert set_scores, "set_scores empty"
-    data = {'score': []}
-    data['score'] += set_scores
-    df = pd.DataFrame (data, columns = ['score'])
+    assert ws_scores, "ws_scores empty"
+    data = {'score': [], 'rank' : []}
+    ws_scores.sort(reverse=True)
+    for i,sc in enumerate(ws_scores):
+        rank = i + 1
+        data['score'].append(sc)
+        data['rank'].append(rank)
+
+    df = pd.DataFrame (data, columns = ['score', 'rank'])
 
     if theme == 1:
         # Make plot.
         sns.set(style="darkgrid")
         fig, ax = plt.subplots()
-        sns.kdeplot(x="score", data=df, color='#69e9f6')
-        fig.set_figwidth(5)
+        sns.lineplot(data=df, x='rank', y='score', color='#69e9f6')
+        fig.set_figwidth(6)
         fig.set_figheight(4)
         ax.set(xlabel=x_label)
         ax.set_ylabel(y_label)
@@ -7791,9 +7795,66 @@ def create_eval_kmer_score_kde_plot(set_scores, out_plot,
         # Make plot.
         sns.set(style="darkgrid", rc={ "axes.labelcolor": text_color, "text.color": text_color, "xtick.color": text_color, "ytick.color": text_color, "grid.color": plot_color, "axes.edgecolor": plot_color})
         fig, ax = plt.subplots()
-        sns.kdeplot(x="score", data=df, color='blue')
-        fig.set_figwidth(5)
+        sns.lineplot(data=df, x='rank', y='score', color='blue')
+        fig.set_figwidth(6)
         fig.set_figheight(4)
+        ax.set(xlabel=x_label)
+        ax.set_ylabel(y_label)
+        #ax.tick_params(axis='x', labelsize=18)
+        #ax.tick_params(axis='y', labelsize=14)
+        fig.savefig(out_plot, dpi=150, bbox_inches='tight', transparent=True)
+
+
+################################################################################
+
+def create_eval_kmer_score_kde_plot(set_scores, out_plot,
+                                    set_label="Positives",
+                                    x_label="k-mer score",
+                                    y_label="Density",
+                                    fig_width=5,
+                                    fig_height=4,
+                                    kde_bw_adjust=1,
+                                    kde_clip=False,
+                                    theme=1):
+    """
+    Create rnaprot eval kdeplot, plotting density for set of k-mer scores.
+
+    """
+    assert set_scores, "set_scores empty"
+    if not kde_clip:
+        max_sc = max(set_scores)
+        min_sc = min(set_scores)
+        kde_clip = [min_sc, max_sc]
+
+    data = {'score': []}
+    data['score'] += set_scores
+    df = pd.DataFrame (data, columns = ['score'])
+
+    if theme == 1:
+        # Make plot.
+        sns.set(style="darkgrid")
+        fig, ax = plt.subplots()
+        sns.kdeplot(x="score", data=df, color='#69e9f6',
+                    clip=kde_clip, bw_adjust=kde_bw_adjust)
+        fig.set_figwidth(fig_width)
+        fig.set_figheight(fig_height)
+        ax.set(xlabel=x_label)
+        ax.set_ylabel(y_label)
+        #ax.tick_params(axis='x', labelsize=18)
+        #ax.tick_params(axis='y', labelsize=14)
+        fig.savefig(out_plot, dpi=150, bbox_inches='tight')
+
+    elif theme == 2:
+        text_color = "#fcc826"
+        plot_color = "#fd3b9d"
+        box_color = "#2f19f3"
+        # Make plot.
+        sns.set(style="darkgrid", rc={ "axes.labelcolor": text_color, "text.color": text_color, "xtick.color": text_color, "ytick.color": text_color, "grid.color": plot_color, "axes.edgecolor": plot_color})
+        fig, ax = plt.subplots()
+        sns.kdeplot(x="score", data=df, color='blue',
+                    clip=kde_clip, bw_adjust=kde_bw_adjust)
+        fig.set_figwidth(fig_width)
+        fig.set_figheight(fig_height)
         ax.set(xlabel=x_label)
         ax.set_ylabel(y_label)
         #ax.tick_params(axis='x', labelsize=18)
@@ -7818,6 +7879,11 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
     assert set2_scores, "set2_scores empty"
     set1_c = len(set1_scores)
     set2_c = len(set2_scores)
+    # min+max for clipping.
+    max_sc = max([max(set1_scores),max(set2_scores)])
+    min_sc = min([min(set1_scores),min(set2_scores)])
+    kde_clip = [min_sc, max_sc]
+
     # assert set1_c == set2_c, "differing set sizes for set1_c and set2_c (%i != %i)" %(set1_c, set2_c)
     data = {'set': [], 'score': []}
     data['set'] += set1_c*[set1_label] + set2_c*[set2_label]
@@ -7828,11 +7894,14 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
         # Make plot.
         sns.set(style="darkgrid")
         fig, ax = plt.subplots()
-        sns.kdeplot(x="score", data=df, hue="set", palette=["#69e9f6", "#f154b2"])
+        sns.kdeplot(x="score", data=df, hue="set", clip=kde_clip, legend=False,
+                        palette=["#69e9f6", "#f154b2"])
         fig.set_figwidth(5)
         fig.set_figheight(4)
         ax.set(xlabel=x_label)
         ax.set_ylabel(y_label)
+        #ax.legend(title='Smoker', loc='upper right', labels=['Hell Yeh', 'Nah Bruh'])
+        ax.legend(loc='upper right', labels=['Negatives', 'Positives'], framealpha=0.4)
         #ax.tick_params(axis='x', labelsize=18)
         #ax.tick_params(axis='y', labelsize=14)
         fig.savefig(out_plot, dpi=150, bbox_inches='tight')
@@ -7845,11 +7914,13 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
         sns.set(style="darkgrid", rc={ "axes.labelcolor": text_color, "text.color": text_color, "xtick.color": text_color, "ytick.color": text_color, "grid.color": plot_color, "axes.edgecolor": plot_color})
         fig, ax = plt.subplots()
         # aqua, deepskyblue
-        sns.kdeplot(x="score", data=df, hue="set", palette=["blue", "deepskyblue"])
+        sns.kdeplot(x="score", data=df, hue="set", clip=kde_clip, legend=False,
+                    palette=["blue", "deepskyblue"])
         fig.set_figwidth(5)
         fig.set_figheight(4)
         ax.set(xlabel=x_label)
         ax.set_ylabel(y_label)
+        ax.legend(loc='upper right', labels=['Negatives', 'Positives'], framealpha=0.2)
         #ax.tick_params(axis='x', labelsize=18)
         #ax.tick_params(axis='y', labelsize=14)
         fig.savefig(out_plot, dpi=150, bbox_inches='tight', transparent=True)
@@ -7872,9 +7943,9 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   kmer2bestmm_dic=False,
                                   ch_info_dic=False,
                                   kmer_size=5,
-                                  top_motif_file_dic=False,
-                                  bottom_motif_file_dic=False,
                                   kmer_top_n=25,
+                                  worst_win_pos_dic=False,
+                                  worst_win_id2sc_dic=False,
                                   onlyseq=True,
                                   add_ws_scores=False,
                                   idx2id_dic=False,
@@ -7932,14 +8003,18 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     # Plot files.
     ws_sc_plot = "whole_site_scores_kde_plot.png"
     kmer_sc_plot = "kmer_scores_kde_plot.png"
+    rank_vs_sc_plot = "rank_vs_ws_score_plot.png"
     avg_best_kmer_kde_plot = "avg_best_kmer_scores_kde_plot.png"
     avg_best_kmer_scatter_plot = "avg_best_kmer_scores_scatter_plot.png"
     model_comp_plot = "model_comparison_plot.html"
+    site_reg_imp_plot = "site_reg_imp_plot.png"
     ws_sc_plot_out = plots_out_folder + "/" + ws_sc_plot
     kmer_sc_plot_out = plots_out_folder + "/" + kmer_sc_plot
+    rank_vs_sc_plot_out = plots_out_folder + "/" + rank_vs_sc_plot
     model_comp_plot_out = plots_out_folder + "/" + model_comp_plot
     avg_best_kmer_kde_plot_out = plots_out_folder + "/" + avg_best_kmer_kde_plot
     avg_best_kmer_scatter_plot_out = plots_out_folder + "/" + avg_best_kmer_scatter_plot
+    site_reg_imp_plot_out = plots_out_folder + "/" + site_reg_imp_plot
 
     # Logo paths.
     logo1_path = rplib_path + "/content/logo1.png"
@@ -7987,7 +8062,8 @@ h3 {color:#fd3b9d;}
 List of available model evaluation statistics generated
 by RNAProt (rnaprot eval):
 
-- [Whole-site score distribution](#ws-scores-plot)"""
+- [Whole-site score distributions](#ws-scores-plot)
+- [Site region importance distribution](#site-reg-imp-plot)"""
     if onlyseq:
         mdtext += "\n"
         mdtext += "- [k-mer score distribution](#kmer-scores-plot)"
@@ -8008,8 +8084,11 @@ by RNAProt (rnaprot eval):
     Whole-site score distributions for positives and negatives.
 
     """
+    c_pos_sites = len(ws_scores)
+    c_neg_sites = len(neg_ws_scores)
+
     print("Generate whole-site scores plot .. ")
-    # Make whole-site score distributions for positives and negatives.
+    # Plot whole-site score distributions for positives and negatives.
     create_eval_kde_plot(ws_scores, neg_ws_scores, ws_sc_plot_out,
                          set1_label="Positives",
                          set2_label="Negatives",
@@ -8019,7 +8098,7 @@ by RNAProt (rnaprot eval):
     plot_path = plots_folder + "/" + ws_sc_plot
 
     mdtext += """
-## Whole-site score distribution ### {#ws-scores-plot}
+## Whole-site score distributions ### {#ws-scores-plot}
 
 Whole-site score distributions for the positive and negative sequence
 set, scored by the trained model. Since the model was trained on these
@@ -8031,8 +8110,71 @@ sequences (given a sufficient model performance).
     mdtext += 'title="Whole-site score distributions" width="500" />' + "\n"
     mdtext += """
 
-**Figure:** Whole-site score distributions for the positive (Positives) and
-negative (Negatives) sequence set, scored by the trained model.
+**Figure:** Whole-site score distributions for the positive (Positives, %i sites)
+and negative (Negatives, %i sites) sequence set, scored by the trained model.
+
+&nbsp;
+
+""" %(c_pos_sites, c_neg_sites)
+
+    # # Plot whole-site scores vs rank plot.
+    # if onlyseq:
+    #     # If onlyseq, make interactive plot including add infos.
+    #
+    # else:
+
+    create_eval_rank_vs_sc_plot(ws_scores, rank_vs_sc_plot_out,
+                                x_label="site rank",
+                                y_label="whole-site score",
+                                theme=theme)
+    plot_path = plots_folder + "/" + rank_vs_sc_plot
+
+    mdtext += '<img src="' + plot_path + '" alt="rank vs ws score distribution"' + "\n"
+    mdtext += 'title="rank vs ws score distribution" width="550" />' + "\n"
+    mdtext += """
+
+**Figure:** Whole-site score distribution of the positive set, with whole-site
+scores on y-axis and site ranks on x-axis.
+
+&nbsp;
+
+"""
+
+    print("Generate site region importance plot .. ")
+    worst_pos_perc_list = []
+    for seq_id in worst_win_pos_dic:
+        l_seq = len(seqs_dic[seq_id])
+        worst_win_pos = worst_win_pos_dic[seq_id]
+        worst_pos_perc = (worst_win_pos / l_seq ) * 100
+        worst_pos_perc_list.append(worst_pos_perc)
+    assert worst_pos_perc_list, "worst_pos_perc_list empty"
+    kde_clip = [0, 100]
+    kde_bw_adjust = 0.4
+    create_eval_kmer_score_kde_plot(worst_pos_perc_list, site_reg_imp_plot_out,
+                                    x_label="Relative site position (%)",
+                                    y_label="Density",
+                                    fig_width=7,
+                                    fig_height=3,
+                                    kde_bw_adjust=kde_bw_adjust,
+                                    kde_clip=kde_clip,
+                                    theme=theme)
+    plot_path = plots_folder + "/" + site_reg_imp_plot
+
+    mdtext += """
+## Site region importance distribution ### {#site-reg-imp-plot}
+
+This plot shows, averaged over all positive sites with model score > 0,
+the distribution of site regions that contribute most to positive
+prediction scores. Non-uniform distribution can occur depending
+on the type of trained network and input data.
+
+"""
+    mdtext += '<img src="' + plot_path + '" alt="site_reg_imp_distr"' + "\n"
+    mdtext += 'title="Site region importance distribution" width="650" />' + "\n"
+    mdtext += """
+
+**Figure:** Distribution of site regions that contribute most to positive
+prediction scores, averaged over all positive sites with model score > 0.
 
 &nbsp;
 
@@ -8066,6 +8208,7 @@ negative (Negatives) sequence set, scored by the trained model.
                                         set_label=set_label,
                                         x_label=x_label,
                                         y_label="Density",
+                                        kde_bw_adjust=1,
                                         theme=theme)
         plot_path = plots_folder + "/" + kmer_sc_plot
 
@@ -8091,7 +8234,7 @@ k-mers are scored by the model, using the sequence subregion encompassing the k-
 ## k-mer statistics ### {#kmer-stats}
 
 **Table:** Sequence k-mer statistics (score (sc) rank, k-mer score, k-mer count,
-count rank) for the top %i scoring sequence %i-mers (ranked by k-mer score).
+count rank) for the top %i scoring sequence %i-mers (ranked by descending k-mer score).
 
 """ %(kmer_top_n, kmer_size)
 
@@ -8099,6 +8242,25 @@ count rank) for the top %i scoring sequence %i-mers (ranked by k-mer score).
         mdtext += "| :-: | :-: | :-: | :-: | :-: |\n"
         sc_rank = 0
         for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=True):
+            sc_rank += 1
+            if sc_rank > kmer_top_n:
+                break
+            kmer_count_rank = kmer2rank_dic[kmer]
+            kmer_count = kmer2c_dic[kmer]
+            mdtext += "| %i | %s | %.6f | %i | %i |\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank)
+        mdtext += "\n&nbsp;\n&nbsp;\n"
+
+        mdtext += """
+
+**Table:** Sequence k-mer statistics (score (sc) rank, k-mer score, k-mer count,
+count rank) for the bottom %i scoring sequence %i-mers (ranked by ascending k-mer score).
+
+""" %(kmer_top_n, kmer_size)
+
+        mdtext += "| sc rank | &nbsp; k-mer &nbsp; | &nbsp; k-mer sc &nbsp; | k-mer count | k-mer count rank | \n"
+        mdtext += "| :-: | :-: | :-: | :-: | :-: |\n"
+        sc_rank = 0
+        for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=False):
             sc_rank += 1
             if sc_rank > kmer_top_n:
                 break
@@ -10665,6 +10827,27 @@ def get_valid_file_ending(s):
 
 ################################################################################
 
+def get_length_stats_from_seqs_dic(seqs_dic):
+    """
+    Get length stats from set of sequences stored in dictionary.
+    Return dictionary with stats.
+
+    """
+    assert seqs_dic, "given seqs_dic empty"
+    seq_len_list = []
+    for seq_id in seqs_dic:
+        seq_len_list.append(len(seqs_dic[seq_id]))
+    seq_stats_dic = {}
+    seq_stats_dic["mean"] = statistics.mean(seq_len_list)
+    seq_stats_dic["median"] = statistics.median(seq_len_list)
+    seq_stats_dic["max"] = max(seq_len_list)
+    seq_stats_dic["min"] = max(seq_len_list)
+    seq_stats_dic["stdev"] = statistics.stdev(seq_len_list)
+    return seq_stats_dic
+
+
+################################################################################
+
 def load_eval_data(args,
                    load_negatives=False,
                    store_tensors=True,
@@ -11274,6 +11457,7 @@ def get_top_sc_list_pos(scores_list,
                         padding=0):
     """
     Get highest (or if get_lowest lowest) scoring list position (zero-based).
+    Return position and score at this position.
 
     scores_list:
         1d list with scores.
@@ -11310,7 +11494,202 @@ def get_top_sc_list_pos(scores_list,
             if pos_sc > top_sc:
                 top_sc = pos_sc
                 top_pos = idx
-    return top_pos
+    return top_pos, top_sc
+
+
+################################################################################
+
+def get_fid2fidx_mappings(ch_info_dic):
+    """
+    Go through channel features, looking for numerical features in need
+    of standard deviation calculation. Map feature ID to feature channel
+    index. Return both-way mappings.
+
+    >>> ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'], 'pc.con': ['N', [3], ['phastcons_score'], 'prob']}
+    >>> get_fid2fidx_mappings(ch_info_dic)
+    0
+
+    """
+
+    stdev_fid2fidx_dic = {}
+    stdev_fidx2fid_dic = {}
+    for fid in ch_info_dic:
+        feat_type = ch_info_dic[fid][0] # C or N.
+        feat_idxs = ch_info_dic[fid][1] # channel numbers occupied by feature.
+        l_idxs = len(feat_idxs)
+        if feat_type == "N" and l_idxs == 1:
+            stdev_fid2fidx_dic[fid] = feat_idxs[0]
+            stdev_fidx2fid_dic[feat_idxs[0]] = fid
+    return stdev_fid2fidx_dic, stdev_fidx2fid_dic
+
+
+################################################################################
+
+def gp_eval_make_motif_plots(args, motif_plots_folder,
+                             ch_info_dic, all_features,
+                             si2sc_dic, idx2id_dic, seqs_dic,
+                             worst_win_pert_dic, worst_win_pos_dic,
+                             calc_stdev=True,
+                             motif_file_dic=None,
+                             motif_mode=1):
+
+    """
+    Make some motif plots.
+
+    calc_stdev:
+        If standard deviations for numerical features should be calculated
+        for plotting.
+    motif_mode:
+        1 : take top whole-site scores, and generate weighted motif.
+        2 : take top whole-site scores, and generate non-weighted motif.
+        3 : take top window mutation scores, and generate non-weighted
+            motif.
+
+    """
+
+    # Number of sequence channels.
+    n_feat_matrix = args.n_feat
+    if args.embed:
+        n_feat_matrix = args.n_feat + 3
+
+    weighted_motif = False
+    if motif_mode == 1:
+        weighted_motif = True
+    map_nt2idx_dix = {"A" : 0, "C" : 1, "G" : 2, "U" : 3}
+    win_info_str = "w%i" %(args.win_size)
+    # Plot format.
+    plot_format = "png"
+    if args.plot_format == 2:
+        plot_format = "pdf"
+
+    # rev_sort meaning from high to low scores.
+    rev_sort = True
+    if motif_mode == 3:
+        rev_sort = False
+
+    # Numerical features with standard deviations.
+    stdev_fid2fidx_dic, stdev_fidx2fid_dic = get_fid2fidx_mappings(ch_info_dic)
+
+    # For each motif size.
+    for motif_size in args.list_motif_sizes:
+
+        # Motif center position extension.
+        motif_extlr = int(motif_size / 2)
+
+        # For each number of top sites.
+        for nr_top_sites in args.list_nr_top_sites:
+
+            print("Create motif (size %i) from top %i sites ... " %(motif_size, nr_top_sites))
+
+            site_count = 0
+            c_min_len_skipped = 0
+
+            # Init motif score matrix.
+            motif_matrix = []
+
+            for i in range(motif_size):
+                motif_matrix.append([0.0]*n_feat_matrix)
+            l_mm = len(motif_matrix) # Motif length.
+            l_sv = len(motif_matrix[0]) # site vector length.
+
+            # Standard deviations for numerical features.
+            fid2sc_dic = {}
+            if calc_stdev:
+                for fid in stdev_fid2fidx_dic:
+                    fid2sc_dic[fid] = []
+                    for i in range(motif_size):
+                        fid2sc_dic[fid].append([])
+
+            # Brick by brick.
+            for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=rev_sort):
+
+                # Get feature list for site.
+                if args.embed:
+                    feat_list = conv_embed_feature_list(all_features[si])
+                else:
+                    feat_list = all_features[si]
+
+                seq_id = idx2id_dic[si]
+                seq = seqs_dic[seq_id]
+                seq_list = list(seq)
+                l_seq = len(seq)
+
+                worst_win_pert_list = worst_win_pert_dic[seq_id]
+                max_pos = worst_win_pos_dic[seq_id] # 0-based.
+
+                # Minimum sequence length for extracting motifs.
+                site_l = len(worst_win_pert_list)
+                assert site_l == l_seq, "site_l != l_seq (%i != %i)" %(site_l, l_seq)
+                if site_l < (motif_extlr*2 + 1):
+                    c_min_len_skipped += 1
+                    continue # should be captured by if not max_pos check already.
+
+                # Extract max_pos motif brick.
+                s_brick = max_pos - motif_extlr
+                e_brick = max_pos + motif_extlr + 1 # 1-based, thus + 1.
+                worst_sc_brick = worst_win_pert_list[s_brick:e_brick]
+                seq_brick = seq_list[s_brick:e_brick]
+
+                assert s_brick >= 0, "s_brick <= 0 (s_brick = %i) which should not happen since max_pos selection takes care of this" %(s_brick)
+                assert e_brick <= site_l, "e_brick > site length (%i > %i) which should not happen since max_pos selection takes care of this" %(e_brick, site_l)
+
+                start_j = 0
+                if weighted_motif:
+                    # Update sequence features in weigthed fashion.
+                    for i in range(l_mm):
+                        worst_sc = worst_sc_brick[i]
+                        worst_sc_nt = seq_brick[i]
+                        j = map_nt2idx_dix[worst_sc_nt]
+                        motif_matrix[i][j] = motif_matrix[i][j] - worst_sc
+                    start_j = 4
+                for i in range(l_mm):
+                    # If weighted_motif=True, just update additional features.
+                    for j in range(start_j, l_sv):
+                        motif_matrix[i][j] += feat_list[s_brick:e_brick][i][j]
+                        # For one-channel numerical features, store scores to calculate stdev.
+                        if calc_stdev:
+                            if j in stdev_fidx2fid_dic:
+                                fid2sc_dic[stdev_fidx2fid_dic[j]][i].append(feat_list[s_brick:e_brick][i][j])
+
+                # Increment site count.
+                site_count += 1
+                if site_count >= nr_top_sites:
+                    break
+
+            assert site_count, "no top motif information extracted for motif_size %i and nr_top_sites %i (site_count = 0)" %(motif_size, nr_top_sites)
+
+            print("# motif sites extracted:    %i" %(site_count))
+            if c_min_len_skipped:
+                print("# sites skipped (min_len):  %i" %(c_min_len_skipped))
+
+            # Average motif matrix values.
+            start_j = 0
+            if weighted_motif:
+                for i in range(l_mm):
+                    # Sum of nucleotide scores at motif position i.
+                    pos_sum = sum(motif_matrix[i][0:4])
+                    # Normalize each nucleotide score by sum of scores.
+                    for j in range(0,4):
+                        motif_matrix[i][j] = motif_matrix[i][j] / pos_sum
+                start_j = 4
+            for i in range(l_mm):
+                for j in range(start_j, l_sv):
+                    motif_matrix[i][j] = motif_matrix[i][j] / site_count
+
+            # Calculate standard deviations for one-channel numerical features at each motif position.
+            fid2stdev_dic = {}
+            if calc_stdev:
+                for fid in fid2sc_dic:
+                    fid2stdev_dic[fid] = []
+                    for i in range(l_mm):
+                        fid2stdev_dic[fid].append(statistics.stdev(fid2sc_dic[fid][i]))
+
+            # Plot motif.
+            motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
+            make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
+                                fid2stdev_dic=fid2stdev_dic)
+            if motif_file_dic is not None:
+                motif_file_dic[motif_out_file] = 1
 
 
 ################################################################################
