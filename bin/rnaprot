@@ -4,7 +4,6 @@ from rnaprot.RNNNets import RNNModel, RNNDataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from torch.nn import BCEWithLogitsLoss
-#from torch.nn.functional import nll_loss
 from rnaprot import rnn_util
 from rnaprot import rplib
 import numpy as np
@@ -1452,11 +1451,11 @@ def main_train(args):
     # Get whole-site scores of positive set for final model.
     print("Score all positive sites with trained model ... ")
     # Load positives again.
-    pos_seqs_dic, idx2id_dic, pos_feat, ch_info_dic = rplib.load_eval_data(args,
+    pos_seqs_dic, idx2id_dic, pos_lab, pos_feat = rplib.load_training_data(args,
                                                         kmer2idx_dic=kmer2idx_dic,
+                                                        load_only_pos=True,
                                                         store_tensors=True)
-    pos_labels = [1]*len(pos_feat)
-    predict_dataset = RNNDataset(pos_feat, pos_labels)
+    predict_dataset = RNNDataset(pos_feat, pos_lab)
     predict_loader = DataLoader(dataset=predict_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
     model = rnn_util.define_model(args, device,
                                   opt_dic=opt_dic)
@@ -1479,6 +1478,9 @@ def main_train(args):
         if seq_id not in pos_seqs_dic:
             neg_seqs_dic[seq_id] = seqs_dic[seq_id]
     neg_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(neg_seqs_dic)
+
+
+    # hallo 1234
 
     # Write model params file.
     PAROUT = open(final_params_path, "w")
@@ -1728,8 +1730,8 @@ def main_eval(args):
 
     # Check numbers of sites to extract.
     max_nr_top_sites = max(args.list_nr_top_sites)
-    assert args.nr_top_profiles <= l_dataset, "set --nr-top-profiles > number of positive sites! Pleaser lower --nr-top-profiles"
-    assert args.nr_top_profiles <= max_nr_top_sites, "set --nr-top-profiles > maximum --nr-top-sites. Please adjust --nr-top-profiles or --nr-top-sites"
+    assert args.nr_top_profiles <= l_dataset, "set --nr-top-profiles > number of positive sites! Pleaser lower --nr-top-profiles" %()
+    assert args.nr_top_profiles <= max_nr_top_sites, "set --nr-top-profiles > max(--nr-top-sites) (%i > %i). Please adjust --nr-top-profiles or --nr-top-sites" %(args.nr_top_profiles, max_nr_top_sites)
     assert l_dataset >= max_nr_top_sites, "positive dataset size < maximum given --nr-top-sites. Please lower max --nr-top-sites"
 
     if args.list_lookup_ids:
@@ -1785,10 +1787,12 @@ def main_eval(args):
     c_ws_scores = len(ws_scores)
     assert c_ws_scores == c_all_feat, "# whole-site scores != size features list (%i != %i)" %(c_ws_scores, c_all_feat)
 
-    # Connect whole-site indices to scores.
+    # Connect whole-site indices and IDs to scores.
     si2sc_dic = {}
-    for i, sc in enumerate(ws_scores):
-        si2sc_dic[i] = sc
+    id2wssc_dic = {}
+    for idx, sc in enumerate(ws_scores):
+        si2sc_dic[idx] = sc
+        id2wssc_dic[idx2id_dic[idx]] = sc
     assert len(si2sc_dic) == len(seqs_dic), "length si2sc_dic != length seqs_dic"
 
     """
@@ -2055,6 +2059,16 @@ def main_eval(args):
     else:
         print("Plot top %i profiles and extract top positive site stats  ... " %(args.nr_top_profiles))
 
+    # Output sorted whole-site scores table (all sites).
+    for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
+        site_count += 1
+        seq_id = idx2id_dic[si]
+        seq = seqs_dic[seq_id]
+        RSOUT.write("%i\t%s\t%f\t%s\n" %(site_count, seq_id, ws_sc, seq))
+    RSOUT.close()
+
+    # Extract site stats (top sites or all positive sites only).
+    site_count = 0
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
 
         profile_scores = profile_scores_ll[si]
@@ -2065,9 +2079,6 @@ def main_eval(args):
         seq_id = idx2id_dic[si]
         seq = seqs_dic[seq_id]
         l_sc = len(profile_scores)
-
-        # Store whole-site rank + ID + score in file.
-        RSOUT.write("%i\t%s\t%f\t%s\n" %(site_count, seq_id, ws_sc, seq))
 
         # Decide what to extract for given site.
         sal_list = False
@@ -2129,16 +2140,14 @@ def main_eval(args):
                                         single_pert_list=single_pert_list,
                                         worst_win_pert_list=worst_win_pert_list)
 
-        # if args.report:
-        #     if not site_count % 500:
-        #         print("%i sites processed" %(site_count))
-        #     if ws_sc < 0:
-        #         break
-        # else:
-        if site_count >= max_nr_top_sites:
-            break
-
-    RSOUT.close()
+        if args.report:
+            if not site_count % 500:
+                print("%i sites processed" %(site_count))
+            if ws_sc < 0:
+                break
+        else:
+            if site_count >= max_nr_top_sites:
+                break
 
     """
     Bottom profiles.
@@ -2540,7 +2549,7 @@ def main_eval(args):
                 avg_sc = kmer2sc_dic[kmer]
                 avg_sc_stdev = kmer2scstdev_dic[kmer]
                 avg_sc_rank = kmer2avgscrank_dic[kmer]
-                if lookup_kmer and kmer == lookup_kmer:
+                if lookup_kmer and kmworst_win_si2sc_dicer == lookup_kmer:
                     LKSOUT.write("%i\t%i\t%s\t%.6f\t%.6f\t%.6f\t%i\t%i\n" %(sc_rank, avg_sc_rank, kmer, sc, avg_sc, avg_sc_stdev, kmer_count, kmer_count_rank))
                 else:
                     KSOUT.write("%i\t%i\t%s\t%.6f\t%.6f\t%.6f\t%i\t%i\n" %(sc_rank, avg_sc_rank, kmer, sc, avg_sc, avg_sc_stdev, kmer_count, kmer_count_rank))
@@ -2581,6 +2590,7 @@ def main_eval(args):
                                            ch_info_dic=ch_info_dic,
                                            kmer_top_n=c_top_kmers,
                                            add_ws_scores=add_ws_scores,
+                                           id2wssc_dic=id2wssc_dic,
                                            idx2id_dic=idx2id_dic,
                                            seqs_dic=seqs_dic,
                                            worst_win_pos_dic=worst_win_pos_dic,

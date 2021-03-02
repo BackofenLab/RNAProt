@@ -125,7 +125,6 @@ class MyWorker(Worker):
         self.val_dataset = val_dataset
         self.n_class = args.n_class
         self.n_feat = args.n_feat
-        self.embed = args.embed
         self.embed_vocab_size = args.embed_vocab_size
         self.add_feat = args.add_feat
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -146,8 +145,8 @@ class MyWorker(Worker):
                          bidirect=config['bidirect'],
                          dropout_rate=config['dropout_rate'],
                          add_fc_layer=config['add_fc_layer'],
-                         embed_dim=config['embed_dim'],
-                         embed=self.embed,
+                         embed_dim=config['embed_dim'] if 'embed_dim' in config else 10,
+                         embed=config['embed'],
                          embed_vocab_size=self.embed_vocab_size,
                          add_feat=self.add_feat).to(self.device)
 
@@ -181,18 +180,19 @@ class MyWorker(Worker):
         cs = CS.ConfigurationSpace()
         lr = CSH.UniformFloatHyperparameter('learn_rate', lower=1e-6, upper=1e-1, default_value='1e-3', log=True)
         wd = CSH.UniformFloatHyperparameter(name='weight_decay', lower=1e-8, upper=1e-1, default_value='5e-4', log=True)
+        embed = CSH.CategoricalHyperparameter('embed', choices=[False, True], default_value=False)
         embed_dim = CSH.UniformIntegerHyperparameter('embed_dim', lower=4, upper=24, default_value=10)
         n_rnn_dim = CSH.CategoricalHyperparameter('n_rnn_dim', choices=[32, 64, 96], default_value=32)
-        n_rnn_layers = CSH.CategoricalHyperparameter('n_rnn_layers', choices=[1, 2], default_value=2)
+        n_rnn_layers = CSH.CategoricalHyperparameter('n_rnn_layers', choices=[1, 2], default_value=1)
         dr = CSH.UniformFloatHyperparameter('dropout_rate', lower=0.0, upper=0.8, default_value=0.5, log=False)
-        bidirect = CSH.CategoricalHyperparameter('bidirect', choices=[False, True], default_value=True)
-        add_fc_layer = CSH.CategoricalHyperparameter('add_fc_layer', choices=[False, True], default_value=True)
+        bidirect = CSH.CategoricalHyperparameter('bidirect', choices=[False, True], default_value=False)
+        add_fc_layer = CSH.CategoricalHyperparameter('add_fc_layer', choices=[False, True], default_value=False)
         rnn_type = CSH.CategoricalHyperparameter('rnn_type', choices=[1, 2], default_value=1)
         batch_size = CSH.CategoricalHyperparameter('batch_size', choices=[30, 50, 80], default_value=50)
-        if self.embed:
-            cs.add_hyperparameters([lr, wd, embed_dim, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
-        else:
-            cs.add_hyperparameters([lr, wd, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
+        cs.add_hyperparameters([lr, wd, embed, embed_dim, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
+        # Use embed_dim only if embed = True.
+        cond = CS.EqualsCondition(embed_dim, embed, True)
+        cs.add_condition(cond)
         return cs
 
 

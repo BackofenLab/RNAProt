@@ -7958,6 +7958,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   onlyseq=True,
                                   win_extlr=False,
                                   add_ws_scores=False,
+                                  id2wssc_dic=False,
                                   idx2id_dic=False,
                                   seqs_dic=False,
                                   theme=1,
@@ -7988,6 +7989,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     assert kmer2c_dic, "kmer2c_dic needed"
     assert kmer2scrank_dic, "kmer2scrank_dic needed"
     assert idx2id_dic, "idx2id_dic needed"
+    assert id2wssc_dic, "id2wssc_dic needed"
     assert win_extlr, "win_extlr needed"
     if not onlyseq:
         assert kmer2bestsc_dic, "kmer2bestsc_dic needed in case of additional features"
@@ -8018,7 +8020,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     avg_best_kmer_scatter_plot = "avg_best_kmer_scores_scatter_plot.png"
     model_comp_plot = "model_comparison_plot.html"
     site_reg_imp_plot = "site_reg_imp_plot.png"
-    ws_vs_win_sc_plotly_plot =  "ws_vs_win_sc_plotly_plot.html"
+    rank_vs_sc_plotly_plot =  "rank_vs_sc_plotly.html"
     ws_sc_plot_out = plots_out_folder + "/" + ws_sc_plot
     kmer_sc_plot_out = plots_out_folder + "/" + kmer_sc_plot
     rank_vs_sc_plot_out = plots_out_folder + "/" + rank_vs_sc_plot
@@ -8026,7 +8028,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     avg_best_kmer_kde_plot_out = plots_out_folder + "/" + avg_best_kmer_kde_plot
     avg_best_kmer_scatter_plot_out = plots_out_folder + "/" + avg_best_kmer_scatter_plot
     site_reg_imp_plot_out = plots_out_folder + "/" + site_reg_imp_plot
-    ws_vs_win_sc_plotly_plot_out = plots_out_folder + "/" + ws_vs_win_sc_plotly_plot
+    rank_vs_sc_plotly_plot_out = plots_out_folder + "/" + rank_vs_sc_plotly_plot
 
     # Logo paths.
     logo1_path = rplib_path + "/content/logo1.png"
@@ -8132,31 +8134,6 @@ and negative (Negatives, %i sites) sequence set, scored by the trained model.
 
 """ %(c_pos_sites, c_neg_sites)
 
-    # # Plot whole-site scores vs rank plot.
-    # if onlyseq:
-    #     # If onlyseq, make interactive plot including add infos.
-    #
-    # else:
-
-
-    if onlyseq:
-
-        create_ws_vs_worst_win_sc_plot(seqs_dic, idx2id_dic, ws_scores,
-                                       worst_win_pos_dic, worst_win_id2sc_dic,
-                                       ws_vs_win_sc_plotly_plot_out, plotly_js_path,
-                                       win_extlr=win_extlr,
-                                       theme=theme)
-        plot_path = plots_folder + "/" + ws_vs_win_sc_plotly_plot
-
-        mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
-        mdtext += '<iframe src="' + plot_path + '" width="1200" height="1200"></iframe>' + "\n"
-        mdtext += '</div>'
-        mdtext += """
-
-**Figure:** This is a figure.
-
-"""
-
     create_eval_rank_vs_sc_plot(ws_scores, rank_vs_sc_plot_out,
                                 x_label="site rank",
                                 y_label="whole-site score",
@@ -8173,6 +8150,44 @@ scores on y-axis and site ranks on x-axis.
 &nbsp;
 
 """
+
+    if onlyseq:
+        # Plot 3D plot, similar to create_eval_rank_vs_sc_plot.
+        win_size = win_extlr * 2 + 1
+        create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
+                                 worst_win_pos_dic, worst_win_id2sc_dic,
+                                 rank_vs_sc_plotly_plot_out, plotly_js_path,
+                                 x_label="site rank",
+                                 y_label="whole-site score",
+                                 z_label="mutation score diff",
+                                 win_extlr=win_extlr,
+                                 theme=theme)
+        plot_path = plots_folder + "/" + rank_vs_sc_plotly_plot
+
+        mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
+        mdtext += '<iframe src="' + plot_path + '" width="1200" height="1200"></iframe>' + "\n"
+        mdtext += '</div>'
+        mdtext += """
+
+**Figure:** Whole-site score distribution of the positive set (scores > 0),
+with whole-site scores on y-axis, site ranks by score on x-axis, and the highest
+window mutation score difference on z-axis. The score difference tells
+us how much the whole-site score can maximally change, considering all
+possible site window mutations in the respective site (stride = 1,
+window size = %i). To get this score difference, each sequence window of the
+site is mutated by exchanging the window with the lowest scoring window
+in the positive set. The window with the highest difference (lowest value) in scores
+(wildtype - mutated sequence score) is stored, and its center position
+(win_mut_center_pos), the window sequence (win_seq), the score difference
+(mutation score diff) is reported in the hover box, together with
+the site sequence and whole-site score. This plot can thus help to
+study the influence of certain site regions and their sequence
+content on prediction scores.
+
+&nbsp;
+
+""" %(win_size)
+
 
     print("Generate site region importance plot .. ")
     worst_pos_perc_list = []
@@ -8257,7 +8272,7 @@ k-mers are scored by the model, using the sequence subregion encompassing the k-
         mdtext += 'title="k-mer score distribution" width="500" />' + "\n"
         mdtext += """
 
-**Figure:** Score distribution of k-mers found in the positive training sequence set.
+**Figure:** Score distribution of k-mers found in the positive training set.
 
 &nbsp;
 
@@ -8533,90 +8548,70 @@ on the positive training set for the two input models. Model 1: model from
 
 ################################################################################
 
-def create_ws_vs_worst_win_sc_plot(seqs_dic, idx2id_dic, ws_scores,
-                                   worst_win_pos_dic, worst_win_id2sc_dic,
-                                   out_html, plotly_js,
-                                   win_extlr=5,
-                                   theme=1):
+def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
+                             worst_win_pos_dic, worst_win_id2sc_dic,
+                             out_html, plotly_js,
+                             x_label="site rank",
+                             y_label="whole-site score",
+                             z_label="mutation score diff",
+                             win_extlr=5,
+                             theme=1):
     """
-    Create whole-site vs worst window score scatter plot, with plotly.
+    Plot rank of whole-site score (x-axis) vs score (y-axis).
 
     """
 
-    ws_sc_df_id = "whole_site_score"
-    win_sc_df_id = "win_mut_score_diff"
-    win_pos_df_id = "win_mut_pos"
-    win_seq_df_id = "win_seq"
-    seq_df_id = "seq"
-    seq_id_df_id = "seq_id"
-    win_entr_df_id = "win_entropy"
+    ws_sc_df = "whole_site_score"
+    win_sc_df = "win_mut_score_diff"
+    win_pos_df = "win_mut_center_pos"
+    win_seq_df = "win_seq"
+    seq_df = "seq"
+    seq_id_df = "seq_id"
+    rank_df = "rank"
 
-    id2wssc_dic = {}
-    for idx,sc in enumerate(ws_scores):
-        idx2id_dic[idx]
-        id2wssc_dic[idx2id_dic[idx]] = sc
+    data = {ws_sc_df : [], win_sc_df : [], win_pos_df : [], win_seq_df : [], seq_df : [], seq_id_df : [], rank_df : []}
 
-    win_seqs_dic = {}
-    for seq_id in worst_win_pos_dic:
-        seq = seqs_dic[seq_id]
-        win_pos = worst_win_pos_dic[seq_id]
-        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
-        win_seqs_dic[seq_id] = win_seq
-
-    win_entr_dic = seqs_dic_calc_entropies(win_seqs_dic,
-                                           return_dic=True)
-
-    data = {ws_sc_df_id : [], win_sc_df_id : [], win_pos_df_id : [], win_seq_df_id : [], seq_df_id : [], seq_id_df_id : [], win_entr_df_id : []}
-    for seq_id in worst_win_id2sc_dic:
+    ws_rank = 0
+    for seq_id, ws_sc in sorted(id2wssc_dic.items(), key=lambda item: item[1], reverse=True):
+        ws_rank += 1
+        if ws_sc < 0 or seq_id not in worst_win_pos_dic:
+            break
         win_sc = worst_win_id2sc_dic[seq_id]
-        ws_sc = id2wssc_dic[seq_id]
-        win_pos = worst_win_pos_dic[seq_id]
+        win_pos = worst_win_pos_dic[seq_id] + 1 # make 1-based.
         seq = seqs_dic[seq_id]
         win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
-        win_entr = win_entr_dic[seq_id]
 
-        data[win_sc_df_id].append(win_sc)
-        data[ws_sc_df_id].append(ws_sc)
-        data[win_pos_df_id].append(win_pos)
-        data[win_seq_df_id].append(win_seq)
-        data[seq_df_id].append(seq)
-        data[seq_id_df_id].append(seq_id)
-        data[win_entr_df_id].append(win_entr)
+        data[win_sc_df].append(win_sc)
+        data[ws_sc_df].append(ws_sc)
+        data[win_pos_df].append(win_pos)
+        data[win_seq_df].append(win_seq)
+        data[seq_df].append(seq)
+        data[seq_id_df].append(seq_id)
+        data[rank_df].append(ws_rank)
 
-
-    df = pd.DataFrame(data, columns = [win_sc_df_id, ws_sc_df_id, win_pos_df_id, win_seq_df_id, seq_df_id, seq_id_df_id, win_entr_df_id])
+    df = pd.DataFrame(data, columns = [win_sc_df, ws_sc_df, win_pos_df, win_seq_df, seq_df, seq_id_df, rank_df])
 
     # Color of dots.
     dot_col = "#69e9f6"
     if theme == 2:
         dot_col = "blue"
 
-    plot = px.scatter_3d(df, x=ws_sc_df_id, y=win_sc_df_id, z=win_entr_df_id,
-                         hover_name=seq_id_df_id,
-                         hover_data=[win_pos_df_id, win_seq_df_id],
+    # Axis labels.
+    ax_labels_dic = {rank_df : x_label, ws_sc_df : y_label, win_sc_df : z_label}
+
+    plot = px.scatter_3d(df, x=rank_df, y=ws_sc_df, z=win_sc_df,
+                         hover_name=seq_id_df,
+                         labels=ax_labels_dic,
+                         hover_data=[win_pos_df, win_seq_df, seq_df],
                          color_discrete_sequence=[dot_col])
 
     plot.layout.template = 'seaborn'
-    plot.update_layout(hoverlabel=dict(font_size=12))
-    plot.update_traces(marker=dict(size=4))
-    plot.write_html(out_html,
-                    full_html=False,
-                    include_plotlyjs=plotly_js)
-
-
-"""
-    plot = px.scatter(data_frame=df, x=ws_sc_df_id, y=win_sc_df_id, hover_name=seq_id_df_id,
-                      hover_data=[win_pos_df_id, win_seq_df_id, seq_df_id],
-                      color_discrete_sequence=[dot_col])
-
-    plot.layout.template = 'seaborn'
-
     plot.update_layout(hoverlabel=dict(font_size=11))
-
+    plot.update_traces(marker=dict(size=3))
     plot.write_html(out_html,
                     full_html=False,
                     include_plotlyjs=plotly_js)
-"""
+
 
 ################################################################################
 
@@ -11953,6 +11948,7 @@ def load_training_data(args,
                        store_tensors=True,
                        kmer2idx_dic=False,
                        feat_info_dic=None,
+                       load_only_pos=False,
                        li2label_dic=None):
 
     """
@@ -11970,6 +11966,8 @@ def load_training_data(args,
         Class label to RBP label/name dictionary. For associating the
         positive class label to the RBP name in generic model cross
         validation (if --gm-cv is set).
+    load_only_pos:
+        Return only positive instances.
 
     """
 
@@ -12038,7 +12036,7 @@ def load_training_data(args,
     for seq_id in seqs_dic:
         pos_ids_dic[seq_id] = 1
     seqs_dic = read_fasta_into_dic(neg_fa_in, all_uc=True,
-                                   seqs_dic=seqs_dic)
+                                       seqs_dic=seqs_dic)
     assert seqs_dic, "no sequences read from FASTA files"
 
     neg_ids_dic = {}
@@ -12339,7 +12337,23 @@ def load_training_data(args,
         idx2id_dic, using the list index.
 
     """
-    return seqs_dic, idx2id_dic, label_list, all_features
+    if load_only_pos:
+        new_all_feat = []
+        new_label_list = []
+        new_idx2id_dic = {}
+        new_seqs_dic = {}
+        new_idx = 0
+        for idx in idx2id_dic:
+            seq_id = idx2id_dic[idx]
+            if seq_id in pos_ids_dic:
+                new_all_feat.append(all_features[idx])
+                new_seqs_dic[seq_id] = seqs_dic[seq_id]
+                new_label_list.append(1)
+                new_idx2id_dic[new_idx] = seq_id
+                new_idx += 1
+        return new_seqs_dic, new_idx2id_dic, new_label_list, new_all_feat
+    else:
+        return seqs_dic, idx2id_dic, label_list, all_features
 
 
 ################################################################################

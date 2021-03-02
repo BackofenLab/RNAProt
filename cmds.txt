@@ -1,4 +1,11 @@
 
+Try bohb:
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_bohb_test_out --only-seq --run-bohb --bohb-n 10 --bohb-min-budget 5 --bohb-max-budget 10 --verbose-train
+
+
+
+
 
 Find the formula used to compute Shannon's entropy
 [here](https://www.ncbi.nlm.nih.gov/pubmed/15215465) (see CE formula).
@@ -18,7 +25,19 @@ rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq
 
 rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_test_onlyseq_1hplus_train_out --only-seq --seq-1h --verbose-train --n-rnn-layers 2 --n-fc-layers 2 --model-type 3
 
+
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_bohb_test_out --only-seq --run-bohb --bohb-n 20 --bohb-min-budget 5 --bohb-max-budget 25
+
+
+
+
+--verbose-train --n-rnn-layers 2 --n-fc-layers 2 --model-type 3
+
 rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq_1hplus_train_out --add-train-in RBFOX2_K562_test_onlyseq_seq1h_train_out --out RBFOX2_K562_test_onlyseq_1hplus_eval_out --report --bottoms-up
+
+
+rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_test_onlyseq_simple_1h_train_out --out RBFOX2_K562_test_onlyseq_simple_1h_eval_out --report --nr-top-sites 10 --bottom-up
 
 
 
