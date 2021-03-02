@@ -2586,6 +2586,7 @@ def main_eval(args):
                                            worst_win_pos_dic=worst_win_pos_dic,
                                            worst_win_id2sc_dic=worst_win_id2sc_dic,
                                            onlyseq=onlyseq,
+                                           win_extlr=win_extlr,
                                            theme=args.theme,
                                            lookup_kmer=lookup_kmer,
                                            plots_subfolder=plots_subfolder)

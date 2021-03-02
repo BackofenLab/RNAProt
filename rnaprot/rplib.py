@@ -927,7 +927,7 @@ def calc_str_elem_p(in_fasta, out_str,
 
     """
 
-    # Need more li(m)bs.
+    # ViennaRNA lib.
     try:
         import RNA
     except:
@@ -7143,6 +7143,7 @@ def fasta_get_repeat_region_annotations(seqs_dic, out_rra,
 
 def seqs_dic_calc_entropies(seqs_dic,
                             rna=True,
+                            return_dic=False,
                             uc_part_only=True):
     """
     Given a dictionary of sequences, calculate entropies for each sequence
@@ -7164,6 +7165,8 @@ def seqs_dic_calc_entropies(seqs_dic,
     """
     assert seqs_dic, "given dictionary seqs_dic empty"
     entr_list = []
+    if return_dic:
+        entr_dic = {}
     for seq_id in seqs_dic:
         seq = seqs_dic[seq_id]
         seq_l = len(seq)
@@ -7183,8 +7186,14 @@ def seqs_dic_calc_entropies(seqs_dic,
         #if seq_entr > 0.5:
         #    print("Entropy: %.2f" %(seq_entr))
         #    print("%s: %s" %(seq_id, seq))
-        entr_list.append(seq_entr)
-    return entr_list
+        if return_dic:
+            entr_dic[seq_id] = seq_entr
+        else:
+            entr_list.append(seq_entr)
+    if return_dic:
+        return entr_dic
+    else:
+        return entr_list
 
 
 ################################################################################
@@ -7947,6 +7956,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                   worst_win_pos_dic=False,
                                   worst_win_id2sc_dic=False,
                                   onlyseq=True,
+                                  win_extlr=False,
                                   add_ws_scores=False,
                                   idx2id_dic=False,
                                   seqs_dic=False,
@@ -7977,6 +7987,8 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     assert kmer2sc_dic, "kmer2sc_dic needed"
     assert kmer2c_dic, "kmer2c_dic needed"
     assert kmer2scrank_dic, "kmer2scrank_dic needed"
+    assert idx2id_dic, "idx2id_dic needed"
+    assert win_extlr, "win_extlr needed"
     if not onlyseq:
         assert kmer2bestsc_dic, "kmer2bestsc_dic needed in case of additional features"
         assert kmer2scstdev_dic, "kmer2scstdev_dic needed in case of additional features"
@@ -7985,8 +7997,6 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
         assert kmer2bestmm_dic, "kmer2bestmm_dic needed in case of additional features"
         assert ch_info_dic, "ch_info_dic needed in case of additional features"
         assert kmer2avgscrank_dic, "kmer2avgscrank_dic needed in case of additional features"
-    if add_ws_scores:
-        assert idx2id_dic, "idx2id_dic needed if add_ws_scores given"
 
     # Import markdown to generate report.
     from markdown import markdown
@@ -8008,6 +8018,7 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     avg_best_kmer_scatter_plot = "avg_best_kmer_scores_scatter_plot.png"
     model_comp_plot = "model_comparison_plot.html"
     site_reg_imp_plot = "site_reg_imp_plot.png"
+    ws_vs_win_sc_plotly_plot =  "ws_vs_win_sc_plotly_plot.html"
     ws_sc_plot_out = plots_out_folder + "/" + ws_sc_plot
     kmer_sc_plot_out = plots_out_folder + "/" + kmer_sc_plot
     rank_vs_sc_plot_out = plots_out_folder + "/" + rank_vs_sc_plot
@@ -8015,11 +8026,15 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     avg_best_kmer_kde_plot_out = plots_out_folder + "/" + avg_best_kmer_kde_plot
     avg_best_kmer_scatter_plot_out = plots_out_folder + "/" + avg_best_kmer_scatter_plot
     site_reg_imp_plot_out = plots_out_folder + "/" + site_reg_imp_plot
+    ws_vs_win_sc_plotly_plot_out = plots_out_folder + "/" + ws_vs_win_sc_plotly_plot
 
     # Logo paths.
     logo1_path = rplib_path + "/content/logo1.png"
     logo2_path = rplib_path + "/content/logo2.png"
     sorttable_js_path = rplib_path + "/content/sorttable.js"
+    # plotly js path.
+    plotly_js_path = rplib_path + "/content/plotly-latest.min.js"
+    assert os.path.exists(plotly_js_path), "plotly js %s not found" %(plotly_js_path)
 
     # Create theme-specific HTML header.
     if theme == 1:
@@ -8122,6 +8137,25 @@ and negative (Negatives, %i sites) sequence set, scored by the trained model.
     #     # If onlyseq, make interactive plot including add infos.
     #
     # else:
+
+
+    if onlyseq:
+
+        create_ws_vs_worst_win_sc_plot(seqs_dic, idx2id_dic, ws_scores,
+                                       worst_win_pos_dic, worst_win_id2sc_dic,
+                                       ws_vs_win_sc_plotly_plot_out, plotly_js_path,
+                                       win_extlr=win_extlr,
+                                       theme=theme)
+        plot_path = plots_folder + "/" + ws_vs_win_sc_plotly_plot
+
+        mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
+        mdtext += '<iframe src="' + plot_path + '" width="1200" height="1200"></iframe>' + "\n"
+        mdtext += '</div>'
+        mdtext += """
+
+**Figure:** This is a figure.
+
+"""
 
     create_eval_rank_vs_sc_plot(ws_scores, rank_vs_sc_plot_out,
                                 x_label="site rank",
@@ -8443,10 +8477,6 @@ count rank) for lookup k-mer %s and training data with additional features.
 
     if add_ws_scores:
 
-        # plotly js path.
-        plotly_js_path = rplib_path + "/content/plotly-latest.min.js"
-        assert os.path.exists(plotly_js_path), "plotly js %s not found" %(plotly_js_path)
-
         # Calculate R2.
         correlation_matrix = np.corrcoef(ws_scores, add_ws_scores)
         correlation_xy = correlation_matrix[0,1]
@@ -8499,6 +8529,231 @@ on the positive training set for the two input models. Model 1: model from
     if output:
         error = True
     assert error == False, "sed command returned error:\n%s" %(output)
+
+
+################################################################################
+
+def create_ws_vs_worst_win_sc_plot(seqs_dic, idx2id_dic, ws_scores,
+                                   worst_win_pos_dic, worst_win_id2sc_dic,
+                                   out_html, plotly_js,
+                                   win_extlr=5,
+                                   theme=1):
+    """
+    Create whole-site vs worst window score scatter plot, with plotly.
+
+    """
+
+    ws_sc_df_id = "whole_site_score"
+    win_sc_df_id = "win_mut_score_diff"
+    win_pos_df_id = "win_mut_pos"
+    win_seq_df_id = "win_seq"
+    seq_df_id = "seq"
+    seq_id_df_id = "seq_id"
+    win_entr_df_id = "win_entropy"
+
+    id2wssc_dic = {}
+    for idx,sc in enumerate(ws_scores):
+        idx2id_dic[idx]
+        id2wssc_dic[idx2id_dic[idx]] = sc
+
+    win_seqs_dic = {}
+    for seq_id in worst_win_pos_dic:
+        seq = seqs_dic[seq_id]
+        win_pos = worst_win_pos_dic[seq_id]
+        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
+        win_seqs_dic[seq_id] = win_seq
+
+    win_entr_dic = seqs_dic_calc_entropies(win_seqs_dic,
+                                           return_dic=True)
+
+    data = {ws_sc_df_id : [], win_sc_df_id : [], win_pos_df_id : [], win_seq_df_id : [], seq_df_id : [], seq_id_df_id : [], win_entr_df_id : []}
+    for seq_id in worst_win_id2sc_dic:
+        win_sc = worst_win_id2sc_dic[seq_id]
+        ws_sc = id2wssc_dic[seq_id]
+        win_pos = worst_win_pos_dic[seq_id]
+        seq = seqs_dic[seq_id]
+        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
+        win_entr = win_entr_dic[seq_id]
+
+        data[win_sc_df_id].append(win_sc)
+        data[ws_sc_df_id].append(ws_sc)
+        data[win_pos_df_id].append(win_pos)
+        data[win_seq_df_id].append(win_seq)
+        data[seq_df_id].append(seq)
+        data[seq_id_df_id].append(seq_id)
+        data[win_entr_df_id].append(win_entr)
+
+
+    df = pd.DataFrame(data, columns = [win_sc_df_id, ws_sc_df_id, win_pos_df_id, win_seq_df_id, seq_df_id, seq_id_df_id, win_entr_df_id])
+
+    # Color of dots.
+    dot_col = "#69e9f6"
+    if theme == 2:
+        dot_col = "blue"
+
+    plot = px.scatter_3d(df, x=ws_sc_df_id, y=win_sc_df_id, z=win_entr_df_id,
+                         hover_name=seq_id_df_id,
+                         hover_data=[win_pos_df_id, win_seq_df_id],
+                         color_discrete_sequence=[dot_col])
+
+    plot.layout.template = 'seaborn'
+    plot.update_layout(hoverlabel=dict(font_size=12))
+    plot.update_traces(marker=dict(size=4))
+    plot.write_html(out_html,
+                    full_html=False,
+                    include_plotlyjs=plotly_js)
+
+
+"""
+    plot = px.scatter(data_frame=df, x=ws_sc_df_id, y=win_sc_df_id, hover_name=seq_id_df_id,
+                      hover_data=[win_pos_df_id, win_seq_df_id, seq_df_id],
+                      color_discrete_sequence=[dot_col])
+
+    plot.layout.template = 'seaborn'
+
+    plot.update_layout(hoverlabel=dict(font_size=11))
+
+    plot.write_html(out_html,
+                    full_html=False,
+                    include_plotlyjs=plotly_js)
+"""
+
+################################################################################
+
+def make_worst_win_kmer_pca_plot(seqs_dic,
+                                 worst_win_pos_dic, worst_win_id2sc_dic,
+                                 out_html, plotly_js,
+                                 win_extlr=5,
+                                 norm_counts=True,
+                                 k_kmer=4):
+    """
+    Take a closer look at worst scoring mutation windows. Take the windows,
+    get their k-mer content, and use for each site this vector to reduce
+    with PCA to 2 dimensions.
+    Then plot with score as third dimension added as plotly graph.
+
+    PCA usually done before applying clustering algorithm (e.g. k-means).
+    Sources:
+    https://jakevdp.github.io/PythonDataScienceHandbook/05.09-principal-component-analysis.html
+    https://en.wikipedia.org/wiki/Silhouette_(clustering)
+
+    """
+    # Need more li(m)bs.
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import  silhouette_score
+    from sklearn.decomposition import PCA
+
+    n_pca_dim = 2
+    # k-means cluster numbers to try.
+    n_clusters = [2,3,4,5,6]
+
+    # Site ID list.
+    site_id_list = []
+    # Count vectors list.
+    kmer_cv_ll = []
+    win_seq_list = []
+
+    print("len(worst_win_pos_dic):", len(worst_win_pos_dic))
+
+    for seq_id, win_pos in sorted(worst_win_pos_dic.items()):
+
+        seq = seqs_dic[seq_id]
+        l_seq = len(seqs_dic[seq_id])
+        count_dic = get_kmer_dic(k_kmer, rna=True)
+        total_c = 0
+
+        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
+        win_seq_list.append(win_seq)
+        kmer_cv_list = []
+
+        for i in range(len(win_seq)-k_kmer+1):
+            kmer = seq[i:i+k_kmer]
+            count_dic[kmer] += 1
+            total_c += 1
+            if kmer in count_dic:
+                count_dic[kmer] += 1
+                total_c += 1
+
+        for kmer,c in sorted(count_dic.items()):
+            new_c = c
+            if norm_counts:
+                if c:
+                    new_c = c / total_c
+                else:
+                    new_c = 0.0
+            kmer_cv_list.append(new_c)
+
+        site_id_list.append(seq_id)
+        kmer_cv_ll.append(kmer_cv_list)
+
+    print("kmer_cv_ll[0]:", kmer_cv_ll[0])
+
+    # PCA.
+    # Shape should be: #sites x #kmers (e.g. 100 sites and k=3, so 100x64).
+    kmer_cv_ll = np.array(kmer_cv_ll)
+
+    # Project from 4^k to n_pca_dim dimensions.
+    pca = PCA(n_pca_dim)
+    projected = pca.fit_transform(kmer_cv_ll)
+
+    # k-means.
+    # Make feature list for k-means.
+    kmeans_X = []
+    for idx, x_val in enumerate(projected[:, 0]):
+        kmeans_X.append([x_val, projected[:, 1][idx]])
+
+    kmeans_X = np.array(kmeans_X)
+
+    best_sil = -1000
+    best_nc = 0
+    # best_labels list length = number of sites.
+    best_labels = 0
+
+    for nc in n_clusters:
+        kmeans_clustering = KMeans(n_clusters=nc, random_state=0).fit(kmeans_X)
+        labels = list(kmeans_clustering.labels_)
+        sil_sc = silhouette_score(kmeans_X, labels)
+        print("nc:", nc)
+        print("sil_sc:", sil_sc)
+        if sil_sc > best_sil:
+            best_sil = sil_sc
+            best_nc = nc
+            best_labels = labels
+
+    print("len(best_labels):", len(best_labels))
+
+    # Make dataframe for plotting.
+    pca1_val = "pca1_val"
+    pca2_val = "pca2_val"
+    win_sc = "win_sc"
+    site_id = "site_id"
+    class_label = "class_label"
+    win_seq = "win_seq"
+    data = {pca1_val : [], pca2_val : [], win_sc : [], site_id : [], class_label : [], win_seq : []}
+    for idx, seq_id in enumerate(site_id_list):
+        data[pca1_val].append(projected[:, 0][idx])
+        data[pca2_val].append(projected[:, 1][idx])
+        data[win_sc].append(abs(worst_win_id2sc_dic[seq_id]))
+        data[site_id].append(seq_id)
+        data[class_label].append(str(best_labels[idx]))
+        data[win_seq].append(win_seq_list[idx])
+    df = pd.DataFrame(data, columns = [pca1_val, pca2_val, win_sc, site_id, class_label, win_seq])
+
+    # Now plot 3d plot, with PCA dimensions 1,2 + window score as 3rd dim.
+    hover_data_dic = {win_seq : True, win_sc : True,
+                      class_label : False, pca1_val : False, pca2_val : False}
+
+    plot = px.scatter_3d(df, x=pca1_val, y=pca2_val, z=win_sc,
+                         hover_name=site_id,
+                         size_max=5,
+                         hover_data=hover_data_dic,
+                         color=class_label)
+
+    plot.layout.template = 'seaborn'
+    plot.update_layout(hoverlabel=dict(font_size=11))
+    plot.write_html(out_html,
+                    full_html=False,
+                    include_plotlyjs=plotly_js)
 
 
 ################################################################################
