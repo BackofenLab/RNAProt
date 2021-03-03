@@ -981,7 +981,7 @@ def get_window_predictions(args, model_path, device,
 
     #win_size = win_extlr*2 + 1
     print("Maximum window score: ", max(win_scores))
-    print("Maximum window score: ", min(win_scores))
+    print("Minimum window score: ", min(win_scores))
 
     # Checks.
     c_win_scores = len(win_scores)

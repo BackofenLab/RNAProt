@@ -7823,6 +7823,7 @@ def create_eval_kmer_score_kde_plot(set_scores, out_plot,
                                     fig_width=5,
                                     fig_height=4,
                                     kde_bw_adjust=1,
+                                    x_0_to_100=False,
                                     kde_clip=False,
                                     theme=1):
     """
@@ -7866,6 +7867,8 @@ def create_eval_kmer_score_kde_plot(set_scores, out_plot,
         fig.set_figheight(fig_height)
         ax.set(xlabel=x_label)
         ax.set_ylabel(y_label)
+        if x_0_to_100:
+            ax.set_xlim([0,100])
         #ax.tick_params(axis='x', labelsize=18)
         #ax.tick_params(axis='y', labelsize=14)
         fig.savefig(out_plot, dpi=150, bbox_inches='tight', transparent=True)
@@ -8206,6 +8209,7 @@ content on prediction scores.
                                     fig_height=3,
                                     kde_bw_adjust=kde_bw_adjust,
                                     kde_clip=kde_clip,
+                                    x_0_to_100=True,
                                     theme=theme)
     plot_path = plots_folder + "/" + site_reg_imp_plot
 
@@ -8492,10 +8496,7 @@ count rank) for lookup k-mer %s and training data with additional features.
 
     if add_ws_scores:
 
-        # Calculate R2.
-        correlation_matrix = np.corrcoef(ws_scores, add_ws_scores)
-        correlation_xy = correlation_matrix[0,1]
-        r_squared = correlation_xy**2
+        r_squared = calc_r2_corr_measure(ws_scores, add_ws_scores)
 
         print("Generate --train-in vs --add-train-in model comparison plot ... ")
         create_m1m2sc_plotly_scatter_plot(ws_scores, add_ws_scores, idx2id_dic,
@@ -8544,6 +8545,41 @@ on the positive training set for the two input models. Model 1: model from
     if output:
         error = True
     assert error == False, "sed command returned error:\n%s" %(output)
+
+
+################################################################################
+
+def calc_r2_corr_measure(scores1, scores2,
+                         is_dic=False):
+    """
+    Calculate R2 measure.
+
+    is_dic:
+        If scores1 + scores2 are dictionaries.
+
+    >>> sc1 = [1,3,5]
+    >>> sc2 = [7,12,17]
+    >>> calc_r2_corr_measure(sc1, sc2)
+    1.0
+    >>> d1 = {"sc1" : 1, "sc2" : 3, "sc3" : 6}
+    >>> d2 = {"sc1" : 10, "sc2" : 30, "sc3" : 60}
+    >>> calc_r2_corr_measure(d1, d2, is_dic=True)
+    1.0
+
+    """
+    assert len(scores1) == len(scores2), "len(scores1) != len(scores2)"
+
+    if is_dic:
+        sc1 = []
+        sc2 = []
+        for dic_key in scores1:
+            sc1.append(scores1[dic_key])
+            sc2.append(scores2[dic_key])
+        correlation_matrix = np.corrcoef(sc1, sc2)
+    else:
+        correlation_matrix = np.corrcoef(scores1, scores2)
+    correlation_xy = correlation_matrix[0,1]
+    return correlation_xy**2
 
 
 ################################################################################
@@ -9342,6 +9378,14 @@ Frequency distributions of k-mers (in percent) for the positive and negative set
     plotly_4mer_plot_path = plots_folder + "/" + plotly_4mer_plot
     plotly_5mer_plot_path = plots_folder + "/" + plotly_5mer_plot
 
+    # R2 scores.
+    r2_3mer = calc_r2_corr_measure(pos_3mer_dic, neg_3mer_dic,
+                                   is_dic=True)
+    r2_4mer = calc_r2_corr_measure(pos_4mer_dic, neg_4mer_dic,
+                                   is_dic=True)
+    r2_5mer = calc_r2_corr_measure(pos_5mer_dic, neg_5mer_dic,
+                                   is_dic=True)
+
     # Include 3-mer code.
     mdtext += '<div class=class="container-fluid" style="margin-top:40px">' + "\n"
     mdtext += '<iframe src="' + plotly_3mer_plot_path + '" width="500" height="500"></iframe>' + "\n"
@@ -9350,11 +9394,11 @@ Frequency distributions of k-mers (in percent) for the positive and negative set
 
 **Figure:** 3-mer percentages in the positive and negative dataset. In case of
 a uniform distribution with all 3-mers present, each 3-mer would have a
-percentage = 1.5625.
+percentage = 1.5625. R2 = %.6f.
 
 &nbsp;
 
-"""
+""" %(r2_3mer)
     # Include 4-mer code.
     mdtext += '<div class="container-fluid" style="margin-top:40px">' + "\n"
     mdtext += '<iframe src="' + plotly_4mer_plot_path + '" width="600" height="600"></iframe>' + "\n"
@@ -9363,11 +9407,11 @@ percentage = 1.5625.
 
 **Figure:** 4-mer percentages in the positive and negative dataset. In case of
 a uniform distribution with all 4-mers present, each 4-mer would have a
-percentage = 0.390625.
+percentage = 0.390625. R2 = %.6f.
 
 &nbsp;
 
-"""
+""" %(r2_4mer)
 
     # Include 5-mer code.
     mdtext += '<div class="container-fluid" style="margin-top:40px">' + "\n"
@@ -9377,11 +9421,11 @@ percentage = 0.390625.
 
 **Figure:** 5-mer percentages in the positive and negative dataset. In case of
 a uniform distribution with all 5-mers present, each 5-mer would have a
-percentage = 0.09765625.
+percentage = 0.09765625. R2 = %.6f.
 
 &nbsp;
 
-"""
+""" %(r2_5mer)
 
     # Make the k-mer tables.
     top3mertab = generate_top_kmer_md_table(pos_3mer_dic, neg_3mer_dic,

@@ -43,6 +43,8 @@ rnaprot -h
 
 # Loss criterion.
 criterion = BCEWithLogitsLoss()
+# Window sizes used to identify site regions the model regards as important.
+win_sizes = [5, 7, 9, 11, 13, 15, 17, 19, 21]
 
 
 ################################################################################
@@ -281,8 +283,8 @@ def setup_argument_parser():
                    dest="bohb_max_budget",
                    type = int,
                    metavar='int',
-                   default=20,
-                   help = "BOHB maximum budget (default: 20)")
+                   default=25,
+                   help = "BOHB maximum budget (default: 30)")
     p_tra.add_argument("--verbose-bohb",
                    dest = "verbose_bohb",
                    default = False,
@@ -349,6 +351,7 @@ def setup_argument_parser():
                    dest="win_size",
                    type = int,
                    default = 7,
+                   choices = win_sizes,
                    metavar='int',
                    help = "Windows size for calculating position-wise scoring profiles (default: 7)")
     p_ev.add_argument("--report",
@@ -961,12 +964,6 @@ def main_train(args):
         # Fold count.
         i_cv = 0
 
-        # Switch for always using validation set (even with just one HPC).
-        run_hpo_gen_cv = run_hpo
-        gen_cv_always_val = True
-        if gen_cv_always_val:
-            run_hpo_gen_cv = True
-
         # Run --gen-cv-k fold cross validation with hyperparameter optimization.
         for list_tr_idx, list_te_idx in skf.split(np.zeros(len(labels)), labels):
 
@@ -974,14 +971,12 @@ def main_train(args):
             print("Starting --gen-cv fold %i ... " %(i_cv))
 
             test_dataset = RNNDataset([all_features[idx] for idx in list_te_idx], [labels[idx] for idx in list_te_idx])
-            if run_hpo_gen_cv:
-                # Further split up train portion into train + validation.
-                # Training set == all list entries except last length(test_set).
-                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[:-len(list_te_idx)]], [labels[idx] for idx in list_tr_idx[:-len(list_te_idx)]])
-                # Validation set == last length(test_set) entries.
-                val_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[-len(list_te_idx):]], [labels[idx] for idx in list_tr_idx[-len(list_te_idx):]])
-            else:
-                train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx], [labels[idx] for idx in list_tr_idx])
+
+            # Further split up train portion into train + validation.
+            # Training set == all list entries except last length(test_set).
+            train_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[:-len(list_te_idx)]], [labels[idx] for idx in list_tr_idx[:-len(list_te_idx)]])
+            # Validation set == last length(test_set) entries.
+            val_dataset = RNNDataset([all_features[idx] for idx in list_tr_idx[-len(list_te_idx):]], [labels[idx] for idx in list_tr_idx[-len(list_te_idx):]])
 
             # Batch loaders.
             train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
@@ -1018,20 +1013,20 @@ def main_train(args):
                                                      device, criterion)
 
             # Store test ACC and AUC.
-            acc_list.append(acc)
-            auc_list.append(auc)
+            acc_list.append(test_acc)
+            auc_list.append(test_auc)
 
             # Report fold ACC+AUC.
-            print("Model test accuracy:  %f" %(acc))
-            print("Model test AUC:       %f" %(auc))
+            print("Model test accuracy:  %f" %(test_acc))
+            print("Model test AUC:       %f" %(test_auc))
 
         # Output CV results by round.
         CVROUT = open(cv_results_file, "w")
         CVROUT.write("fold\tACC\tAUC\n")
         for idx in range(0, i_cv):
             cv_round = idx + 1
-            round_acc = acc_list[cv_round]
-            round_auc = auc_list[cv_round]
+            round_acc = acc_list[idx]
+            round_auc = auc_list[idx]
             CVROUT.write("%i\t%f\t%f\n" %(cv_round, round_acc, round_auc))
         CVROUT.close()
 
@@ -1164,8 +1159,8 @@ def main_train(args):
                                                      device, criterion)
 
             # Store test ACC and AUC.
-            acc_list.append(acc)
-            auc_list.append(auc)
+            acc_list.append(test_acc)
+            auc_list.append(test_auc)
             rbp_label_list.append(rbp_label)
 
             # Report fold ACC+AUC.
@@ -1177,9 +1172,9 @@ def main_train(args):
         CVROUT.write("fold\tRBP\tACC\tAUC\n")
         for idx in range(0, i_cv):
             cv_round = idx + 1
-            rbp_label = rbp_label_list[cv_round]
-            round_acc = acc_list[cv_round]
-            round_auc = auc_list[cv_round]
+            rbp_label = rbp_label_list[idx]
+            round_acc = acc_list[idx]
+            round_auc = auc_list[idx]
             CVROUT.write("%i\t%s\t%f\t%f\n" %(cv_round, rbp_label, round_acc, round_auc))
         CVROUT.close()
 
@@ -1471,16 +1466,32 @@ def main_train(args):
     print("50th percentile score: ", ws_sc_perc50)
     print("75th percentile score: ", ws_sc_perc75)
 
-    print("Get additional dataset stats ... ")
+    win_info_dic = {}
+    for win_size in win_sizes:
+        print("Get best and worst scoring windows for window size %i ... " %(win_size))
+        win_extlr = int(win_size/2)
+        profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+                                                            pos_feat, win_extlr,
+                                                            load_model=False,
+                                                            got_tensors=True)
+
+        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
+
+        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
+        best_id = "best_sc_win_w%i" %(win_size)
+        worst_id = "worst_sc_win_w%i" %(win_size)
+        win_info_dic[best_id] = str(best_sc_win.tolist())
+        win_info_dic[worst_id] = str(worst_sc_win.tolist())
+
+
+
+    print("Get additional site stats ... ")
     pos_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(pos_seqs_dic)
     neg_seqs_dic = {}
     for seq_id in seqs_dic:
         if seq_id not in pos_seqs_dic:
             neg_seqs_dic[seq_id] = seqs_dic[seq_id]
     neg_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(neg_seqs_dic)
-
-
-    # hallo 1234
 
     # Write model params file.
     PAROUT = open(final_params_path, "w")
@@ -1523,6 +1534,9 @@ def main_train(args):
     PAROUT.write("neg_seq_len_min\t%s\n" %(str(neg_seq_stats_dic["min"])))
     PAROUT.write("neg_seq_len_max\t%s\n" %(str(neg_seq_stats_dic["max"])))
     PAROUT.write("neg_seq_len_stdev\t%s\n" %(str(neg_seq_stats_dic["stdev"])))
+    for win_id in win_info_dic:
+        PAROUT.write("%s\t%s\n" %(win_id, win_info_dic[win_id]))
+
     PAROUT.close()
 
     # RNN type string.
@@ -1575,8 +1589,8 @@ def main_eval(args):
     # Model + model parameter file.
     params_file = args.in_train_folder + "/final.params"
     model_file = args.in_train_folder + "/final.model"
-    assert os.path.isfile(model_file), "--train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model" %(model_file)
-    assert os.path.isfile(params_file), "--train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model" %(params_file)
+    assert os.path.isfile(model_file), "--train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model"
+    assert os.path.isfile(params_file), "--train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model"
     # Additional model checks.
     model_file2 = False
     if args.add_train_folder:
@@ -1584,8 +1598,8 @@ def main_eval(args):
         # Model + model parameter file.
         params_file2 = args.add_train_folder + "/final.params"
         model_file2 = args.add_train_folder + "/final.model"
-        assert os.path.isfile(model_file2), "--add-train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model" %(model_file2)
-        assert os.path.isfile(params_file2), "--add-train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model" %(params_file2)
+        assert os.path.isfile(model_file2), "--add-train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model"
+        assert os.path.isfile(params_file2), "--add-train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model"
 
     # Read in model parameters.
     params_dic = rplib.read_settings_into_dic(params_file)
@@ -2057,7 +2071,7 @@ def main_eval(args):
     if args.report:
         print("--report set, plot top %i profiles and get all positive site stats ... " %(args.nr_top_profiles))
     else:
-        print("Plot top %i profiles and extract top positive site stats  ... " %(args.nr_top_profiles))
+        print("Plot top %i profiles and extract top positive site stats ... " %(args.nr_top_profiles))
 
     # Output sorted whole-site scores table (all sites).
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
@@ -2085,28 +2099,36 @@ def main_eval(args):
         single_pert_list = False
         get_sal = False
         get_single_pert = False
+        worst_stats = False
         if site_count <= args.nr_top_profiles:
             get_sal = True
             get_single_pert = True
+            worst_stats = True
         if args.list_lookup_ids and seq_id in args.list_lookup_ids:
             get_sal = True
             get_single_pert = True
+            worst_stats = True
+        if args.report and ws_sc >= 0:
+            worst_stats = True
+        if site_count <= max_nr_top_sites:
+            worst_stats = True
 
-        # Get worst scoring window perturbation scores.
-        worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
-                                        all_features[si], worst_sc_win,
-                                        model, device,
-                                        avg_win_extlr=3,
-                                        load_model=False)
+        if worst_stats:
+            # Get worst scoring window perturbation scores.
+            worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
+                                            all_features[si], worst_sc_win,
+                                            model, device,
+                                            avg_win_extlr=3,
+                                            load_model=False)
 
-        worst_win_pert_dic[seq_id] = worst_win_pert_list
-        # Get worst score position in site (with padding).
-        worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
-                                                get_lowest=True,
-                                                padding=win_extlr)
-        worst_win_pos_dic[seq_id] = worst_pos
-        worst_win_si2sc_dic[si] = worst_sc
-        worst_win_id2sc_dic[seq_id] = worst_sc
+            worst_win_pert_dic[seq_id] = worst_win_pert_list
+            # Get worst score position in site (with padding).
+            worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
+                                                    get_lowest=True,
+                                                    padding=win_extlr)
+            worst_win_pos_dic[seq_id] = worst_pos
+            worst_win_si2sc_dic[si] = worst_sc
+            worst_win_id2sc_dic[seq_id] = worst_sc
 
         if get_sal:
             # Get mean saliency profile for site.
@@ -2123,6 +2145,7 @@ def main_eval(args):
 
         # Plot profile if site ID == lookup site ID.
         if args.list_lookup_ids and seq_id in args.list_lookup_ids:
+            print("Plotting --lookup-profile %s ... " %(seq_id))
             plot_out_file = lookup_out_folder + "/" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
@@ -2143,11 +2166,6 @@ def main_eval(args):
         if args.report:
             if not site_count % 500:
                 print("%i sites processed" %(site_count))
-            if ws_sc < 0:
-                break
-        else:
-            if site_count >= max_nr_top_sites:
-                break
 
     """
     Bottom profiles.

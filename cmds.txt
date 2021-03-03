@@ -5,6 +5,109 @@ rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_bohb_test_out --onl
 
 
 
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_simple_test_train_out --only-seq --verbose-train --keep-order
+Using 20.0%  for validation ... 
+Train set indices:       [11229 10311  4598 ... 13018 11351  1709]
+Validation set indices:  [2686 6556 7291 ... 1690 9131 8585]
+# training instances:    11681
+# validation instances:  2921
+Training model ... 
+
+Same on other PCs ?
+
+
+
+Structure vs sequence comparison:
+
+cde_sites_hg38_ext30_thr015_gt_out/positives.bed
+
+
+
+rnaprot gt --in  cde_sites_hg38_ext30_thr015_gt_in/positives.bed --out cde_sites_hg38_ext30_thr015_gt_out --neg-in cde_sites_hg38_ext30_thr015_gt_in/negatives.bed --seq-ext 30 --keep-ids --gtf /home/malong/Data/Ensembl_gtf/Homo_sapiens.GRCh38.101.gtf.gz --gen /home/malong/Data/genome_2bit/hg38.2bit --report --str --plfold-w 30 --plfold-l 25
+
+
+
+rnaprot train --in cde_sites_hg38_ext30_thr015_gt_out --out cde_sites_hg38_ext30_thr015_seq_train_out --only-seq --verbose-train --keep-order
+
+Model validation set accuracy:  0.892632
+Model validation set AUC:       0.958348
+
+
+rnaprot train --in cde_sites_hg38_ext30_thr015_gt_out --out cde_sites_hg38_ext30_thr015_str_train_out --verbose-train --keep-order
+
+Model validation set accuracy:  0.970526
+Model validation set AUC:       0.995261
+
+
+rnaprot gt --in  cde_sites_hg38_ext30_thr015_gt_in/positives.bed --out cde_sites_hg38_ext40_thr015_gt_out --neg-in cde_sites_hg38_ext30_thr015_gt_in/negatives.bed --seq-ext 40 --keep-ids --gtf /home/malong/Data/Ensembl_gtf/Homo_sapiens.GRCh38.101.gtf.gz --gen /home/malong/Data/genome_2bit/hg38.2bit --report --str --plfold-w 30 --plfold-l 25
+
+
+rnaprot train --in cde_sites_hg38_ext40_thr015_gt_out --out cde_sites_hg38_ext40_thr015_seq_train_out --only-seq --verbose-train --keep-order
+# epochs used to train model:   200
+Model validation set accuracy:  0.807368
+Model validation set AUC:       0.901186
+
+Again with more epochs
+rnaprot train --in cde_sites_hg38_ext40_thr015_gt_out --out cde_sites_hg38_ext40_thr015_seq_train_out --only-seq --verbose-train --keep-order --epochs 300
+# epochs used to train model:   251
+Model validation set accuracy:  0.863158
+Model validation set AUC:       0.936046
+
+
+rnaprot train --in cde_sites_hg38_ext40_thr015_gt_out --out cde_sites_hg38_ext40_thr015_str_train_out --verbose-train --keep-order
+# epochs used to train model:   191
+Model validation set accuracy:  0.976842
+Model validation set AUC:       0.994653
+
+rnaprot train --in cde_sites_hg38_ext40_thr015_gt_out --out cde_sites_hg38_ext40_thr015_str_train_out --verbose-train --keep-order --epochs 300
+# epochs used to train model:   156
+Model validation set accuracy:  0.981053
+Model validation set AUC:       0.996392
+
+
+
+=========================
+  MODEL HYPERPARAMETERS
+=========================
+Batch size:                50
+Learning rate:             0.001
+Weight decay:              0.0005
+RNN model type:            GRU
+Bidirectional RNN:         False
+# RNN layers:              1
+# RNN layer dimensions:    32
+# fully connected layers:  1
+Dropout rate:              0.5
+Embedding:                 False
+
+
+
+
+
+rnaprot gt --in  cde_sites_hg38_ext30_thr015_gt_in/positives.bed --out cde_sites_hg38_ext30_thr015_gt_out --neg-in cde_sites_hg38_ext30_thr015_gt_in/negatives.bed --seq-ext 30 --keep-ids --gtf /home/malong/Data/Ensembl_gtf/Homo_sapiens.GRCh38.101.gtf.gz --gen /home/malong/Data/genome_2bit/hg38.2bit --report --str --plfold-w 30 --plfold-l 25
+
+
+
+
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_simple_test_train2_out --only-seq --verbose-train --patience 5 --epochs 10
+
+rnaprot train --in RBFOX2_K562_test_gt_out --out RBFOX2_K562_simple_test_train_out --only-seq --verbose-train
+Model validation set accuracy:  0.781049
+Model validation set AUC:       0.861613
+Batch size:                50
+Learning rate:             0.001
+Weight decay:              0.0005
+RNN model type:            GRU
+Bidirectional RNN:         False
+# RNN layers:              1
+# RNN layer dimensions:    32
+# fully connected layers:  1
+Dropout rate:              0.5
+Embedding:                 False
+
+rnaprot eval --gt-in RBFOX2_K562_test_gt_out --train-in RBFOX2_K562_simple_test_train_out --out RBFOX2_K562_simple_test_eval_out --win-size 15 --nr-top-profiles 20 --report
+
 
 
 Find the formula used to compute Shannon's entropy
