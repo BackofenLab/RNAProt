@@ -11821,6 +11821,7 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
                              ch_info_dic, all_features,
                              si2sc_dic, idx2id_dic, seqs_dic,
                              worst_win_pert_dic, worst_win_pos_dic,
+                             got_saliencies=False,
                              calc_stdev=True,
                              motif_file_dic=None,
                              motif_mode=1):
@@ -11828,6 +11829,9 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
     """
     Make some motif plots.
 
+    got_saliencies:
+        This means position-wise scores for generating motif are positive,
+        not negative like when worst windows are given.
     calc_stdev:
         If standard deviations for numerical features should be calculated
         for plotting.
@@ -11933,6 +11937,10 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
                         worst_sc_nt = seq_brick[i]
                         j = map_nt2idx_dix[worst_sc_nt]
                         motif_matrix[i][j] = motif_matrix[i][j] - worst_sc
+                        if got_saliencies:
+                            motif_matrix[i][j] = motif_matrix[i][j] + worst_sc
+                        else:
+                            motif_matrix[i][j] = motif_matrix[i][j] - worst_sc
                     start_j = 4
                 for i in range(l_mm):
                     # If weighted_motif=True, just update additional features.
@@ -11977,7 +11985,11 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
                         fid2stdev_dic[fid].append(statistics.stdev(fid2sc_dic[fid][i]))
 
             # Plot motif.
-            motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
+            if got_saliencies:
+                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + ".saliencies." + plot_format
+            else:
+                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
+
             make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
                                 fid2stdev_dic=fid2stdev_dic)
             if motif_file_dic is not None:

@@ -2057,6 +2057,9 @@ def main_eval(args):
     worst_win_pos_dic = {}
     worst_win_si2sc_dic = {}
     worst_win_id2sc_dic = {}
+    # Collect saliency infos.
+    sal_peak_pos_dic = {}
+    sal_lists_dic = {}
 
     # Store min/max score positions for each sequence.
     # id2minpos_dic = {}
@@ -2112,6 +2115,7 @@ def main_eval(args):
             worst_stats = True
         if site_count <= max_nr_top_sites:
             worst_stats = True
+            get_sal = True
 
         if worst_stats:
             # Get worst scoring window perturbation scores.
@@ -2136,6 +2140,12 @@ def main_eval(args):
                                         model, device,
                                         got_tensors=True,
                                         sal_type=1)
+            best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
+                                                    get_lowest=False,
+                                                    padding=win_extlr)
+            sal_peak_pos_dic[seq_id] = best_pos
+            sal_lists_dic[seq_id] = sal_list
+
         if get_single_pert:
             # Get single position perturbation scores.
             single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
@@ -2268,6 +2278,17 @@ def main_eval(args):
                                    calc_stdev=calc_stdev,
                                    motif_file_dic=top_motif_file_dic,
                                    motif_mode=1)
+
+    # Create motifs using saliency info.
+    rplib.gp_eval_make_motif_plots(args, motif_plots_folder,
+                                   ch_info_dic, all_features,
+                                   si2sc_dic, idx2id_dic, seqs_dic,
+                                   sal_lists_dic, sal_peak_pos_dic,
+                                   got_saliencies=True,
+                                   calc_stdev=calc_stdev,
+                                   motif_file_dic=top_motif_file_dic,
+                                   motif_mode=2)
+
 
     # print("Plot top motifs (mode 3) ... ")
     # motif_plots_m3_folder = args.out_folder + "/motifs_m3"
