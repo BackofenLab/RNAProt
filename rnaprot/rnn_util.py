@@ -36,6 +36,7 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
              n_bohb_iter=10,
              min_budget=5,
              verbose_bohb=False,
+             n_workers=False,
              max_budget=30):
 
     # Logging.
@@ -53,9 +54,16 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
     NS = hpns.NameServer(run_id=run_id, host=host, port=None)
     NS.start()
 
-    w = MyWorker(args, train_dataset, val_dataset,
-                 nameserver=host,run_id=run_id)
-    w.run(background=True)
+    if n_workers:
+        workers = []
+        for i in range(n_workers):
+            w = MyWorker(sleep_interval = 0.5, nameserver=host,run_id=run_id, id=i)
+            w.run(background=True)
+            workers.append(w)
+    else:
+        w = MyWorker(args, train_dataset, val_dataset,
+                     nameserver=host,run_id=run_id)
+        w.run(background=True)
 
     result_logger = hpres.json_result_logger(directory=bohb_out_folder, overwrite=True)
 
@@ -70,7 +78,11 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
                 min_budget=min_budget,
                 max_budget=max_budget)
 
-    result = bohb.run(n_iterations=n_bohb_iter)
+    if n_workers:
+        result = bohb.run(n_iterations=n_bohb_iter,
+                          min_n_workers=n_workers)
+    else:
+        result = bohb.run(n_iterations=n_bohb_iter)
 
     bohb.shutdown(shutdown_workers=True)
     NS.shutdown()

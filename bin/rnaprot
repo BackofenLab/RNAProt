@@ -285,6 +285,12 @@ def setup_argument_parser():
                    metavar='int',
                    default=25,
                    help = "BOHB maximum budget (default: 30)")
+    p_tra.add_argument("--bohb-threads",
+                   dest="bohb_threads",
+                   type = int,
+                   metavar='int',
+                   default=1,
+                   help = "Number of BOHB threads for local parallel computing (default: 1)")
     p_tra.add_argument("--verbose-bohb",
                    dest = "verbose_bohb",
                    default = False,
@@ -422,25 +428,32 @@ def setup_argument_parser():
                    type = int,
                    default = 1,
                    choices = [1,2],
-                   help = "Define prediction mode. (1) predict whole sites, (2) predict position-wise scoring profiles and extract top-scoring sites from profiles (default: 1)")
-    p_pr.add_argument("--win-ext",
-                   dest="win_ext",
+                   help = "Define prediction mode. (1) predict whole sites, (2) predict binding sites on longer sequences using moving window predictions (default: 1)")
+    p_pr.add_argument("--step-size",
+                   dest="step_size",
                    type = int,
                    metavar='int',
-                   default = 20,
-                   help = "Window middle position extension on both sides for calculating position-wise scoring profiles. The center position of the window gets the window score assigned. If --seq-ext + --mode 1 was used in rnaprot train, best set --win-ext to --seq-ext value (default: 20)")
-    p_pr.add_argument("--thr",
-                   dest="sc_thr",
-                   type = float,
-                   metavar='float',
-                   default = 0.5,
-                   help = "Minimum profile position score for extracting peak regions and top-scoring sites. Further increase e.g. in case of too many or too broad peaks (default: 0.5)")
+                   default = 10,
+                   help = "Moving window step size (stride) for --mode 2 (default: 10)")
+    p_ev.add_argument("--win-size",
+                   dest="win_size",
+                   type = int,
+                   default = 7,
+                   choices = win_sizes,
+                   metavar='int',
+                   help = "Window size for extracting peak regions inside moving windows (default: 7)")
     p_pr.add_argument("--max-merge-dist",
                    dest = "max_merge_dist",
                    type = int,
                    metavar='int',
                    default = 0,
                    help = "Maximum distance between two peaks for merging. Two peaks get merged to one if they are <= --max-merge-dist away from each other (default: 0)")
+    p_pr.add_argument("--strict",
+                   dest="mode",
+                   type = int,
+                   default = 1,
+                   choices = [1,2],
+                   help = "Define prediction mode. (1) predict whole sites, (2) predict binding sites on longer sequences using moving window predictions (default: 1)")
 
     """
     Training set generation mode.
@@ -1376,12 +1389,17 @@ def main_train(args):
         if not os.path.exists(bohb_out_folder):
             os.makedirs(bohb_out_folder)
 
+        n_workers = False
+        if args.bohb_threads > 1:
+            n_workers = args.bohb_threads
+
         # Run BOHB.
         print("Starting BOHB hyperparameter optimization (!) ... ")
         best_hp_dic, best_acc, best_auc  = rnn_util.run_BOHB(args, train_dataset,
                                                     val_dataset, bohb_out_folder,
                                                     verbose_bohb=args.verbose_bohb,
                                                     n_bohb_iter=args.bohb_n_iter,
+                                                    n_workers=n_workers,
                                                     min_budget=args.bohb_min_budget,
                                                     max_budget=args.bohb_max_budget)
         print("BOHB's done!")
@@ -2027,6 +2045,8 @@ def main_eval(args):
     # Get best + worst scoring window.
     best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
 
+    print("best_sc_win:", best_sc_win)
+
     """
     Plot profiles and extract stats
     ===============================
@@ -2185,6 +2205,9 @@ def main_eval(args):
       window to perturb.
 
     """
+
+    site_count = 0
+    id_i = 10 ** len(str(args.nr_top_profiles))
 
     if args.bottom_up:
         print("Plot bottom %i profiles ... " %(args.nr_top_profiles))
@@ -2703,6 +2726,25 @@ def main_predict(args):
     assert "batch_size" in params_dic, "batch_size info missing in model parameter file %s" %(params_file)
     assert "dropout_rate" in params_dic, "dropout_rate info missing in model parameter file %s" %(params_file)
 
+    # Best and worst feature windows from rnaprot train.
+    best_sc_win_id = "best_sc_win_w%i" %(args.win_size)
+    worst_sc_win_id = "best_sc_win_w%i" %(args.win_size)
+    assert best_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(best_sc_win_id, params_file)
+    assert worst_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(worst_sc_win_id, params_file)
+    import ast
+    best_sc_win = ast.literal_eval(params_dic["best_sc_win_id"])
+    worst_sc_win = ast.literal_eval(params_dic["worst_sc_win_id"])
+
+    # More infos regarding trained model.
+    assert "pos_ws_sc_perc25" in params_dic, "pos_ws_sc_perc25 info missing in model parameter file %s" %(params_file)
+    assert "pos_ws_sc_perc50" in params_dic, "pos_ws_sc_perc50 info missing in model parameter file %s" %(params_file)
+    assert "pos_ws_sc_perc75" in params_dic, "pos_ws_sc_perc75 info missing in model parameter file %s" %(params_file)
+    assert "pos_seq_len_median" in params_dic, "pos_seq_len_median info missing in model parameter file %s" %(params_file)
+    pos_ws_sc_perc25 = float(params_dic["pos_ws_sc_perc25"])
+    pos_ws_sc_perc50 = float(params_dic["pos_ws_sc_perc50"])
+    pos_ws_sc_perc75 = float(params_dic["pos_ws_sc_perc75"])
+    pos_seq_len_median = int(params_dic["pos_seq_len_median"])
+
     # Store model parameters in args.
     args.rnn_type = int(params_dic["rnn_type"])
     args.n_rnn_dim = int(params_dic["n_rnn_dim"])
@@ -2748,10 +2790,6 @@ def main_predict(args):
     str_mode_check = [1, 2, 3, 4]
     assert args.str_mode in str_mode_check, "invalid str_mode setting found in train run parameter file %s" %(rp_train_settings_file)
 
-    # Get model feature info dictionary.
-    #import ast
-    #feat_info_dic = ast.literal_eval(model_params_dic["model_params_dic"])
-    # Get prediction set features.
 
     """
     Make sure --model-in and --in features.out are compatible.

@@ -13472,7 +13472,7 @@ best_win_pert_list
         i_plot += 1
         add_saliency_scores_plot(sing_pert_df, fig, gs, i_plot,
                                  color_dict=color_dict,
-                                 y_label="single_mut",
+                                 y_label="single_nt_mut",
                                  y_label_size=4)
 
     # Worst window perturbation scores plot.
