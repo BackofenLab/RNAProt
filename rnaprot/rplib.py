@@ -7694,9 +7694,7 @@ def create_eval_model_comp_scatter_plot(model1_scores, model2_scores, out_plot,
     df = pd.DataFrame (data, columns = ['m1_score','m2_score'])
 
     # Calculate R2.
-    correlation_matrix = np.corrcoef(model1_scores, model2_scores)
-    correlation_xy = correlation_matrix[0,1]
-    r_squared = correlation_xy**2
+    r_squared = calc_r2_corr_measure(model1_scores, model2_scores)
     r2str = "R2 = %.6f" %(r_squared)
     # R2 text coordinates.
     max_x = max(model1_scores)
