@@ -207,7 +207,7 @@ class MyWorker(Worker):
         bidirect = CSH.CategoricalHyperparameter('bidirect', choices=[False, True], default_value=False)
         add_fc_layer = CSH.CategoricalHyperparameter('add_fc_layer', choices=[False, True], default_value=False)
         rnn_type = CSH.CategoricalHyperparameter('rnn_type', choices=[1, 2], default_value=1)
-        batch_size = CSH.CategoricalHyperparameter('batch_size', choices=[30, 50, 80], default_value=50)
+        batch_size = CSH.CategoricalHyperparameter('batch_size', choices=[30, 50], default_value=50)
         cs.add_hyperparameters([lr, wd, embed, embed_dim, n_rnn_dim, n_rnn_layers, dr, bidirect, add_fc_layer, rnn_type, batch_size])
         # Use embed_dim only if embed = True.
         cond = CS.EqualsCondition(embed_dim, embed, True)
