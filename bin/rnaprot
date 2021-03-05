@@ -171,7 +171,7 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Use a part of the training set as a test set to evaluate final model. Test set size is controlled by --val-size (default: False)")
-    p_trm.add_argument("--test-ids",
+    p_tra.add_argument("--test-ids",
                    dest="test_ids",
                    type=str,
                    metavar='str',
@@ -285,12 +285,12 @@ def setup_argument_parser():
                    metavar='int',
                    default=25,
                    help = "BOHB maximum budget (default: 30)")
-    p_tra.add_argument("--bohb-threads",
-                   dest="bohb_threads",
+    p_tra.add_argument("--bohb-workers",
+                   dest="bohb_workers",
                    type = int,
                    metavar='int',
                    default=1,
-                   help = "Number of BOHB threads for local parallel computing (default: 1)")
+                   help = "Number of BOHB worker threads for local multi-core parallel computing (default: 1)")
     p_tra.add_argument("--verbose-bohb",
                    dest = "verbose_bohb",
                    default = False,
@@ -435,7 +435,7 @@ def setup_argument_parser():
                    metavar='int',
                    default = 10,
                    help = "Moving window step size (stride) for --mode 2 (default: 10)")
-    p_ev.add_argument("--win-size",
+    p_pr.add_argument("--win-size",
                    dest="win_size",
                    type = int,
                    default = 7,
@@ -1390,8 +1390,8 @@ def main_train(args):
             os.makedirs(bohb_out_folder)
 
         n_workers = False
-        if args.bohb_threads > 1:
-            n_workers = args.bohb_threads
+        if args.bohb_workers > 1:
+            n_workers = args.bohb_workers
 
         # Run BOHB.
         print("Starting BOHB hyperparameter optimization (!) ... ")
@@ -1455,8 +1455,8 @@ def main_train(args):
                                                  device, criterion,
                                                  opt_dic=opt_dic)
 
-        print("Model test set accuracy:        %f" %(val_acc))
-        print("Model test set AUC:             %f" %(val_auc))
+        print("Model test set accuracy:        %f" %(test_acc))
+        print("Model test set AUC:             %f" %(test_auc))
 
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
@@ -1485,23 +1485,21 @@ def main_train(args):
     print("75th percentile score: ", ws_sc_perc75)
 
     win_info_dic = {}
-    for win_size in win_sizes:
-        print("Get best and worst scoring windows for window size %i ... " %(win_size))
-        win_extlr = int(win_size/2)
-        profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
-                                                            pos_feat, win_extlr,
-                                                            load_model=False,
-                                                            got_tensors=True)
-
-        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
-
-        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
-        best_id = "best_sc_win_w%i" %(win_size)
-        worst_id = "worst_sc_win_w%i" %(win_size)
-        win_info_dic[best_id] = str(best_sc_win.tolist())
-        win_info_dic[worst_id] = str(worst_sc_win.tolist())
-
-
+    # for win_size in win_sizes:
+    #     print("Get best and worst scoring windows for window size %i ... " %(win_size))
+    #     win_extlr = int(win_size/2)
+    #     profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+    #                                                         pos_feat, win_extlr,
+    #                                                         load_model=False,
+    #                                                         got_tensors=True)
+    #
+    #     assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
+    #
+    #     best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
+    #     best_id = "best_sc_win_w%i" %(win_size)
+    #     worst_id = "worst_sc_win_w%i" %(win_size)
+    #     win_info_dic[best_id] = str(best_sc_win.tolist())
+    #     win_info_dic[worst_id] = str(worst_sc_win.tolist())
 
     print("Get additional site stats ... ")
     pos_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(pos_seqs_dic)
@@ -2768,6 +2766,10 @@ def main_predict(args):
     args.n_feat = int(params_dic["n_feat"])
     args.batch_size = int(params_dic["batch_size"])
     args.dropout_rate = float(params_dic["dropout_rate"])
+    # Embedding mapping.
+    kmer2idx_dic = False
+    if args.embed:
+        kmer2idx_dic = rplib.get_kmer_dic(args.embed_k, rna=True, fill_idx=True)
 
     # Get additional model training run parameters.
     rp_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
@@ -2834,30 +2836,28 @@ def main_predict(args):
         os.makedirs(out_folder)
     model_folder = args.in_train_folder
 
-    # Whole-site predictions output files.
-    ws_scores_out = out_folder + "/" + "whole_site_scores.out"
-    ws_scores_bed = out_folder + "/" + "whole_site_scores.bed"
 
 
-    # hallo 123
+    #######
 
     # Profile predictions output files.
-    score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)
-    peak_regions_bed = out_folder + "/" + "profiles.winext%i.peak_regions.bed" %(args.win_ext)
-    peak_regions_ref_bed = out_folder + "/" + "profiles.winext%i.peak_regions.ref.bed" %(args.win_ext)
-    peak_pos_bed = out_folder + "/" + "profiles.winext%i.peak_positions.bed" %(args.win_ext)
-    peak_pos_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ref.bed" %(args.win_ext)
-    peak_pos_ext_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.bed" %(args.win_ext)
-    peak_pos_ext_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.ref.bed" %(args.win_ext)
-    peak_pos_ext_merged_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.bed" %(args.win_ext)
-    peak_pos_ext_merged_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.ref.bed" %(args.win_ext)
+    # score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)
+    # peak_regions_bed = out_folder + "/" + "profiles.winext%i.peak_regions.bed" %(args.win_ext)
+    # peak_regions_ref_bed = out_folder + "/" + "profiles.winext%i.peak_regions.ref.bed" %(args.win_ext)
+    # peak_pos_bed = out_folder + "/" + "profiles.winext%i.peak_positions.bed" %(args.win_ext)
+    # peak_pos_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ref.bed" %(args.win_ext)
+    # peak_pos_ext_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.bed" %(args.win_ext)
+    # peak_pos_ext_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.ref.bed" %(args.win_ext)
+    # peak_pos_ext_merged_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.bed" %(args.win_ext)
+    # peak_pos_ext_merged_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.ref.bed" %(args.win_ext)
+
+    #######
+
+
 
     print("Model training input folder:       %s" %(model_folder))
     print("Prediction set input folder:       %s" %(args.in_folder))
     print("Prediction results output folder:  %s" %(out_folder))
-
-    # Window length check.
-    win_len = args.win_ext * 2 + 1
 
     # Read in region information.
     id2chr_dic = {}
@@ -2865,8 +2865,7 @@ def main_predict(args):
     id2e_dic = {}
     id2pol_dic = {}
     test_bed_in = args.in_folder + "/" + "test.bed"
-    c_shorties = 0
-    # only_seq : original input were sequences.
+
     only_seq = True
     if os.path.exists(test_bed_in):
         only_seq = False
@@ -2877,9 +2876,6 @@ def main_predict(args):
                 chr_id = cols[0]
                 site_s = int(cols[1])
                 site_e = int(cols[2])
-                site_l = site_e - site_s
-                if site_l < win_len:
-                    c_shorties += 1
                 site_id = cols[3]
                 site_pol = cols[5]
                 id2chr_dic[site_id] = chr_id
@@ -2887,10 +2883,6 @@ def main_predict(args):
                 id2e_dic[site_id] = site_e
                 id2pol_dic[site_id] = site_pol
         f.closed
-
-    # Report sites < window length.
-    if c_shorties:
-        print("WARNING: %i --in sites < window length encountered" %(c_shorties))
 
     # Output mode settings.
     settings_file = out_folder + "/settings.rnaprot_predict.out"
@@ -2908,29 +2900,42 @@ def main_predict(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load data as graphs.
+    store_tensors = True
+    if args.mode == 2:
+        store_tensors = False
+
     print("Load prediction data ... ")
     seqs_dic, idx2id_dic, all_features = rplib.load_predict_data(args,
-                                                        store_tensors=True)
+                                                        kmer2idx_dic=kmer2idx_dic,
+                                                        store_tensors=store_tensors)
     # Number of features (feature vector length).
     check_n_feat = len(all_features[0][0])
-    assert check_n_feat, "invalid check_n_feat extracted from all_features (%s)" %(check_n_feat)
     assert args.n_feat == check_n_feat, "args.n_feat != check_n_feat (%i != %i)" %(args.n_feat, check_n_feat)
     print("# dataset features:  %i" %(args.n_feat))
     print("Dataset size:        %i" %(len(all_features)))
 
+    # Load model.
+    print("Load --train-in model ... ")
+    model = rnn_util.define_model(args, device,
+                                  opt_dic=False)
+    model.load_state_dict(torch.load(model_file))
 
     """
     CASE 1: whole site predictions.
 
     - Run whole site predictions.
-    - Output whole site scores table (+ reference bed).
+    - Output whole site scores table, and if test.bed given reference BED.
 
     """
 
-    # Whole site predictions.
+    # Whole-site predictions output files.
+    ws_scores_out = out_folder + "/" + "whole_site_scores.out"
+    ws_scores_bed = out_folder + "/" + "whole_site_scores.bed"
+
+    # Whole-site predictions.
     if args.mode == 1:
 
-        # Load whole-site dataset.
+        # Whole-site dataloader.
         c_all_feat = len(all_features)
         all_labels = [1]*c_all_feat
         predict_dataset = RNNDataset(all_features, all_labels)
@@ -2944,7 +2949,7 @@ def main_predict(args):
         c_ws_scores = len(ws_scores)
         assert c_ws_scores == c_all_feat, "# whole-site scores != size features list (%i != %i)" %(c_ws_scores, c_all_feat)
 
-        # Output whole site scores.
+        # Output whole-site scores.
         WSOUT = open(ws_scores_out, "w")
         for i,sc in enumerate(ws_scores):
             seq_id = idx2id_dic[i]
@@ -3009,10 +3014,69 @@ For both long_slide, short_slide, and sal_slide we get position-wise scores
 bedgraph format ? to display in IGV would be goode
 
 
-After this:
-Tackle eval!
+
+
+generate windows:
+
+            for feat_list in all_feat_tens:
+                # For each position in feat_list.
+                l_feat = len(feat_list)
+                for wi in range(l_feat):
+                    reg_s = wi
+                    reg_e = wi + args.kmer_size
+                    if reg_e > l_feat:
+                        break
+                    kmer_feat.append(feat_list[reg_s:reg_e])
+
+window mutations:
+
+        if worst_stats:
+            # Get worst scoring window perturbation scores.
+            worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
+                                            all_features[si], worst_sc_win,
+                                            model, device,
+                                            avg_win_extlr=3,
+                                            load_model=False)
+
+            worst_win_pert_dic[seq_id] = worst_win_pert_list
+            # Get worst score position in site (with padding).
+            worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
+                                                    get_lowest=True,
+                                                    padding=win_extlr)
+            worst_win_pos_dic[seq_id] = worst_pos
+            worst_win_si2sc_dic[si] = worst_sc
+            worst_win_id2sc_dic[seq_id] = worst_sc
+
+        if get_sal:
+            # Get mean saliency profile for site.
+            sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
+                                        model, device,
+                                        got_tensors=True,
+                                        sal_type=1)
+            best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
+                                                    get_lowest=False,
+                                                    padding=win_extlr)
+            sal_peak_pos_dic[seq_id] = best_pos
+            sal_lists_dic[seq_id] = sal_list
+
+- create windows (step_size)
+- predict windows
+- for windows > thr_score, do get_window_perturb_scores
+- collect all peaks, with coordinates
+- merge overlapping / nearby ones by score
+
+First predict over all windows, then for the ones over certain score:
+do the worst win mut predictions
+keep track of coordinates (each window with genomic/transcript start end ?)
+
+
+Test with 3UTR and CDE structure model
 
     """
+
+    # alamo
+
+
     peaks_found = False
     wide_peaks_found = False
 

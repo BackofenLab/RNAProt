@@ -21,6 +21,7 @@ from hpbandster.core.worker import Worker
 import hpbandster.core.nameserver as hpns
 import hpbandster.core.result as hpres
 from hpbandster.optimizers import BOHB
+import time
 
 
 """
@@ -57,7 +58,9 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
     if n_workers:
         workers = []
         for i in range(n_workers):
-            w = MyWorker(sleep_interval = 0.5, nameserver=host,run_id=run_id, id=i)
+            w = MyWorker(args, train_dataset, val_dataset,
+                         sleep_interval=0.5, nameserver=host,
+                         run_id=run_id, id=i)
             w.run(background=True)
             workers.append(w)
     else:
@@ -131,8 +134,10 @@ class MyWorker(Worker):
     https://automl.github.io/HpBandSter/build/html/auto_examples/example_5_pytorch_worker.html
 
     """
-    def __init__(self, args, train_dataset, val_dataset, **kwargs):
+    def __init__(self, args, train_dataset, val_dataset,
+                 sleep_interval=0, **kwargs):
         super().__init__(**kwargs)
+        self.sleep_interval = sleep_interval
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.n_class = args.n_class
@@ -169,6 +174,8 @@ class MyWorker(Worker):
             train_loss = train(model, optimizer, train_loader, criterion, self.device)
 
         val_loss, val_acc, val_auc = test(val_loader, model, criterion, self.device)
+
+        time.sleep(self.sleep_interval)
 
         return({
             'loss': 1-val_auc,
