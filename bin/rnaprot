@@ -1432,6 +1432,7 @@ def main_train(args):
 
     # Train model on fold dataset.
     print("Training model ... ")
+    print("CALEB: tickets please ... ")
     val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
                                                       val_loader, final_model_path,
                                                       device, criterion,
