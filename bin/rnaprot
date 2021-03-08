@@ -785,8 +785,14 @@ def main_train(args):
     Train a rnaprot model.
 
     """
+    from datetime import datetime
+    import time
 
     print("Running for you in TRAIN mode ... ")
+
+    start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print("Start time:", start_time)
+    start_sec = time.time()
 
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
@@ -1563,6 +1569,16 @@ def main_train(args):
     n_fc_layers = 1
     if opt_dic["add_fc_layer"]:
         n_fc_layers = 2
+
+    # Run time.
+    end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    end_sec = time.time()
+    hours, rem = divmod(end_sec-start_sec, 3600)
+    minutes, seconds = divmod(rem, 60)
+    elapsed_time = "{:0>2}:{:0>2}:{:0>2}".format(int(hours),int(minutes),int(seconds))
+    print("")
+    print("End time:             %s" %(end_time))
+    print("Run time (HH:MM:SS):  %s" %(elapsed_time))
 
     print("")
     print("=========================")
