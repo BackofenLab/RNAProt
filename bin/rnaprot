@@ -1055,6 +1055,16 @@ def main_train(args):
         avg_auc = statistics.mean(auc_list)
         stdev_auc = statistics.stdev(auc_list)
 
+        # Run time.
+        end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        end_sec = time.time()
+        hours, rem = divmod(end_sec-start_sec, 3600)
+        minutes, seconds = divmod(rem, 60)
+        elapsed_time = "{:0>2}:{:0>2}:{:0>2}".format(int(hours),int(minutes),int(seconds))
+        print("")
+        print("End time:             %s" %(end_time))
+        print("Run time (HH:MM:SS):  %s" %(elapsed_time))
+
         print("Average accuracy + stdev (--gen-cv):  %f (+- %f)" %(avg_acc, stdev_acc))
         print("Average AUC + stdev (--gen-cv):       %f (+- %f)" %(avg_auc, stdev_auc))
 
@@ -1202,6 +1212,17 @@ def main_train(args):
         stdev_acc = statistics.stdev(acc_list)
         avg_auc = statistics.mean(auc_list)
         stdev_auc = statistics.stdev(auc_list)
+
+        # Run time.
+        end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        end_sec = time.time()
+        hours, rem = divmod(end_sec-start_sec, 3600)
+        minutes, seconds = divmod(rem, 60)
+        elapsed_time = "{:0>2}:{:0>2}:{:0>2}".format(int(hours),int(minutes),int(seconds))
+        print("")
+        print("End time:             %s" %(end_time))
+        print("Run time (HH:MM:SS):  %s" %(elapsed_time))
+
         print("Average generic model accuarcy (+- stdev):  %f (+- %f)" %(avg_acc, stdev_acc))
         print("Average generic model AUC (+- stdev):       %f (+- %f)" %(avg_auc, stdev_auc))
 
