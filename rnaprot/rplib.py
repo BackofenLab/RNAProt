@@ -12194,6 +12194,7 @@ def load_training_data(args,
         assert os.path.exists(neg_feat_in), "--in folder does not contain %s"  %(neg_feat_in)
         print("Read in .%s annotations ... " %(fid))
         if fid == "str":
+            print("fid == str ... ")
             # Deal with structure data.
             feat_dic = read_str_feat_into_dic(pos_feat_in,
                                               str_mode=args.str_mode,
