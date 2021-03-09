@@ -1036,6 +1036,7 @@ def main_train(args):
             auc_list.append(test_auc)
 
             # Report fold ACC+AUC.
+            print("# training epochs:    %i" %(c_epochs))
             print("Model test accuracy:  %f" %(test_acc))
             print("Model test AUC:       %f" %(test_auc))
 
@@ -2081,7 +2082,7 @@ def main_eval(args):
     # Get best + worst scoring window.
     best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
 
-    print("best_sc_win:", best_sc_win)
+    #print("best_sc_win:", best_sc_win)
 
     """
     Plot profiles and extract stats
