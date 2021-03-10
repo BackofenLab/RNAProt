@@ -2224,6 +2224,12 @@ def main_eval(args):
         if site_count <= args.nr_top_profiles:
             plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
+            print("Plotting %s ... " %(plot_file_name))
+            ext_win_s, ext_win_e = rplib.get_peak_region(worst_pos, worst_win_pert_list,
+                                                         reverse=True)
+            print("ext_win_s:", ext_win_s)
+            print("ext_win_e:", ext_win_e)
+            print("mean_worst_sc:", statistics.mean(worst_win_pert_list))
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,

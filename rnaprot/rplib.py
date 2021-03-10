@@ -8555,15 +8555,6 @@ def calc_r2_corr_measure(scores1, scores2,
     is_dic:
         If scores1 + scores2 are dictionaries.
 
-    >>> sc1 = [1,3,5]
-    >>> sc2 = [7,12,17]
-    >>> calc_r2_corr_measure(sc1, sc2)
-    1.0
-    >>> d1 = {"sc1" : 1, "sc2" : 3, "sc3" : 6}
-    >>> d2 = {"sc1" : 10, "sc2" : 30, "sc3" : 60}
-    >>> calc_r2_corr_measure(d1, d2, is_dic=True)
-    1.0
-
     """
     assert len(scores1) == len(scores2), "len(scores1) != len(scores2)"
 
@@ -11744,6 +11735,79 @@ def read_str_feat_into_dic(str_feat_file,
 
 ################################################################################
 
+def get_peak_region(pos, sc_list,
+                    reverse=False,
+                    set_mean=False):
+    """
+    For a list of scores get peak region around score position which
+    lies above the mean score.
+
+    reverse:
+        Instead of region above, get region below the mean. Set this True
+        if negative scores indicate stronger signal.
+    set_mean:
+        Instead of using mean of scores list, use provided mean to get
+        the peak region.
+
+    >>> sc_list = [1,2,3,2,0.5,1]
+    >>> get_peak_region(2, sc_list, set_mean=1)
+    (0, 4)
+    >>> sc_list = [-1,-2,-3,-2,-2,-0.5, 0]
+    >>> get_peak_region(2, sc_list, reverse=True, set_mean=-1)
+    (0, 5)
+    >>> sc_list = [-5,-2,-3,-2,-4,-0.5, 0]
+    >>> get_peak_region(0, sc_list, reverse=True, set_mean=-4)
+    (0, 1)
+    >>> sc_list = [5]
+    >>> get_peak_region(0, sc_list, set_mean=5)
+    (0, 1)
+
+
+    """
+    assert sc_list, "sc_list empty"
+    assert len(sc_list) > pos, "len(sc_list) <= pos, but needs to be at least pos+1"
+
+    # Mean score.
+    mean_sc = statistics.mean(sc_list)
+    if set_mean:
+        mean_sc = set_mean
+    # Init start + end of > mean region.
+    s = pos
+    e = pos
+
+    # Get start + end positions above (or below if reverse) mean.
+    for i in reversed(range(pos)):
+        if reverse:
+            if sc_list[i] <= mean_sc:
+                s = i
+            else:
+                break
+        else:
+            if sc_list[i] >= mean_sc:
+                s = i
+            else:
+                break
+
+    for i in range(pos+1, len(sc_list)):
+        if reverse:
+            if sc_list[i] <= mean_sc:
+                e = i
+            else:
+                break
+        else:
+            if sc_list[i] >= mean_sc:
+                e = i
+            else:
+                break
+
+    # Make end 1-based.
+    e = e + 1
+
+    return s, e
+
+
+################################################################################
+
 def get_top_sc_list_pos(scores_list,
                         get_lowest=False,
                         padding=0):
@@ -11760,11 +11824,11 @@ def get_top_sc_list_pos(scores_list,
 
     >>> sc_list = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
     >>> get_top_sc_list_pos(sc_list)
-    0
+    (0, 0.6)
     >>> get_top_sc_list_pos(sc_list, padding=2)
-    2
+    (2, 0.4)
     >>> get_top_sc_list_pos(sc_list, get_lowest=True)
-    5
+    (5, 0.1)
 
     """
     assert scores_list, "scores_list empty"
@@ -11797,9 +11861,9 @@ def get_fid2fidx_mappings(ch_info_dic):
     of standard deviation calculation. Map feature ID to feature channel
     index. Return both-way mappings.
 
-    >>> ch_info_dic: {'fa': ['C', [0], ['embed'], 'embed'], 'pc.con': ['N', [3], ['phastcons_score'], 'prob']}
+    >>> ch_info_dic = {'fa': ['C', [0], ['embed'], 'embed'], 'pc.con': ['N', [3], ['phastcons_score'], 'prob']}
     >>> get_fid2fidx_mappings(ch_info_dic)
-    0
+    ({'pc.con': 3}, {3: 'pc.con'})
 
     """
 
