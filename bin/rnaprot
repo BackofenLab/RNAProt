@@ -504,8 +504,8 @@ def setup_argument_parser():
                    dest = "seq_ext",
                    type = int,
                    metavar='int',
-                   default = 30,
-                   help = "Up- and downstream sequence extension length of sites (site definition by --mode) (default: 30)")
+                   default = 40,
+                   help = "Up- and downstream sequence extension length of sites (site definition by --mode) (default: 40)")
     p_gt.add_argument("--thr",
                    dest="sc_thr",
                    type = float,
@@ -2224,12 +2224,12 @@ def main_eval(args):
         if site_count <= args.nr_top_profiles:
             plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
-            print("Plotting %s ... " %(plot_file_name))
+            #print("Plotting %s ... " %(plot_file_name))
             ext_win_s, ext_win_e = rplib.get_peak_region(worst_pos, worst_win_pert_list,
                                                          reverse=True)
-            print("ext_win_s:", ext_win_s)
-            print("ext_win_e:", ext_win_e)
-            print("mean_worst_sc:", statistics.mean(worst_win_pert_list))
+            #print("ext_win_s:", ext_win_s)
+            #print("ext_win_e:", ext_win_e)
+            #print("mean_worst_sc:", statistics.mean(worst_win_pert_list))
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
@@ -3117,13 +3117,20 @@ keep track of coordinates (each window with genomic/transcript start end ?)
 
 Test with 3UTR and CDE structure model
 
+
+    pos_ws_sc_perc25 = float(params_dic["pos_ws_sc_perc25"])
+    pos_ws_sc_perc50 = float(params_dic["pos_ws_sc_perc50"])
+    pos_ws_sc_perc75 = float(params_dic["pos_ws_sc_perc75"])
+    pos_seq_len_median = int(params_dic["pos_seq_len_median"])
+
+
+seqs_dic, idx2id_dic, all_features
+
     """
 
     # alamo
 
 
-    peaks_found = False
-    wide_peaks_found = False
 
     # Profile and peak predictions.
     if args.mode == 2:
