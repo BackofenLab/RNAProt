@@ -191,6 +191,11 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Enable verbose output during model training to show performance over epochs (default: False)")
+    p_tra.add_argument("--force-cpu",
+                   dest = "force_cpu",
+                   default = False,
+                   action = "store_true",
+                   help = "Run on CPU regardless of CUDA available or not (default: False)")
     p_tra.add_argument("--epochs",
                    dest="epochs",
                    type = int,
@@ -448,12 +453,6 @@ def setup_argument_parser():
                    metavar='int',
                    default = 0,
                    help = "Maximum distance between two peaks for merging. Two peaks get merged to one if they are <= --max-merge-dist away from each other (default: 0)")
-    p_pr.add_argument("--strict",
-                   dest="mode",
-                   type = int,
-                   default = 1,
-                   choices = [1,2],
-                   help = "Define prediction mode. (1) predict whole sites, (2) predict binding sites on longer sequences using moving window predictions (default: 1)")
 
     """
     Training set generation mode.
@@ -818,7 +817,7 @@ def main_train(args):
         assert not args.test_ids, "incompatible options --test-ids and --gm-cv. --test-ids only for training final model, not for --gm-cv cross validation"
 
     assert args.epochs >= 1 and args.epochs <= 500, "use reasonable number for --epochs (>= 1 and <= 500)"
-    assert args.patience > 0 and args.patience <= 100, "use reasonable number for --patience (> 0 and <= 100)"
+    assert args.patience > 0 and args.patience <= 200, "use reasonable number for --patience (> 0 and <= 200)"
 
     # Get additional infos from rnaprot gt settings.
     gt_settings_file = args.in_folder + "/settings.rnaprot_gt.out"
@@ -941,12 +940,15 @@ def main_train(args):
         id2idx_dic[seq_id] = idx
 
     # Check for CUDA support.
-    if torch.cuda.is_available():
-        print("CUDA: I'm available. Using GPU ... ")
+    device = torch.device('cpu')
+    if args.force_cpu:
+        print("Run training on CPU (--force-cpu set) ... ")
     else:
-        print("CUDA: I'm NOT available. Using CPU ... ")
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            print("CUDA: I'm available. Using GPU ... ")
+        else:
+            print("CUDA: I'm NOT (!) available. Using CPU ... ")
 
     print("# dataset features:  %i" %(n_feat))
     print("Dataset size:        %i" %(len(all_features)))
@@ -1427,6 +1429,7 @@ def main_train(args):
                                                     val_dataset, bohb_out_folder,
                                                     verbose_bohb=args.verbose_bohb,
                                                     n_bohb_iter=args.bohb_n_iter,
+                                                    device=device,
                                                     n_workers=n_workers,
                                                     min_budget=args.bohb_min_budget,
                                                     max_budget=args.bohb_max_budget)
@@ -1490,13 +1493,18 @@ def main_train(args):
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
 
+    """
     # Get whole-site scores of positive set for final model.
     print("Score all positive sites with trained model ... ")
+
+
     # Load positives again.
     pos_seqs_dic, idx2id_dic, pos_lab, pos_feat = rplib.load_training_data(args,
                                                         kmer2idx_dic=kmer2idx_dic,
                                                         load_only_pos=True,
                                                         store_tensors=True)
+
+
     predict_dataset = RNNDataset(pos_feat, pos_lab)
     predict_loader = DataLoader(dataset=predict_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
     model = rnn_util.define_model(args, device,
@@ -1513,22 +1521,68 @@ def main_train(args):
     print("50th percentile score: ", ws_sc_perc50)
     print("75th percentile score: ", ws_sc_perc75)
 
+
+    print("Get positive site scores from trained model ... ")
+    if args.test_ids:
+        # Load whole set again (since it was modified if args.test_ids).
+        seqs_dic, idx2id_dic, labels, all_features = rplib.load_training_data(args,
+                                                           kmer2idx_dic=kmer2idx_dic,
+                                                           store_tensors=True)
+
+    # Generate positives features.
+    pos_feat = []
+    pos_idx2id_dic = {}
+    new_idx = 0
+    for idx, label in enumerate(labels):
+        if label == 1:
+            pos_feat.append(all_features[idx])
+            pos_idx2id_dic[new_idx] = idx2id_dic[idx]
+            idx2id_dic
+        new_idx += 1
+    # Predict whole sites for positive set.
+    pos_lab = [1]*len(pos_feat)
+    predict_dataset = RNNDataset(pos_feat, pos_lab)
+    predict_loader = DataLoader(dataset=predict_dataset, batch_size=opt_dic["batch_size"], collate_fn=rnn_util.pad_collate, pin_memory=True)
+    model = rnn_util.define_model(args, device,
+                                  opt_dic=opt_dic)
+    model.load_state_dict(torch.load(final_model_path))
+    ws_scores = rnn_util.test_scores(predict_loader, model, device)
+    # Additional whole site score stats.
+    print("Maximum whole-site score: ", max(ws_scores))
+    print("Minimum whole-site score: ", min(ws_scores))
+    ws_sc_perc_list = np.percentile(ws_scores, [25, 50, 75])
+    ws_sc_perc25 = ws_sc_perc_list[0]
+    ws_sc_perc50 = ws_sc_perc_list[1]
+    ws_sc_perc75 = ws_sc_perc_list[2]
+    print("25th percentile score: ", ws_sc_perc25)
+    print("50th percentile score: ", ws_sc_perc50)
+    print("75th percentile score: ", ws_sc_perc75)
+    # Store positive whole-site scores in file.
+    ws_scores_out_file = args.out_folder + "/pos_ws_scores.out"
+    WSOUT = open(ws_scores_out_file, "w")
+    for idx, ws_sc in enumerate(ws_scores):
+        seq_id = pos_idx2id_dic[idx]
+        seq = seqs_dic[seq_id]
+        WSOUT.write("%s\t%s\t%s\n" %(seq_id, str(ws_sc), seq))
+    WSOUT.close()
+
+    # Get best and worst window scores.
     win_info_dic = {}
-    # for win_size in win_sizes:
-    #     print("Get best and worst scoring windows for window size %i ... " %(win_size))
-    #     win_extlr = int(win_size/2)
-    #     profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
-    #                                                         pos_feat, win_extlr,
-    #                                                         load_model=False,
-    #                                                         got_tensors=True)
-    #
-    #     assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
-    #
-    #     best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
-    #     best_id = "best_sc_win_w%i" %(win_size)
-    #     worst_id = "worst_sc_win_w%i" %(win_size)
-    #     win_info_dic[best_id] = str(best_sc_win.tolist())
-    #     win_info_dic[worst_id] = str(worst_sc_win.tolist())
+    for win_size in win_sizes:
+        print("Get best and worst scoring windows for window size %i ... " %(win_size))
+        win_extlr = int(win_size/2)
+        profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+                                                            all_features, win_extlr,
+                                                            load_model=False,
+                                                            got_tensors=True)
+
+        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
+
+        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
+        best_id = "best_sc_win_w%i" %(win_size)
+        worst_id = "worst_sc_win_w%i" %(win_size)
+        win_info_dic[best_id] = str(best_sc_win.tolist())
+        win_info_dic[worst_id] = str(worst_sc_win.tolist())
 
     print("Get additional site stats ... ")
     pos_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(pos_seqs_dic)
@@ -1537,6 +1591,8 @@ def main_train(args):
         if seq_id not in pos_seqs_dic:
             neg_seqs_dic[seq_id] = seqs_dic[seq_id]
     neg_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(neg_seqs_dic)
+
+    """
 
     # Write model params file.
     PAROUT = open(final_params_path, "w")
@@ -3124,13 +3180,12 @@ Test with 3UTR and CDE structure model
     pos_seq_len_median = int(params_dic["pos_seq_len_median"])
 
 
+
 seqs_dic, idx2id_dic, all_features
 
+
+
     """
-
-    # alamo
-
-
 
     # Profile and peak predictions.
     if args.mode == 2:
@@ -3141,68 +3196,73 @@ seqs_dic, idx2id_dic, all_features
         all_win_feat = []
         seq_len_list = []
         c_all_seq_len = 0
-        win_extlr = args.win_ext
 
-        print("Create windows ... ")
-        for feat_list in all_features:
-            l_seq = len(feat_list)
-            # l_seq == window graphs for sequence.
-            seq_len_list.append(l_seq)
-            c_all_seq_len += l_seq
-            # For each position in feat_list.
-            l_feat = len(feat_list)
-            for wi in range(l_feat):
-                reg_s = wi - win_extlr
-                reg_e = wi + win_extlr + 1
-                if reg_e > l_feat:
-                    reg_e = l_feat
-                if reg_s < 0:
-                    reg_s = 0
-                #all_win_feat.append(torch.tensor(feat_list[reg_s:reg_e], dtype=torch.float))
-                all_win_feat.append(feat_list[reg_s:reg_e])
+        win_extlr = int(pos_seq_len_median/2)
 
-        # Checks.
-        c_all_win_feat = len(all_win_feat)
-        assert c_all_win_feat, "no windows extracted (size of window features list == 0)"
-        assert c_all_seq_len == c_all_win_feat, "total sequence length != # of windows (%i != %i)" %(c_all_seq_len, c_all_win_feat)
+        profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+                                                            all_features, win_extlr,
+                                                            load_model=False,
+                                                            got_tensors=False)
 
-        # Load dataset.
-        all_win_feat_labels = [1]*c_all_win_feat
-        predict_dataset = RNNDataset(all_win_feat, all_win_feat_labels)
-        predict_loader = DataLoader(dataset=predict_dataset, batch_size=batch_size, collate_fn=rnn_util.my_collate, pin_memory=True)
+        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
 
-        # Predict.
-        print("Predict windows ... ")
-        win_scores = rnn_util.get_scores(predict_loader, model, criterion)
 
-        # Checks.
-        c_win_scores = len(win_scores)
-        assert c_win_scores == c_all_seq_len, "# window graph scores != total sequence length (%i != %i)" %(c_win_scores, c_all_seq_len)
 
-        # Create list of profile scores.
-        profile_scores_ll = []
-        si = 0
-        for l in seq_len_list:
-            se = si + l
-            profile_scores_ll.append(win_scores[si:se])
-            si += l
-        assert profile_scores_ll, "profile_scores_ll list empty"
-        assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
+
 
         """
         Extract peak regions, and store peak regions and top scoring positions
         in various output files (if not only_seq also regions mapped to reference).
 
+
+    # Profile predictions output files.
+    # score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)
+    # peak_regions_bed = out_folder + "/" + "profiles.winext%i.peak_regions.bed" %(args.win_ext)
+    # peak_regions_ref_bed = out_folder + "/" + "profiles.winext%i.peak_regions.ref.bed" %(args.win_ext)
+    # peak_pos_bed = out_folder + "/" + "profiles.winext%i.peak_positions.bed" %(args.win_ext)
+    # peak_pos_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ref.bed" %(args.win_ext)
+    # peak_pos_ext_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.bed" %(args.win_ext)
+    # peak_pos_ext_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.ref.bed" %(args.win_ext)
+    # peak_pos_ext_merged_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.bed" %(args.win_ext)
+    # peak_pos_ext_merged_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.ref.bed" %(args.win_ext)
+
+
+        WINPEAKREGOUT
+        WINPEAKOUT
+        PEAKREGOUT
+        PEAKWINOUT
+        PROFOUT
+        PEAKREGOUT
+        PEAKWINOUT
+
+        alamo
+
         """
+        peak_reg_sc_thr = pos_ws_sc_perc25
+        if pos_ws_sc_perc25 < 0:
+            peak_reg_sc_thr = 0
+        peak_win_sc_thr = pos_ws_sc_perc50
+        if pos_ws_sc_perc50 < 0:
+            peak_win_sc_thr = 0
+
+        score_profiles_out = out_folder + "/" + "profiles.out"
+        peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
+        peak_win_bed = out_folder + "/" + "profiles.peak_windows.bed"
+        peak_win_merged_bed = out_folder + "/" + "profiles.peak_windows.merged.bed"
+        peak_reg_ref_bed = out_folder + "/" + "profiles.peak_regions.ref.bed"
+        peak_win_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.bed"
+        peak_win_merged_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.merged.bed"
 
         PROFOUT = open(score_profiles_out, "w")
-        PEAKREGOUT = open(peak_regions_bed, "w")
-        PEAKPOSOUT = open(peak_pos_bed, "w")
-        PEAKPOSEXTOUT = open(peak_pos_ext_bed, "w")
+        PEAKREGOUT = open(peak_reg_bed, "w")
+        PEAKWINOUT = open(peak_win_bed, "w")
+        PEAKWINMRGOUT = open(peak_win_merged_bed, "w")
+
+        # Reference BED files.
         if not only_seq:
-            PEAKREGREFOUT = open(peak_regions_ref_bed, "w")
-            PEAKPOSREFOUT = open(peak_pos_ref_bed, "w")
-            PEAKPOSEXTREFOUT = open(peak_pos_ext_ref_bed, "w")
+            PEAKREGREFOUT = open(peak_reg_ref_bed, "w")
+            PEAKWINREFOUT = open(peak_win_ref_bed, "w")
+            PEAKWINMRGREFOUT = open(peak_win_merged_ref_bed, "w")
 
         peaks_found = 0
 
@@ -3231,7 +3291,7 @@ seqs_dic, idx2id_dic, all_features
             peak_list = rplib.list_extract_peaks(profile_scores_ll[idx],
                                                  max_merge_dist=args.max_merge_dist,
                                                  coords="bed",
-                                                 sc_thr=args.sc_thr)
+                                                 sc_thr=peak_reg_sc_thr)
 
             # Peak count.
             peak_i = 0
@@ -3242,8 +3302,8 @@ seqs_dic, idx2id_dic, all_features
                 top_pos = peak_reg[2]
                 top_sc = peak_reg[3]
                 top_pos_s = top_pos - 1
-                top_pos_ext_s = top_pos_s - args.win_ext
-                top_pos_ext_e = top_pos + args.win_ext
+                top_pos_ext_s = top_pos_s - win_extlr
+                top_pos_ext_e = top_pos + win_extlr
                 if top_pos_ext_s < 0:
                     top_pos_ext_s = 0
                 if top_pos_ext_e > seq_l:
@@ -3252,15 +3312,16 @@ seqs_dic, idx2id_dic, all_features
                 peak_i += 1
                 peaks_found += 1
                 peak_id = "peak_%i" %(peak_i)
+
                 PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
-                PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
-                PEAKPOSEXTOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
+                #PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
+                PEAKWINOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
                 # Reference coordinates.
                 if not only_seq:
                     new_s, new_e = rplib.bed_convert_coords(peak_s, peak_e, ref_s, ref_e, ref_pol)
                     new_top_s, new_top_e = rplib.bed_convert_coords(top_pos-1, top_pos, ref_s, ref_e, ref_pol)
-                    new_top_ext_s = new_top_s - args.win_ext
-                    new_top_ext_e = new_top_e + args.win_ext
+                    new_top_ext_s = new_top_s - win_extlr
+                    new_top_ext_e = new_top_e + win_extlr
                     if new_top_ext_s < ref_s:
                         new_top_ext_s = ref_s
                     if new_top_ext_e > ref_e:
@@ -3269,38 +3330,35 @@ seqs_dic, idx2id_dic, all_features
                     tp_ext_ref_l = new_top_ext_e - new_top_ext_s
                     assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i)" %(tp_ext_ref_l, tp_ext_l)
                     PEAKREGREFOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t%s\n" %(chr_id, new_s, new_e, peak_id, new_top_e, top_sc, ref_pol))
-                    PEAKPOSREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_s, new_top_e, peak_id, new_top_e, top_sc, ref_pol))
-                    PEAKPOSEXTREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_ext_s, new_top_ext_e, peak_id, new_top_e, top_sc, ref_pol))
+                    #PEAKPOSREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_s, new_top_e, peak_id, new_top_e, top_sc, ref_pol))
+                    PEAKWINREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_ext_s, new_top_ext_e, peak_id, new_top_e, top_sc, ref_pol))
 
             if not peak_i:
                 print("WARNING: no profile peaks found for sequence %s ... " %(seq_id))
 
         PROFOUT.close()
         PEAKREGOUT.close()
-        PEAKPOSOUT.close()
-        PEAKPOSEXTOUT.close()
+        PEAKWINOUT.close()
         if not only_seq:
             PEAKREGREFOUT.close()
-            PEAKPOSREFOUT.close()
-            PEAKPOSEXTREFOUT.close()
+            PEAKWINREFOUT.close()
 
         if not peaks_found:
             print("WARNING: no profile peaks found for any input sequence!")
-            print("         Try with lower --thr to obtain profile peaks for the given sequences")
+            print("         Try with lower threshold to obtain profile peaks for the given sequences")
             sys.exit()
 
         # Merge extended peaks.
-        rplib.bed_sort_merge_output_top_entries(peak_pos_ext_bed, peak_pos_ext_merged_bed)
+        rplib.bed_sort_merge_output_top_entries(peak_win_bed, peak_win_merged_bed)
         if only_seq:
-            if os.path.exists(peak_regions_ref_bed):
-                os.remove(peak_regions_ref_bed)
-            if os.path.exists(peak_pos_ref_bed):
-                os.remove(peak_pos_ref_bed)
-            if os.path.exists(peak_pos_ext_ref_bed):
-                os.remove(peak_pos_ext_ref_bed)
+            if os.path.exists(peak_reg_ref_bed):
+                os.remove(peak_reg_ref_bed)
+            if os.path.exists(peak_win_ref_bed):
+                os.remove(peak_win_ref_bed)
+            if os.path.exists(peak_win_merged_ref_bed):
+                os.remove(peak_win_merged_ref_bed)
         else:
-            rplib.bed_sort_merge_output_top_entries(peak_pos_ext_ref_bed, peak_pos_ext_merged_ref_bed)
-
+            rplib.bed_sort_merge_output_top_entries(peak_win_ref_bed, peak_win_merged_ref_bed)
 
     """
     Output file summary.
@@ -3319,18 +3377,15 @@ seqs_dic, idx2id_dic, all_features
         print("PROFILE PREDICTION OUTPUT FILES")
         print("===============================")
         print("Profiles output file:\n%s" %(score_profiles_out))
-        print("Peak regions (regions with scores above --thr):\n%s" %(peak_regions_bed))
+        print("Peak regions:\n%s" %(peak_reg_bed))
         if not only_seq:
-            print("Peak regions on reference:\n%s" %(peak_regions_ref_bed))
-        print("Peak regions top scoring positions:\n%s" %(peak_pos_bed))
+            print("Peak regions on reference:\n%s" %(peak_reg_ref_bed))
+        print("Peak regions top scoring windows:\n%s" %(peak_win_bed))
         if not only_seq:
-            print("Peak regions top scoring positions on reference:\n%s" %(peak_pos_ref_bed))
-        print("Peak regions extended top scoring positions:\n%s" %(peak_pos_ext_bed))
+            print("Peak regions top scoring windows on reference:\n%s" %(peak_win_ref_bed))
+        print("Peak regions top scoring windows merged:\n%s" %(peak_win_merged_bed))
         if not only_seq:
-            print("Peak regions extended top scoring positions on reference:\n%s" %(peak_pos_ext_ref_bed))
-        print("Peak regions extended+merged top scoring positions:\n%s" %(peak_pos_ext_merged_bed))
-        if not only_seq:
-            print("Peak regions extended+merged top scoring positions on reference:\n%s" %(peak_pos_ext_merged_ref_bed))
+            print("Peak regions top scoring windows merged on reference:\n%s" %(peak_win_merged_ref_bed))
     print("")
 
 

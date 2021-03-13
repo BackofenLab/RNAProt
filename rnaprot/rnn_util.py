@@ -38,6 +38,7 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
              min_budget=5,
              verbose_bohb=False,
              n_workers=False,
+             device=False,
              max_budget=30):
 
     # Logging.
@@ -60,11 +61,13 @@ def run_BOHB(args, train_dataset, val_dataset, bohb_out_folder,
         for i in range(n_workers):
             w = MyWorker(args, train_dataset, val_dataset,
                          sleep_interval=0.5, nameserver=host,
+                         device=device,
                          run_id=run_id, id=i)
             w.run(background=True)
             workers.append(w)
     else:
         w = MyWorker(args, train_dataset, val_dataset,
+                     device=device,
                      nameserver=host,run_id=run_id)
         w.run(background=True)
 
@@ -135,6 +138,7 @@ class MyWorker(Worker):
 
     """
     def __init__(self, args, train_dataset, val_dataset,
+                 device=False,
                  sleep_interval=0, **kwargs):
         super().__init__(**kwargs)
         self.sleep_interval = sleep_interval
@@ -144,7 +148,10 @@ class MyWorker(Worker):
         self.n_feat = args.n_feat
         self.embed_vocab_size = args.embed_vocab_size
         self.add_feat = args.add_feat
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if not device:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
 
     def compute(self, config, budget, **kwargs):
 

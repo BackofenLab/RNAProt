@@ -12067,6 +12067,7 @@ def load_training_data(args,
                        kmer2idx_dic=False,
                        feat_info_dic=None,
                        load_only_pos=False,
+                       load_only_neg=False,
                        li2label_dic=None):
 
     """
