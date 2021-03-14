@@ -1016,6 +1016,8 @@ def main_train(args):
             plot_lc_folder = False
             if args.plot_lc:
                 plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
+                if not os.path.exists(plot_lc_folder):
+                    os.makedirs(plot_lc_folder)
 
             # Model path.
             model_path = model_folder + "/gen_cv.model"
@@ -1173,6 +1175,8 @@ def main_train(args):
             plot_lc_folder = False
             if args.plot_lc:
                 plot_lc_folder = model_folder + "/lc_plots_%i" %(i_cv)
+                if not os.path.exists(plot_lc_folder):
+                    os.makedirs(plot_lc_folder)
 
             # Model path to luck.
             model_path = model_folder + "/gen_cv.model"
@@ -1250,11 +1254,6 @@ def main_train(args):
     NOTE that if --add-test, --val-size determines size of extra test set.
 
     """
-
-    # Path to store final models.
-    model_folder = out_folder + "/final_model/"
-    if not os.path.exists(model_folder):
-        os.makedirs(model_folder)
 
     final_model_path = out_folder + "/" + "final.model"
     final_params_path = out_folder + "/" + "final.params"
@@ -1459,7 +1458,9 @@ def main_train(args):
     # Plot learning curves.
     plot_lc_folder = False
     if args.plot_lc:
-        plot_lc_folder = model_folder + "/lc_plots"
+        plot_lc_folder = out_folder + "/lc_plots"
+        if not os.path.exists(plot_lc_folder):
+            os.makedirs(plot_lc_folder)
 
     # Train model on fold dataset.
     print("Training model ... ")
@@ -1521,6 +1522,7 @@ def main_train(args):
     print("50th percentile score: ", ws_sc_perc50)
     print("75th percentile score: ", ws_sc_perc75)
 
+    """
 
     print("Get positive site scores from trained model ... ")
     if args.test_ids:
@@ -1531,12 +1533,15 @@ def main_train(args):
 
     # Generate positives features.
     pos_feat = []
+    pos_seqs_dic = {}
     pos_idx2id_dic = {}
     new_idx = 0
     for idx, label in enumerate(labels):
         if label == 1:
             pos_feat.append(all_features[idx])
-            pos_idx2id_dic[new_idx] = idx2id_dic[idx]
+            seq_id = idx2id_dic[idx]
+            pos_idx2id_dic[new_idx] = seq_id
+            pos_seqs_dic[seq_id] = seqs_dic[seq_id]
             idx2id_dic
         new_idx += 1
     # Predict whole sites for positive set.
@@ -1562,8 +1567,9 @@ def main_train(args):
     WSOUT = open(ws_scores_out_file, "w")
     for idx, ws_sc in enumerate(ws_scores):
         seq_id = pos_idx2id_dic[idx]
-        seq = seqs_dic[seq_id]
-        WSOUT.write("%s\t%s\t%s\n" %(seq_id, str(ws_sc), seq))
+        WSOUT.write("%s\t%s\n" %(seq_id, str(ws_sc)))
+        #seq = seqs_dic[seq_id]
+        #WSOUT.write("%s\t%s\t%s\n" %(seq_id, str(ws_sc), seq))
     WSOUT.close()
 
     # Get best and worst window scores.
@@ -1576,9 +1582,9 @@ def main_train(args):
                                                             load_model=False,
                                                             got_tensors=True)
 
-        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
+        assert len(profile_scores_ll) == len(all_features), "len(profile_scores_ll) != len(all_features)"
 
-        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, pos_feat, win_extlr)
+        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
         best_id = "best_sc_win_w%i" %(win_size)
         worst_id = "worst_sc_win_w%i" %(win_size)
         win_info_dic[best_id] = str(best_sc_win.tolist())
@@ -1591,8 +1597,6 @@ def main_train(args):
         if seq_id not in pos_seqs_dic:
             neg_seqs_dic[seq_id] = seqs_dic[seq_id]
     neg_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(neg_seqs_dic)
-
-    """
 
     # Write model params file.
     PAROUT = open(final_params_path, "w")
@@ -2831,8 +2835,8 @@ def main_predict(args):
     assert best_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(best_sc_win_id, params_file)
     assert worst_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(worst_sc_win_id, params_file)
     import ast
-    best_sc_win = ast.literal_eval(params_dic["best_sc_win_id"])
-    worst_sc_win = ast.literal_eval(params_dic["worst_sc_win_id"])
+    best_sc_win = ast.literal_eval(params_dic[best_sc_win_id])
+    worst_sc_win = ast.literal_eval(params_dic[worst_sc_win_id])
 
     # More infos regarding trained model.
     assert "pos_ws_sc_perc25" in params_dic, "pos_ws_sc_perc25 info missing in model parameter file %s" %(params_file)
@@ -2879,11 +2883,11 @@ def main_predict(args):
     assert "str_mode" in train_settings_dic, "dropout_rate info missing in train run parameter file %s" %(rp_train_settings_file)
     assert "only_seq" in train_settings_dic, "only_seq info missing in train run parameter file %s" %(rp_train_settings_file)
     args.only_seq = False
-    if params_dic["only_seq"] == "True":
+    if train_settings_dic["only_seq"] == "True":
         args.only_seq = True
     onlyseq = args.only_seq
     # Checks.
-    if onlseq:
+    if onlyseq:
         if args.embed:
             assert args.n_feat == 1, "onlyseq = True and embed = True, but # features != 1 (found %i)" %(args.n_feat)
         else:
@@ -3204,7 +3208,7 @@ seqs_dic, idx2id_dic, all_features
                                                             load_model=False,
                                                             got_tensors=False)
 
-        assert len(profile_scores_ll) == len(pos_feat), "len(profile_scores_ll) != len(pos_feat)"
+        assert len(profile_scores_ll) == len(all_features), "len(profile_scores_ll) != len(all_features)"
 
 
 
@@ -5046,7 +5050,7 @@ def main_gp(args):
             args.feat_in_norm = True
         if train_settings_dic["feat_in_1h"] == "True":
             args.feat_in_1h = True
-    assert add_fid_dic, "no additional features read in from specified --feat-in %s" %(feat_in_file)
+        assert add_fid_dic, "no additional features read in from specified --feat-in %s" %(feat_in_file)
 
     # Region features.
     args.exon_intron_annot = False
@@ -5405,11 +5409,8 @@ def main_gp(args):
 
     # Process --in positives.
     count_stats_dic = {}
-    # Lowercase uppercase lowercase part lengths.
-    id2pl_dic = {}
 
-    id2row_dic = rplib.process_test_sites(args.in_sites, tmp_bed, chr_len_dic,
-                                          id2pl_dic, args,
+    id2row_dic = rplib.process_test_sites(args.in_sites, tmp_bed, chr_len_dic, args,
                                           check_ids=True,
                                           transcript_regions=transcript_regions,
                                           count_dic=count_stats_dic)

@@ -11122,9 +11122,9 @@ def get_length_stats_from_seqs_dic(seqs_dic):
         seq_len_list.append(len(seqs_dic[seq_id]))
     seq_stats_dic = {}
     seq_stats_dic["mean"] = statistics.mean(seq_len_list)
-    seq_stats_dic["median"] = statistics.median(seq_len_list)
-    seq_stats_dic["max"] = max(seq_len_list)
-    seq_stats_dic["min"] = max(seq_len_list)
+    seq_stats_dic["median"] = int(statistics.median(seq_len_list))
+    seq_stats_dic["max"] = int(max(seq_len_list))
+    seq_stats_dic["min"] = int(max(seq_len_list))
     seq_stats_dic["stdev"] = statistics.stdev(seq_len_list)
     return seq_stats_dic
 
@@ -11440,8 +11440,8 @@ def load_predict_data(args,
     params_file = args.in_train_folder + "/final.params"
     assert os.path.isfile(params_file), "missing model training parameter file %s" %(params_file)
     params_dic = read_settings_into_dic(params_file)
-    assert "num_features" in params_dic, "num_features info missing in model parameter file %s" %(params_file)
-    model_num_feat = int(params_dic["num_features"])
+    assert "n_feat" in params_dic, "num_features info missing in model parameters file %s" %(params_file)
+    model_num_feat = int(params_dic["n_feat"])
 
     # rnaprot predict output folder.
     out_folder = args.out_folder
@@ -11635,7 +11635,7 @@ def load_predict_data(args,
     assert all_features, "no features stored in all_features (all_features empty)"
 
     # Return some double talking jive data.
-    return seqs_dic, idx2id_dic, all_features
+    return test_seqs_dic, idx2id_dic, all_features
 
 
 ################################################################################
@@ -12775,8 +12775,7 @@ def revise_in_sites(in_bed, out_bed,
 
 ################################################################################
 
-def process_test_sites(in_bed, out_bed, chr_len_dic,
-                       id2pl_dic, args,
+def process_test_sites(in_bed, out_bed, chr_len_dic, args,
                        check_ids=False,
                        transcript_regions=False,
                        count_dic=None,
@@ -12825,8 +12824,37 @@ def process_test_sites(in_bed, out_bed, chr_len_dic,
             # Make site polarities "+" for transcript sites.
             if transcript_regions:
                 site_pol = "+"
+
+            # 1: Take the center of each site.
+            # 2: Take the complete site.
+            # 3: Take the upstream end for each site.
             new_s = site_s
             new_e = site_e
+
+            if args.mode == 1:
+                # Take center position.
+                new_e = get_center_position(site_s, site_e)
+                new_s = new_e - 1
+            elif args.mode == 3:
+                new_s = site_s
+                new_e = site_s + 1
+                if site_pol == "-":
+                    new_s = site_e - 1
+                    new_e = site_e
+
+            # Extend.
+            if args.seq_ext:
+                new_s = new_s - args.seq_ext
+                new_e = new_e + args.seq_ext
+            # Truncate sites at reference ends.
+            if new_s < 0:
+                new_s = 0
+            if new_e > chr_len_dic[chr_id]:
+                new_e = chr_len_dic[chr_id]
+
+            # Check length.
+            new_len = new_e - new_s
+            assert new_len > 1, "sites with length 1 encountered. Please provide longer sites, or use --seq-ext to prolong them (or change --mode setting). Ideally site lengths should be >= median training site length"
 
             # IDs.
             c_out += 1
@@ -12838,9 +12866,6 @@ def process_test_sites(in_bed, out_bed, chr_len_dic,
                 new_site_id = id_prefix + "_" + str(c_out)
             else:
                 new_site_id = site_id
-
-            # Store future uppercase region length.
-            id2pl_dic[new_site_id] = [0, site_len, 0]
 
             # Check whether score is whole number.
             if not site_sc % 1:
@@ -12969,8 +12994,9 @@ def process_in_sites(in_bed, out_bed, chr_len_dic, args,
             else:
                 assert False, "invalid mode set (args.mode value == %i)" %(args.mode)
             # Extend.
-            new_s = new_s - args.seq_ext
-            new_e = new_e + args.seq_ext
+            if args.seq_ext:
+                new_s = new_s - args.seq_ext
+                new_e = new_e + args.seq_ext
             # Truncate sites at reference ends.
             if new_s < 0:
                 new_s = 0
