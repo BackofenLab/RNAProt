@@ -12000,7 +12000,6 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
                         worst_sc = worst_sc_brick[i]
                         worst_sc_nt = seq_brick[i]
                         j = map_nt2idx_dix[worst_sc_nt]
-                        motif_matrix[i][j] = motif_matrix[i][j] - worst_sc
                         if got_saliencies:
                             motif_matrix[i][j] = motif_matrix[i][j] + worst_sc
                         else:
@@ -13228,6 +13227,9 @@ def add_saliency_scores_plot(df, fig, gs, i,
 def add_label_plot(df, fig, gs, i,
                    color_dict=False,
                    y_label_size=9,
+                   add_x_ticks=False,
+                   x_tick_spacing=10,
+                   x_tick_start=0,
                    y_label="exon-intron"):
     """
     Make exon-intron label plot.
@@ -13240,8 +13242,27 @@ def add_label_plot(df, fig, gs, i,
         logo = logomaker.Logo(df, ax=ax, vpad=0.1)
     logo.style_spines(visible=False)
     logo.style_spines(spines=['left'], visible=False, bounds=[0, 1])
+    #logo.style_spines(spines=['bottom'], visible=False)
     logo.style_spines(spines=['bottom'], visible=False)
-    logo.ax.set_xticks([])
+    #logo.style_xticks(rotation=90, fmt='%d', anchor=0)
+    if add_x_ticks:
+        l_seq = len(df) + x_tick_start
+        # Fix xticks.
+        logo.style_xticks(rotation=0, fmt='%d', anchor=-1, spacing=10)
+        x_tick_labels = []
+        for x in range(x_tick_start, l_seq, x_tick_spacing):
+            x_tick_labels.append('%d'%x)
+        del x_tick_labels[0]
+        logo.ax.set_xticklabels(tuple(x_tick_labels))
+        #logo.ax.set_xticklabels('%d'%x for x in range(x_tick_start-1, l_seq, x_tick_spacing))
+        #logo.style_xticks(anchor=0, spacing=x_tick_spacing, rotation=0)
+        #logo.ax.set_xticklabels([])
+        logo.ax.xaxis.set_ticks_position('none')
+        logo.ax.xaxis.set_tick_params(pad=-4, labelsize=5)
+        #logo.ax.set_xticklabels('%+d'%x for x in [-3, -2, -1, 1, 2, 3, 4, 5, 6])
+        #logo.style_xticks(rotation=90, spacing=10, fmt='%d', anchor=0)
+    else:
+        logo.ax.set_xticks([])
     logo.ax.set_yticks([])
     #logo.ax.set_axis_off()
     #logo.ax.set_yticklabels(['0', '1'])
@@ -13551,7 +13572,10 @@ best_win_pert_list
     color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
 
     # Plot sequence label plot first.
-    add_label_plot(sl_df, fig, gs, i_plot, color_dict=color_dict, y_label="sequence",
+    add_label_plot(sl_df, fig, gs, i_plot,
+                   color_dict=color_dict,
+                   y_label="sequence",
+                   add_x_ticks=True,
                    y_label_size=4)
     # add_importance_scores_plot(is_df, fig, gs, i_plot,
     #                            color_dict=color_dict,

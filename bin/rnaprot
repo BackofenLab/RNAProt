@@ -2203,6 +2203,7 @@ def main_eval(args):
 
     # Extract site stats (top sites or all positive sites only).
     site_count = 0
+
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
 
         profile_scores = profile_scores_ll[si]
@@ -2244,7 +2245,7 @@ def main_eval(args):
                                             load_model=False)
 
             worst_win_pert_dic[seq_id] = worst_win_pert_list
-            # Get worst score position in site (with padding).
+            # Get worst score position in site (with padding, zero-based pos).
             worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
                                                     get_lowest=True,
                                                     padding=win_extlr)
@@ -2259,12 +2260,15 @@ def main_eval(args):
                                         got_tensors=True,
                                         sal_type=1)
             avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
-                                                    win_extlr=win_extlr)
-            best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
+                                                    win_extlr=2)
+            best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
                                                     get_lowest=False,
                                                     padding=win_extlr)
+
+            #ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
+            #                                             reverse=False)
             sal_peak_pos_dic[seq_id] = best_pos
-            sal_lists_dic[seq_id] = sal_list
+            sal_lists_dic[seq_id] = avg_sal_list
 
         if get_single_pert:
             # Get single position perturbation scores.
@@ -2280,26 +2284,21 @@ def main_eval(args):
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
-                                        avg_sal_list=avg_sal_list,
+                                        avg_sal_list=False,
                                         single_pert_list=single_pert_list,
-                                        worst_win_pert_list=worst_win_pert_list)
+                                        worst_win_pert_list=False)
 
         # Plot --nr-top-profiles profiles.
         if site_count <= args.nr_top_profiles:
             plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
             #print("Plotting %s ... " %(plot_file_name))
-            ext_win_s, ext_win_e = rplib.get_peak_region(worst_pos, worst_win_pert_list,
-                                                         reverse=True)
-            #print("ext_win_s:", ext_win_s)
-            #print("ext_win_e:", ext_win_e)
-            #print("mean_worst_sc:", statistics.mean(worst_win_pert_list))
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
-                                        avg_sal_list=avg_sal_list,
+                                        avg_sal_list=False,
                                         single_pert_list=single_pert_list,
-                                        worst_win_pert_list=worst_win_pert_list)
+                                        worst_win_pert_list=False)
 
         if args.report:
             if not site_count % 500:
@@ -2402,6 +2401,12 @@ def main_eval(args):
 
     print("Plot top motifs ... ")
 
+
+    #print('worst_win_pert_dic["CLIP_0033196"]:', worst_win_pert_dic["CLIP_0033196"])
+    #print('sal_lists_dic["CLIP_0033196"]:', sal_lists_dic["CLIP_0033196"])
+    #sys.exit()
+
+
     rplib.gp_eval_make_motif_plots(args, motif_plots_folder,
                                    ch_info_dic, all_features,
                                    si2sc_dic, idx2id_dic, seqs_dic,
@@ -2418,7 +2423,7 @@ def main_eval(args):
                                    got_saliencies=True,
                                    calc_stdev=calc_stdev,
                                    motif_file_dic=top_motif_file_dic,
-                                   motif_mode=2)
+                                   motif_mode=1)
 
 
     # print("Plot top motifs (mode 3) ... ")
@@ -2433,6 +2438,8 @@ def main_eval(args):
     #                                calc_stdev=calc_stdev,
     #                                motif_mode=3)
 
+
+    sys.exit()
 
     # hallo 123
 
