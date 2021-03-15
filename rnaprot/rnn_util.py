@@ -14,7 +14,7 @@ import copy
 import sys
 import re
 import os
-# >>> BOHB <<<.
+# BOHB.
 import ConfigSpace as CS
 import ConfigSpace.hyperparameters as CSH
 from hpbandster.core.worker import Worker
@@ -569,7 +569,7 @@ n_class
 
 def list_moving_win_avg_values(in_list,
                                win_extlr=5,
-                                method=1):
+                               method=1):
     """
     Take a list of numeric values, and calculate for each position a new value,
     by taking the mean value of the window of positions -win_extlr and

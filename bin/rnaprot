@@ -2216,6 +2216,7 @@ def main_eval(args):
 
         # Decide what to extract for given site.
         sal_list = False
+        avg_sal_list = False
         single_pert_list = False
         get_sal = False
         get_single_pert = False
@@ -2257,6 +2258,8 @@ def main_eval(args):
                                         model, device,
                                         got_tensors=True,
                                         sal_type=1)
+            avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
+                                                    win_extlr=win_extlr)
             best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
                                                     get_lowest=False,
                                                     padding=win_extlr)
@@ -2277,6 +2280,7 @@ def main_eval(args):
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
+                                        avg_sal_list=avg_sal_list,
                                         single_pert_list=single_pert_list,
                                         worst_win_pert_list=worst_win_pert_list)
 
@@ -2293,6 +2297,7 @@ def main_eval(args):
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
+                                        avg_sal_list=avg_sal_list,
                                         single_pert_list=single_pert_list,
                                         worst_win_pert_list=worst_win_pert_list)
 

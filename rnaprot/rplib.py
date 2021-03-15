@@ -13458,6 +13458,7 @@ def add_phylop_scores_plot(df, fig, gs, i,
 def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
                                   plot_out_file,
                                   sal_list=False,
+                                  avg_sal_list=False,
                                   single_pert_list=False,
                                   best_win_pert_list=False,
                                   worst_win_pert_list=False):
@@ -13505,6 +13506,12 @@ best_win_pert_list
     if sal_list:
         assert len(seq) == len(sal_list), "len(seq) != len(sal_list)"
         sal_df = seq_to_plot_df(seq, seq_alphabet, scores=sal_list)
+        n_subplots += 1
+        height_ratios.append(1)
+
+    if avg_sal_list:
+        assert len(seq) == len(avg_sal_list), "len(seq) != len(avg_sal_list)"
+        avg_sal_df = seq_to_plot_df(seq, seq_alphabet, scores=avg_sal_list)
         n_subplots += 1
         height_ratios.append(1)
 
@@ -13556,6 +13563,14 @@ best_win_pert_list
         add_saliency_scores_plot(sal_df, fig, gs, i_plot,
                                  color_dict=color_dict,
                                  y_label="saliency",
+                                 y_label_size=4)
+
+    # Average saliency plot.
+    if avg_sal_list:
+        i_plot += 1
+        add_saliency_scores_plot(avg_sal_df, fig, gs, i_plot,
+                                 color_dict=color_dict,
+                                 y_label="avg_saliency",
                                  y_label_size=4)
 
     # Single position perturbation scores plot.
