@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import plotly.express as px
 import seaborn as sns
-from math import log, ceil
+from math import log, ceil, floor
 import pandas as pd
 import numpy as np
 import statistics
@@ -661,8 +661,10 @@ def list_extract_peaks(in_list,
     Return list of lists with format:
     [pr_s, pr_e, pr_top_pos, pr_top_sc]
 
-    coords=bed  :  peak start 0-based, peak end 1-based.
     coords=list :  peak start 0-based, peak end 0-based.
+                   peak position (pr_top_pos) 0-based.
+    coords=bed  :  peak start 0-based, peak end 1-based.
+                   peak position (pr_top_pos) also 1-based.
 
     >>> test_list = [-1, 0, 2, 4.5, 1, -1, 5, 6.5]
     >>> list_extract_peaks(test_list)
@@ -1230,7 +1232,7 @@ def bed_extract_sequences_from_2bit(in_bed, out_fa, in_2bit,
     convert_to_rna:
         If true, read in extracted sequences and convert to RNA.
     lc_repeats:
-        If True, do not convert repeat regions to uppercas and output.
+        If True, do not convert repeat regions to uppercase and output.
 
     >>> in_bed = "test_data/test_seq_extr.sites.bed"
     >>> tmp_2bit_fa = "test_data/test_seq_extr.sites.2bit.tmp.fa"
@@ -11506,11 +11508,21 @@ def load_predict_data(args,
                                                              l2d=True)
         else:
             feat_dic[seq_id] = string_vectorizer(seq, custom_alphabet=fid2cat_dic["fa"])
+
+    # Channel info dictionary.
+    ch_info_dic = {}
+
+    # Add sequence one-hot channels.
+    ch_info_dic["fa"] = ["C", [], [], "-"]
+
     if args.embed:
         channel_nr += 1
         # Add sequence embedding channel.
         channel_info = "%i\tembed\tfa\tC\tembedding" %(channel_nr)
         channel_info_list.append(channel_info)
+        ch_info_dic["fa"][1].append(channel_nr-1)
+        ch_info_dic["fa"][2].append(channel_id)
+        ch_info_dic["fa"][3] = "embed"
     else:
         # Add sequence one-hot channels.
         for c in fid2cat_dic["fa"]:
@@ -11518,6 +11530,9 @@ def load_predict_data(args,
             channel_id = c
             channel_info = "%i\t%s\tfa\tC\tone_hot" %(channel_nr, channel_id)
             channel_info_list.append(channel_info)
+            ch_info_dic["fa"][1].append(channel_nr-1)
+            ch_info_dic["fa"][2].append(channel_id)
+        ch_info_dic["fa"][3] = "one_hot"
 
     # Check and read in more data.
     for fid, ftype in sorted(fid2type_dic.items()): # fid e.g. fa, ftype: C,N.
@@ -11537,32 +11552,46 @@ def load_predict_data(args,
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
             # Set channel infos depending on str_mode.
             if args.str_mode == 1:
+                encoding = fid2norm_dic[fid]
+                ch_info_dic[fid] = ["N", [], [], encoding]
                 # Same as read in.
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
-                    encoding = fid2norm_dic[fid]
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             elif args.str_mode == 2:
+                ch_info_dic[fid] = ["C", [], [], "one_hot"]
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             elif args.str_mode == 3:
                 channel_nr += 1
                 channel_id = "up"
                 encoding = "prob"
+                ch_info_dic[fid] = ["N", [], [], encoding]
                 channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                 channel_info_list.append(channel_info)
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append(channel_id)
             elif args.str_mode == 4:
+                ch_info_dic[fid] = ["C", [], [], "one_hot"]
                 channel_nr += 1
                 channel_info = "%i\tP\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append("P")
                 channel_nr += 1
                 channel_info = "%i\tU\tstr\tC\tone_hot" %(channel_nr)
                 channel_info_list.append(channel_info)
+                ch_info_dic[fid][1].append(channel_nr-1)
+                ch_info_dic[fid][2].append("U")
             else:
                 assert False, "invalid str_mode given"
         else:
@@ -11574,13 +11603,16 @@ def load_predict_data(args,
                                           feat_dic=feat_dic,
                                           label_list=feat_alphabet)
             assert feat_dic, "no .%s information read in (feat_dic empty)" %(fid)
+            encoding = fid2norm_dic[fid]
+            ch_info_dic[fid] = [ftype, [], [], encoding]
             if ftype == "N":
                 for c in feat_alphabet:
                     channel_nr += 1
                     channel_id = c
-                    encoding = fid2norm_dic[fid]
                     channel_info = "%i\t%s\t%s\tN\t%s" %(channel_nr, channel_id, fid, encoding)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             elif ftype == "C":
                 for c in feat_alphabet:
                     channel_nr += 1
@@ -11588,6 +11620,8 @@ def load_predict_data(args,
                     channel_id = c
                     channel_info = "%i\t%s\t%s\tC\tone_hot" %(channel_nr, channel_id, fid)
                     channel_info_list.append(channel_info)
+                    ch_info_dic[fid][1].append(channel_nr-1)
+                    ch_info_dic[fid][2].append(channel_id)
             else:
                 assert False, "invalid feature type given (%s) for feature %s" %(ftype,fid)
 
@@ -11635,7 +11669,7 @@ def load_predict_data(args,
     assert all_features, "no features stored in all_features (all_features empty)"
 
     # Return some double talking jive data.
-    return test_seqs_dic, idx2id_dic, all_features
+    return test_seqs_dic, idx2id_dic, all_features, ch_info_dic
 
 
 ################################################################################
@@ -12424,7 +12458,7 @@ def load_training_data(args,
         label_list = []
         for seq_id in sorted_pos_ids_list:
             label = id2l_dic[seq_id]
-            labels.append(label)
+            label_list.append(label)
         # Add negatives to label vector.
         label_list = label_list + [0]*len(neg_ids_dic)
         assert len(label_list) == len(seqs_dic), "len(label_list) != len(seqs_dic)"
@@ -13224,15 +13258,60 @@ def add_saliency_scores_plot(df, fig, gs, i,
 
 ################################################################################
 
+def round10up(x):
+    """
+    Round up to next 10.
+
+    >>> a = 110
+    >>> round10up(a)
+    110
+    >>> a = 111
+    >>> round10up(a)
+    120
+    >>> a = 0
+    >>> round10up(a)
+    0
+
+    """
+    return int(ceil(x / 10.0)) * 10
+
+
+################################################################################
+
+def round10down(x):
+    """
+    Round down to next 10.
+
+    >>> a = 110
+    >>> round10down(a)
+    110
+    >>> a = 119
+    >>> round10down(a)
+    110
+
+    """
+    return int(floor(x / 10.0)) * 10
+
+
+################################################################################
+
 def add_label_plot(df, fig, gs, i,
                    color_dict=False,
                    y_label_size=9,
                    add_x_ticks=False,
                    x_tick_spacing=10,
-                   x_tick_start=0,
+                   x_tick_start=1,
+                   koma_sepp_1000=True,
                    y_label="exon-intron"):
     """
     Make exon-intron label plot.
+
+    x_tick_start:
+        One-based start coordinate for x ticks. For whole sites this
+        equals to 1.
+    koma_sepp_1000:
+        Separate x tick coordinates > 999 with "," (comma separator
+        for numbers > 999).
 
     """
     ax = fig.add_subplot(gs[i, :])
@@ -13246,13 +13325,26 @@ def add_label_plot(df, fig, gs, i,
     logo.style_spines(spines=['bottom'], visible=False)
     #logo.style_xticks(rotation=90, fmt='%d', anchor=0)
     if add_x_ticks:
-        l_seq = len(df) + x_tick_start
+
+        first_tick = round10up(x_tick_start)
+        anchor = round10down(x_tick_start) - x_tick_start
+        l_seq = len(df)
+
         # Fix xticks.
-        logo.style_xticks(rotation=0, fmt='%d', anchor=-1, spacing=10)
+        logo.style_xticks(rotation=0, fmt='%d', anchor=anchor, spacing=10)
         x_tick_labels = []
-        for x in range(x_tick_start, l_seq, x_tick_spacing):
-            x_tick_labels.append('%d'%x)
-        del x_tick_labels[0]
+        for x in range(first_tick, first_tick+l_seq+anchor, x_tick_spacing):
+            if koma_sepp_1000:
+                x_tick_labels.append('{:,}'.format(x))
+            else:
+                x_tick_labels.append('%d'%x)
+
+        #print("x_tick_start:", x_tick_start)
+        #print("first_tick:", first_tick)
+        #print("anchor:", anchor)
+        #print("x_tick_labels:", x_tick_labels)
+
+        #del x_tick_labels[0]
         logo.ax.set_xticklabels(tuple(x_tick_labels))
         #logo.ax.set_xticklabels('%d'%x for x in range(x_tick_start-1, l_seq, x_tick_spacing))
         #logo.style_xticks(anchor=0, spacing=x_tick_spacing, rotation=0)
@@ -13478,6 +13570,8 @@ def add_phylop_scores_plot(df, fig, gs, i,
 
 def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
                                   plot_out_file,
+                                  x_tick_start=1,
+                                  koma_sepp_1000=False,
                                   sal_list=False,
                                   avg_sal_list=False,
                                   single_pert_list=False,
@@ -13576,6 +13670,8 @@ best_win_pert_list
                    color_dict=color_dict,
                    y_label="sequence",
                    add_x_ticks=True,
+                   koma_sepp_1000=koma_sepp_1000,
+                   x_tick_start=x_tick_start,
                    y_label_size=4)
     # add_importance_scores_plot(is_df, fig, gs, i_plot,
     #                            color_dict=color_dict,

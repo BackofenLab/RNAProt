@@ -453,6 +453,17 @@ def setup_argument_parser():
                    metavar='int',
                    default = 0,
                    help = "Maximum distance between two peaks for merging. Two peaks get merged to one if they are <= --max-merge-dist away from each other (default: 0)")
+    p_pr.add_argument("--plot-top-win-profiles",
+                   dest="plot_top_win_profiles",
+                   default = False,
+                   action = "store_true",
+                   help = "Plot top window profiles (default: False)")
+    p_pr.add_argument("--plot-format",
+                   dest="plot_format",
+                   type = int,
+                   default = 1,
+                   choices = [1,2],
+                   help = "Plotting format of top window profiles. 1: png, 2: pdf (default: 1)")
 
     """
     Training set generation mode.
@@ -1113,6 +1124,7 @@ def main_train(args):
 
         for idx,feat in enumerate(all_features):
             feat_label = labels[idx]
+            #seq_id = idx2id_dic[idx]
             if feat_label == 0:
                 all_neg_feat.append(feat)
             else:
@@ -1122,19 +1134,24 @@ def main_train(args):
         random.seed(1)
         random.shuffle(all_neg_feat)
 
-        list_pos_feat_labels = [l.item() for l in all_pos_feat_labels]
-        list_uniq_pos_feat_labels = list(set(list_pos_feat_labels))
+
+        #list_pos_feat_labels = [l.items() for l in all_pos_feat_labels]
+        #list_uniq_pos_feat_labels = list(set(list_pos_feat_labels))
+        list_uniq_pos_feat_labels = list(set(all_pos_feat_labels))
 
         for pos_feat_label in list_uniq_pos_feat_labels:
+
             #all_pos_feat_temp = copy.deepcopy(all_pos_feat)
             train_feat_pos = []
             test_feat_pos = []
             for idx,feat in enumerate(all_pos_feat):
-                feat_label = labels[idx]
+                feat_label = all_pos_feat_labels[idx]
                 if feat_label == pos_feat_label:
                     test_feat_pos.append(feat)
                 else:
                     train_feat_pos.append(feat)
+
+            # alamo.
 
             # Get RBP label.
             assert li2label_dic[pos_feat_label], "No RBP label for positive class label %i" %(pos_feat_label)
@@ -1153,14 +1170,26 @@ def main_train(args):
             test_feat_labels = [1]*len(test_feat_pos) + [0]*len(test_feat_neg)
 
             # Shuffle features.
-            all_train_feat_labels, all_train_feat = rplib.shuffle_idx_feat_labels(all_train_feat_labels, all_train_feat)
-            test_feat_labels, test_feat = rplib.shuffle_idx_feat_labels(test_feat_labels, test_feat)
+            all_train_feat_labels, all_train_feat = rplib.shuffle_idx_feat_labels(all_train_feat_labels, all_train_feat, random_seed=1)
+            test_feat_labels, test_feat = rplib.shuffle_idx_feat_labels(test_feat_labels, test_feat, random_seed=1)
 
             n_test_feat = len(test_feat)
             train_feat = all_train_feat[:-n_test_feat]
             val_feat = all_train_feat[-n_test_feat:]
             train_feat_labels = all_train_feat_labels[:-n_test_feat]
             val_feat_labels = all_train_feat_labels[-n_test_feat:]
+
+            val_feat_labels, val_feat = rplib.shuffle_idx_feat_labels(val_feat_labels, val_feat, random_seed=1)
+            train_feat_labels, train_feat = rplib.shuffle_idx_feat_labels(train_feat_labels, train_feat, random_seed=1)
+
+            # print("val_feat_labels:", val_feat_labels)
+            # c_test = len(test_feat_labels)
+            # c_train = len(train_feat_labels)
+            # c_val = len(val_feat_labels)
+            # print("c_test:", c_test)
+            # print("c_train:", c_train)
+            # print("c_val:", c_val)
+            # alamo.
 
             train_dataset = RNNDataset(train_feat, train_feat_labels)
             test_dataset = RNNDataset(test_feat, test_feat_labels)
@@ -1200,8 +1229,8 @@ def main_train(args):
             rbp_label_list.append(rbp_label)
 
             # Report fold ACC+AUC.
-            print("Generic model test accuracy:  %f" %(acc))
-            print("Generic model test AUC:       %f" %(auc))
+            print("Generic model test accuracy:  %f" %(test_acc))
+            print("Generic model test AUC:       %f" %(test_auc))
 
         # Output CV results by round.
         CVROUT = open(cv_results_file, "w")
@@ -1574,21 +1603,21 @@ def main_train(args):
 
     # Get best and worst window scores.
     win_info_dic = {}
-    for win_size in win_sizes:
-        print("Get best and worst scoring windows for window size %i ... " %(win_size))
-        win_extlr = int(win_size/2)
-        profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
-                                                            all_features, win_extlr,
-                                                            load_model=False,
-                                                            got_tensors=True)
-
-        assert len(profile_scores_ll) == len(all_features), "len(profile_scores_ll) != len(all_features)"
-
-        best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
-        best_id = "best_sc_win_w%i" %(win_size)
-        worst_id = "worst_sc_win_w%i" %(win_size)
-        win_info_dic[best_id] = str(best_sc_win.tolist())
-        win_info_dic[worst_id] = str(worst_sc_win.tolist())
+    # for win_size in win_sizes:
+    #     print("Get best and worst scoring windows for window size %i ... " %(win_size))
+    #     win_extlr = int(win_size/2)
+    #     profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
+    #                                                         all_features, win_extlr,
+    #                                                         load_model=False,
+    #                                                         got_tensors=True)
+    #
+    #     assert len(profile_scores_ll) == len(all_features), "len(profile_scores_ll) != len(all_features)"
+    #
+    #     best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
+    #     best_id = "best_sc_win_w%i" %(win_size)
+    #     worst_id = "worst_sc_win_w%i" %(win_size)
+    #     win_info_dic[best_id] = str(best_sc_win.tolist())
+    #     win_info_dic[worst_id] = str(worst_sc_win.tolist())
 
     print("Get additional site stats ... ")
     pos_seq_stats_dic = rplib.get_length_stats_from_seqs_dic(pos_seqs_dic)
@@ -2842,13 +2871,13 @@ def main_predict(args):
     assert "dropout_rate" in params_dic, "dropout_rate info missing in model parameter file %s" %(params_file)
 
     # Best and worst feature windows from rnaprot train.
-    best_sc_win_id = "best_sc_win_w%i" %(args.win_size)
-    worst_sc_win_id = "best_sc_win_w%i" %(args.win_size)
-    assert best_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(best_sc_win_id, params_file)
-    assert worst_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(worst_sc_win_id, params_file)
-    import ast
-    best_sc_win = ast.literal_eval(params_dic[best_sc_win_id])
-    worst_sc_win = ast.literal_eval(params_dic[worst_sc_win_id])
+    #best_sc_win_id = "best_sc_win_w%i" %(args.win_size)
+    #worst_sc_win_id = "best_sc_win_w%i" %(args.win_size)
+    #assert best_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(best_sc_win_id, params_file)
+    #assert worst_sc_win_id in params_dic, "%s info missing in model parameter file %s" %(worst_sc_win_id, params_file)
+    #import ast
+    #best_sc_win = ast.literal_eval(params_dic[best_sc_win_id])
+    #worst_sc_win = ast.literal_eval(params_dic[worst_sc_win_id])
 
     # More infos regarding trained model.
     assert "pos_ws_sc_perc25" in params_dic, "pos_ws_sc_perc25 info missing in model parameter file %s" %(params_file)
@@ -2909,6 +2938,10 @@ def main_predict(args):
     str_mode_check = [1, 2, 3, 4]
     assert args.str_mode in str_mode_check, "invalid str_mode setting found in train run parameter file %s" %(rp_train_settings_file)
 
+    # Plot format.
+    plot_format = "png"
+    if args.plot_format == 2:
+        plot_format = "pdf"
 
     """
     Make sure --model-in and --in features.out are compatible.
@@ -3022,12 +3055,18 @@ def main_predict(args):
         store_tensors = False
 
     print("Load prediction data ... ")
-    seqs_dic, idx2id_dic, all_features = rplib.load_predict_data(args,
+    seqs_dic, idx2id_dic, all_features, ch_info_dic = rplib.load_predict_data(args,
                                                         kmer2idx_dic=kmer2idx_dic,
                                                         store_tensors=store_tensors)
     # Number of features (feature vector length).
     check_n_feat = len(all_features[0][0])
     assert args.n_feat == check_n_feat, "args.n_feat != check_n_feat (%i != %i)" %(args.n_feat, check_n_feat)
+    # Check # features from channel infos.
+    check_n_feat = 0
+    for fid in ch_info_dic:
+        check_n_feat += len(ch_info_dic[fid][1])
+    assert args.n_feat == check_n_feat, "args.n_feat != check_n_feat (%i != %i)" %(args.n_feat, check_n_feat)
+
     print("# dataset features:  %i" %(args.n_feat))
     print("Dataset size:        %i" %(len(all_features)))
 
@@ -3208,6 +3247,11 @@ seqs_dic, idx2id_dic, all_features
 
         print("CALEB: I have something for you ... ")
 
+        top_win_prof_folder = args.out_folder + "/top_win_profiles"
+        if args.plot_top_win_profiles:
+            if not os.path.exists(top_win_prof_folder):
+                os.makedirs(top_win_prof_folder)
+
         # Create window graphs.
         all_win_feat = []
         seq_len_list = []
@@ -3315,8 +3359,10 @@ seqs_dic, idx2id_dic, all_features
             for peak_reg in peak_list:
                 peak_s = peak_reg[0]
                 peak_e = peak_reg[1]
-                top_pos = peak_reg[2]
+                top_pos = peak_reg[2] # top_pos 1-based if "bed".
                 top_sc = peak_reg[3]
+                if top_sc < peak_win_sc_thr:
+                    continue
                 top_pos_s = top_pos - 1
                 top_pos_ext_s = top_pos_s - win_extlr
                 top_pos_ext_e = top_pos + win_extlr
@@ -3328,6 +3374,53 @@ seqs_dic, idx2id_dic, all_features
                 peak_i += 1
                 peaks_found += 1
                 peak_id = "peak_%i" %(peak_i)
+
+                """
+                If top profiles should be plotted, get window and additional
+                stats (saliency, single mutations).
+
+                alamo
+
+                """
+                if args.plot_top_win_profiles:
+
+                    win_feat_list = all_features[idx][top_pos_ext_s:top_pos_ext_e]
+                    win_seq = seq[top_pos_ext_s:top_pos_ext_e]
+                    top_pos_ext_s_1b = top_pos_ext_s + 1
+                    l_wfl = len(win_feat_list)
+                    assert l_wfl == tp_ext_l, "len(win_feat_list) != tp_ext_l for seq_id %s, peak_id %s (top_pos: %i) (%i != %i)" %(seq_id, peak_id, top_pos, l_wfl, tp_ext_l)
+                    sal_list = rnn_util.get_saliency_from_feat_list(win_feat_list,
+                                                model, device,
+                                                got_tensors=False,
+                                                sal_type=1)
+
+                    avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
+                                                            win_extlr=5)
+                    best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
+                                                            get_lowest=False,
+                                                            padding=3)
+
+                    ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
+                                                                 reverse=False)
+                    print("sal_peak_start:", ext_win_s+top_pos_ext_s_1b)
+                    print("sal_peak_end:", ext_win_e+top_pos_ext_s_1b)
+
+                    single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
+                                                win_seq, win_feat_list,
+                                                model, device,
+                                                load_model=False)
+
+                    plot_file_name =  peak_id + "_" + seq_id + "_" + str(top_pos_ext_s_1b) + "-" + str(top_pos_ext_e) + "_sc" + str(top_sc) + "." + plot_format
+                    plot_out_file = top_win_prof_folder + "/" + plot_file_name
+                    print("Plotting peak window %s ... " %(peak_id))
+                    rplib.make_feature_attribution_plot(win_seq, win_feat_list,
+                                                ch_info_dic, plot_out_file,
+                                                x_tick_start=top_pos_ext_s_1b,
+                                                koma_sepp_1000=True,
+                                                sal_list=sal_list,
+                                                avg_sal_list=False,
+                                                single_pert_list=single_pert_list,
+                                                worst_win_pert_list=False)
 
                 PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
                 #PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
