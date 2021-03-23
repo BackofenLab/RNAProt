@@ -7776,11 +7776,13 @@ def create_eval_rank_vs_sc_plot(ws_scores, out_plot,
     """
     assert ws_scores, "ws_scores empty"
     data = {'score': [], 'rank' : []}
-    ws_scores.sort(reverse=True)
-    for i,sc in enumerate(ws_scores):
+    #ws_scores.sort(reverse=True)
+    i = 0
+    for sc in sorted(ws_scores, reverse=True):
         rank = i + 1
         data['score'].append(sc)
         data['rank'].append(rank)
+        i += 1
 
     df = pd.DataFrame (data, columns = ['score', 'rank'])
 
@@ -7941,45 +7943,21 @@ def create_eval_kde_plot(set1_scores, set2_scores, out_plot,
 ################################################################################
 
 def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
-                                  out_folder, rplib_path,
-                                  html_report_out="report.rnaprot_eval.html",
-                                  kmer2rank_dic=False,
-                                  kmer2sc_dic=False,
-                                  kmer2c_dic=False,
-                                  kmer2scstdev_dic=False,
-                                  kmer2bestsc_dic=False,
-                                  kmer2scrank_dic=False,
-                                  kmer2avgscrank_dic=False,
-                                  kmer2mm_dic=False,
-                                  kmer_stdev_dic=False,
-                                  kmer2bestmm_dic=False,
-                                  ch_info_dic=False,
-                                  kmer_size=5,
-                                  kmer_top_n=25,
-                                  worst_win_pos_dic=False,
-                                  worst_win_id2sc_dic=False,
-                                  onlyseq=True,
-                                  win_extlr=False,
-                                  add_ws_scores=False,
-                                  id2wssc_dic=False,
-                                  idx2id_dic=False,
-                                  seqs_dic=False,
-                                  theme=1,
-                                  lookup_kmer=False,
-                                  plots_subfolder="html_plots"):
+                                 out_folder, rplib_path,
+                                 html_report_out="report.rnaprot_eval.html",
+                                 onlyseq=True,
+                                 add_ws_scores=False,
+                                 id2wssc_dic=False,
+                                 idx2id_dic=False,
+                                 seqs_dic=False,
+                                 sal_peak_pos_dic=False,
+                                 sal_peak_sc_dic=False,
+                                 sal_peak_win_dic=False,
+                                 theme=1,
+                                 plots_subfolder="html_plots"):
     """
     Generate HTML report for rnaprot eval, showing stats and plots regarding
-    whole site scores and k-mers.
-
-    For onlyseq:
-        - m1m2 scores scatter plot
-        - whole site scores density plot (+ vs -)
-        - kmer scores density plot
-        - top scoring kmer stats table
-    For additional features:
-        - above and:
-        - extended stats with plots (avg scores vs top scores for each kmer)
-        - avg vs top scores correlation plot (like scatter plot)
+    whole site scores.
 
     """
     # Checks.
@@ -7987,21 +7965,12 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
     assert neg_ws_scores, "neg_ws_scores empty"
     assert os.path.exists(out_folder), "out_folder does not exist"
     assert os.path.exists(rplib_path), "rplib_path does not exist"
-    assert kmer2rank_dic, "kmer2rank_dic needed"
-    assert kmer2sc_dic, "kmer2sc_dic needed"
-    assert kmer2c_dic, "kmer2c_dic needed"
-    assert kmer2scrank_dic, "kmer2scrank_dic needed"
     assert idx2id_dic, "idx2id_dic needed"
-    assert id2wssc_dic, "id2wssc_dic needed"
-    assert win_extlr, "win_extlr needed"
-    if not onlyseq:
-        assert kmer2bestsc_dic, "kmer2bestsc_dic needed in case of additional features"
-        assert kmer2scstdev_dic, "kmer2scstdev_dic needed in case of additional features"
-        assert kmer2mm_dic, "kmer2mm_dic needed in case of additional features"
-        assert kmer_stdev_dic, "kmer_stdev_dic needed in case of additional features"
-        assert kmer2bestmm_dic, "kmer2bestmm_dic needed in case of additional features"
-        assert ch_info_dic, "ch_info_dic needed in case of additional features"
-        assert kmer2avgscrank_dic, "kmer2avgscrank_dic needed in case of additional features"
+    if onlyseq:
+        assert id2wssc_dic, "id2wssc_dic needed"
+        assert sal_peak_pos_dic, "sal_peak_pos_dic needed"
+        assert sal_peak_sc_dic, "sal_peak_sc_dic needed"
+        assert sal_peak_win_dic, "sal_peak_win_dic needed"
 
     # Import markdown to generate report.
     from markdown import markdown
@@ -8017,19 +7986,13 @@ def rp_eval_generate_html_report(ws_scores, neg_ws_scores,
         html_out = html_report_out
     # Plot files.
     ws_sc_plot = "whole_site_scores_kde_plot.png"
-    kmer_sc_plot = "kmer_scores_kde_plot.png"
     rank_vs_sc_plot = "rank_vs_ws_score_plot.png"
-    avg_best_kmer_kde_plot = "avg_best_kmer_scores_kde_plot.png"
-    avg_best_kmer_scatter_plot = "avg_best_kmer_scores_scatter_plot.png"
     model_comp_plot = "model_comparison_plot.html"
     site_reg_imp_plot = "site_reg_imp_plot.png"
     rank_vs_sc_plotly_plot =  "rank_vs_sc_plotly.html"
     ws_sc_plot_out = plots_out_folder + "/" + ws_sc_plot
-    kmer_sc_plot_out = plots_out_folder + "/" + kmer_sc_plot
     rank_vs_sc_plot_out = plots_out_folder + "/" + rank_vs_sc_plot
     model_comp_plot_out = plots_out_folder + "/" + model_comp_plot
-    avg_best_kmer_kde_plot_out = plots_out_folder + "/" + avg_best_kmer_kde_plot
-    avg_best_kmer_scatter_plot_out = plots_out_folder + "/" + avg_best_kmer_scatter_plot
     site_reg_imp_plot_out = plots_out_folder + "/" + site_reg_imp_plot
     rank_vs_sc_plotly_plot_out = plots_out_folder + "/" + rank_vs_sc_plotly_plot
 
@@ -8083,18 +8046,7 @@ List of available model evaluation statistics generated
 by RNAProt (rnaprot eval):
 
 - [Whole-site score distributions](#ws-scores-plot)
-- [Site region importance distribution](#site-reg-imp-plot)"""
-    if onlyseq:
-        mdtext += "\n"
-        mdtext += "- [k-mer score distribution](#kmer-scores-plot)"
-    else:
-        mdtext += "\n"
-        mdtext += "- [k-mer score distributions](#kmer-scores-plots)"
-    mdtext += "\n"
-    mdtext += "- [k-mer statistics](#kmer-stats)"
-    if lookup_kmer:
-        mdtext += "\n"
-        mdtext += "- [Lookup k-mer statistics](#lookup-kmer-stats)\n"
+- [Saliency peak distribution](#site-reg-imp-plot)"""
     if add_ws_scores:
         mdtext += "\n"
         mdtext += "- [Model comparison](#model-comp-plot)"
@@ -8120,7 +8072,7 @@ by RNAProt (rnaprot eval):
     mdtext += """
 ## Whole-site score distributions ### {#ws-scores-plot}
 
-Whole-site score distributions for the positive and negative sequence
+Whole-site score distributions for the positive and negative training
 set, scored by the trained model. Since the model was trained on these
 two sequence sets, we expect on average higher scores for the positive
 sequences (given a sufficient model performance).
@@ -8131,7 +8083,7 @@ sequences (given a sufficient model performance).
     mdtext += """
 
 **Figure:** Whole-site score distributions for the positive (Positives, %i sites)
-and negative (Negatives, %i sites) sequence set, scored by the trained model.
+and negative (Negatives, %i sites) training set, scored by the trained model.
 
 &nbsp;
 
@@ -8147,23 +8099,20 @@ and negative (Negatives, %i sites) sequence set, scored by the trained model.
     mdtext += 'title="rank vs ws score distribution" width="550" />' + "\n"
     mdtext += """
 
-**Figure:** Whole-site score distribution of the positive set, with whole-site
-scores on y-axis and site ranks on x-axis.
+**Figure:** Whole-site score distribution of the positive set, with site ranks
+on x-axis and whole-site scores on y-axis.
 
 &nbsp;
 
 """
 
     if onlyseq:
-        # Plot 3D plot, similar to create_eval_rank_vs_sc_plot.
-        win_size = win_extlr * 2 + 1
         create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
-                                 worst_win_pos_dic, worst_win_id2sc_dic,
+                                 sal_peak_pos_dic, sal_peak_sc_dic,
+                                 sal_peak_win_dic,
                                  rank_vs_sc_plotly_plot_out, plotly_js_path,
                                  x_label="site rank",
                                  y_label="whole-site score",
-                                 z_label="mutation score diff",
-                                 win_extlr=win_extlr,
                                  theme=theme)
         plot_path = plots_folder + "/" + rank_vs_sc_plotly_plot
 
@@ -8173,36 +8122,26 @@ scores on y-axis and site ranks on x-axis.
         mdtext += """
 
 **Figure:** Whole-site score distribution of the positive set (scores > 0),
-with whole-site scores on y-axis, site ranks by score on x-axis, and the highest
-window mutation score difference on z-axis. The score difference tells
-us how much the whole-site score can maximally change, considering all
-possible site window mutations in the respective site (stride = 1,
-window size = %i). To get this score difference, each sequence window of the
-site is mutated by exchanging the window with the lowest scoring window
-in the positive set. The window with the highest difference (lowest value) in scores
-(wildtype - mutated sequence score) is stored, and its center position
-(win_mut_center_pos), the window sequence (win_seq), the score difference
-(mutation score diff) is reported in the hover box, together with
-the site sequence and whole-site score. This plot can thus help to
-study the influence of certain site regions and their sequence
-content on prediction scores.
+with site ranks by score on x-axis, and whole-site scores on y-axis.
+Hover boxes contain the following additional infos for each sequence:
+Saliency peak position and score, saliency peak region and peak sequence.
 
 &nbsp;
 
-""" %(win_size)
+"""
 
 
     print("Generate site region importance plot .. ")
-    worst_pos_perc_list = []
-    for seq_id in worst_win_pos_dic:
+    peak_pos_perc_list = []
+    for seq_id in sal_peak_pos_dic:
         l_seq = len(seqs_dic[seq_id])
-        worst_win_pos = worst_win_pos_dic[seq_id]
-        worst_pos_perc = (worst_win_pos / l_seq ) * 100
-        worst_pos_perc_list.append(worst_pos_perc)
-    assert worst_pos_perc_list, "worst_pos_perc_list empty"
+        sal_peak_pos = sal_peak_pos_dic[seq_id] + 1
+        peak_pos_perc = (sal_peak_pos / l_seq ) * 100
+        peak_pos_perc_list.append(peak_pos_perc)
+    assert peak_pos_perc_list, "peak_pos_perc_list empty"
     kde_clip = [0, 100]
     kde_bw_adjust = 0.4
-    create_eval_kmer_score_kde_plot(worst_pos_perc_list, site_reg_imp_plot_out,
+    create_eval_kmer_score_kde_plot(peak_pos_perc_list, site_reg_imp_plot_out,
                                     x_label="Relative site position (%)",
                                     y_label="Density",
                                     fig_width=7,
@@ -8214,280 +8153,22 @@ content on prediction scores.
     plot_path = plots_folder + "/" + site_reg_imp_plot
 
     mdtext += """
-## Site region importance distribution ### {#site-reg-imp-plot}
+## Saliency peak distribution ### {#site-reg-imp-plot}
 
 This plot shows, averaged over all positive sites with model score > 0,
-the distribution of site regions that contribute most to positive
-prediction scores. Non-uniform distribution can occur depending
-on the type of trained network and input data.
+the distribution of saliency peak positions over the whole site length.
 
 """
     mdtext += '<img src="' + plot_path + '" alt="site_reg_imp_distr"' + "\n"
-    mdtext += 'title="Site region importance distribution" width="650" />' + "\n"
+    mdtext += 'title="Saliency peak distribution" width="650" />' + "\n"
     mdtext += """
 
-**Figure:** Distribution of site regions that contribute most to positive
-prediction scores, averaged over all positive sites with model score > 0.
+**Figure:** Distribution of saliency peaks over the whole site length,
+averaged over all positive sites with model score > 0.
 
 &nbsp;
 
 """
-
-    """
-    k-mer score distribution(s)
-
-    - If onlyseq, one distribution plot (k-mer scores)
-    - If additional features, plot best scores + average scores,
-      first distribution plot and then scatter plot.
-
-    """
-    kmer_sc_list = []
-    for kmer in kmer2sc_dic:
-        kmer_sc_list.append(kmer2sc_dic[kmer])
-    c_kmers = len(kmer_sc_list)
-    # Get best k-mer scores list.
-    best_kmer_sc_list = []
-    if not onlyseq:
-        for kmer in kmer2bestsc_dic:
-            best_kmer_sc_list.append(kmer2bestsc_dic[kmer])
-
-    if onlyseq:
-
-        print("Generate sequence k-mer stats and plots ... ")
-
-        set_label = "Positive %i-mers" %(kmer_size)
-        x_label = "%i-mer score" %(kmer_size)
-        create_eval_kmer_score_kde_plot(kmer_sc_list, kmer_sc_plot_out,
-                                        set_label=set_label,
-                                        x_label=x_label,
-                                        y_label="Density",
-                                        kde_bw_adjust=1,
-                                        theme=theme)
-        plot_path = plots_folder + "/" + kmer_sc_plot
-
-        mdtext += """
-## k-mer score distribution ### {#kmer-scores-plot}
-
-Score distribution of sequence k-mers (k = %i) found in the positive training set.
-k-mers are scored by the model, using the sequence subregion encompassing the k-mer.
-
-""" %(kmer_size)
-        mdtext += '<img src="' + plot_path + '" alt="k-mer score distribution"' + "\n"
-        mdtext += 'title="k-mer score distribution" width="500" />' + "\n"
-        mdtext += """
-
-**Figure:** Score distribution of k-mers found in the positive training set.
-
-&nbsp;
-
-"""
-
-        # k-mer stats table for onlyseq.
-        mdtext += """
-## k-mer statistics ### {#kmer-stats}
-
-**Table:** Sequence k-mer statistics (score (sc) rank, k-mer score, k-mer count,
-count rank) for the top %i scoring sequence %i-mers (ranked by descending k-mer score).
-
-""" %(kmer_top_n, kmer_size)
-
-        mdtext += "| sc rank | &nbsp; k-mer &nbsp; | &nbsp; k-mer sc &nbsp; | k-mer count | k-mer count rank | \n"
-        mdtext += "| :-: | :-: | :-: | :-: | :-: |\n"
-        sc_rank = 0
-        for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=True):
-            sc_rank += 1
-            if sc_rank > kmer_top_n:
-                break
-            kmer_count_rank = kmer2rank_dic[kmer]
-            kmer_count = kmer2c_dic[kmer]
-            mdtext += "| %i | %s | %.6f | %i | %i |\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank)
-        mdtext += "\n&nbsp;\n&nbsp;\n"
-
-        mdtext += """
-
-**Table:** Sequence k-mer statistics (score (sc) rank, k-mer score, k-mer count,
-count rank) for the bottom %i scoring sequence %i-mers (ranked by ascending k-mer score).
-
-""" %(kmer_top_n, kmer_size)
-
-        mdtext += "| sc rank | &nbsp; k-mer &nbsp; | &nbsp; k-mer sc &nbsp; | k-mer count | k-mer count rank | \n"
-        mdtext += "| :-: | :-: | :-: | :-: | :-: |\n"
-        sc_rank = 0
-        for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=False):
-            sc_rank += 1
-            if sc_rank > kmer_top_n:
-                break
-            kmer_count_rank = kmer2rank_dic[kmer]
-            kmer_count = kmer2c_dic[kmer]
-            mdtext += "| %i | %s | %.6f | %i | %i |\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank)
-        mdtext += "\n&nbsp;\n&nbsp;\n"
-
-        if lookup_kmer:
-            # Lookup k-mer stats table for onlyseq.
-            print("Generate --lookup-kmer stats and plots ... ")
-            mdtext += """
-## Lookup k-mer statistics ### {#lookup-kmer-stats}
-
-**Table:** lookup k-mer statistics (score (sc) rank, k-mer score, k-mer count,
-count rank) for lookup k-mer %s.
-
-""" %(lookup_kmer)
-
-            mdtext += "| sc rank | &nbsp; k-mer &nbsp; | &nbsp; k-mer sc &nbsp; | k-mer count | k-mer count rank | \n"
-            mdtext += "| :-: | :-: | :-: | :-: | :-: |\n"
-            lk_sc_rank = kmer2scrank_dic[lookup_kmer]
-            lk_sc = kmer2sc_dic[lookup_kmer]
-            lk_count_rank = kmer2rank_dic[lookup_kmer]
-            lk_count = kmer2c_dic[lookup_kmer]
-            mdtext += "| %i | %s | %.6f | %i | %i |\n" %(lk_sc_rank, lookup_kmer, lk_sc, lk_count, lk_count_rank)
-            mdtext += "\n&nbsp;\n&nbsp;\n"
-
-    else:
-
-        print("Generate additional feature k-mer stats and plots ... ")
-
-        set1_label = "Average %i-mer scores" %(kmer_size)
-        set2_label = "Best %i-mer scores" %(kmer_size)
-        x_label = "%i-mer score" %(kmer_size)
-        create_eval_kde_plot(kmer_sc_list, best_kmer_sc_list, avg_best_kmer_kde_plot_out,
-                             set1_label=set1_label,
-                             set2_label=set2_label,
-                             x_label=x_label,
-                             y_label="Density",
-                             theme=theme)
-        plot_path1 = plots_folder + "/" + avg_best_kmer_kde_plot
-
-        x_label = "Average %i-mer score" %(kmer_size)
-        y_label = "Best %i-mer score" %(kmer_size)
-        create_eval_model_comp_scatter_plot(kmer_sc_list, best_kmer_sc_list,
-                                            avg_best_kmer_scatter_plot_out,
-                                            x_label=x_label,
-                                            y_label=y_label,
-                                            theme=theme)
-        plot_path2 = plots_folder + "/" + avg_best_kmer_scatter_plot
-
-        mdtext += """
-## k-mer score distributions ### {#kmer-scores-plots}
-
-Average and best score distribution of all k-mers (k = %i) found in the
-positive training set (with additional features).
-As additional features vary, the same sequence k-mer can have different
-scores, depending on the underlying additional feature values at a certain
-sequence position. It is therefore possible to select the best score or
-calculate the average score for each sequence k-mer from all k-mer
-occurences in a positive set with additional features.
-
-""" %(kmer_size)
-        mdtext += '<img src="' + plot_path1 + '" alt="average vs best k-mer score distribution"' + "\n"
-        mdtext += 'title="average vs best k-mer score distribution" width="500" />' + "\n"
-        mdtext += """
-
-**Figure:** Average and best score distribution of all k-mers found in the
-positive training set (with additional features).
-&nbsp;
-
-"""
-
-        mdtext += '<img src="' + plot_path2 + '" alt="average vs best k-mer scores scatter plot"' + "\n"
-        mdtext += 'title="average vs best k-mer scores scatter plot" width="500" />' + "\n"
-        mdtext += """
-
-**Figure:** Average vs. best k-mer scores scatter plot for all k-mers found in the
-positive training set (with additional features). The more the best score of each k-mer
-deviates from its average score, the more scattered the points should be above the
-diagonal line (y = x) in the upper-left area. No points should be located below
-the diagonal (lower right), since the best score is always >= the average score.
-Points on the diagonal are likely k-mers with an occurence = 1, i.e., best score ==
-average score. Points near the diagonal are k-mers that feature similar annotated
-additional feature values across the positive dataset.
-
-&nbsp;
-
-"""
-
-        # k-mer stats table for additional features.
-        mdtext += """
-## k-mer statistics ### {#kmer-stats}
-
-**Table:** Sequence k-mer statistics with additional features (best score (sc) rank,
-best k-mer score, average (avg) k-mer score + standard deviation, average k-mer rank,
-total k-mer count, and total count rank) for the top %i scoring %i-mers
-(ranked by best k-mer score). Best scoring motif + average scoring motif are
-also shown.
-
-""" %(kmer_top_n, kmer_size)
-
-        # Motif plots output folders.
-        avg_motif_plots_folder = plots_out_folder + "/" + "avg_motif_plots"
-        best_motif_plots_folder = plots_out_folder + "/" + "best_motif_plots"
-        if not os.path.exists(avg_motif_plots_folder):
-            os.makedirs(avg_motif_plots_folder)
-        if not os.path.exists(best_motif_plots_folder):
-            os.makedirs(best_motif_plots_folder)
-
-        kmer_i = 10 ** len(str(c_kmers))
-        sc_rank = 0
-
-        mdtext += "| best sc rank | &nbsp; k-mer &nbsp; | best k-mer sc | best sc motif | avg k-mer rank | avg k-mer sc | avg sc stdev | avg sc motif | avg + best sc | diff(avg sc, best sc) | k-mer count | k-mer count rank |\n"
-        mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |\n"
-
-        for kmer, best_sc in sorted(kmer2bestsc_dic.items(), key=lambda item: item[1], reverse=True):
-            sc_rank += 1
-            kmer_i += 1
-            if sc_rank > kmer_top_n:
-                break
-            kmer_count_rank = kmer2rank_dic[kmer]
-            kmer_count = kmer2c_dic[kmer]
-            avg_sc = kmer2sc_dic[kmer]
-            avg_sc_stdev = kmer2scstdev_dic[kmer]
-            avg_sc_rank = kmer2avgscrank_dic[kmer]
-            sc_sum = best_sc + avg_sc
-            sc_diff = abs(best_sc-avg_sc)
-            # Generate average score motif.
-            avg_sc_plot_file = avg_motif_plots_folder + "/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
-            make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, avg_sc_plot_file,
-                            fid2stdev_dic=kmer_stdev_dic[kmer])
-            pp1 = plots_folder + "/avg_motif_plots/" + str(kmer_i)[1:] + "_" + kmer + ".avg_sc.png"
-            # Generate best score motif.
-            best_sc_plot_file = best_motif_plots_folder + "/" + str(kmer_i)[1:] + "_" + kmer + ".best_sc.png"
-            make_motif_plot(kmer2bestmm_dic[kmer], ch_info_dic, best_sc_plot_file,
-                            fid2stdev_dic=False)
-            pp2 = plots_folder + "/best_motif_plots/" + str(kmer_i)[1:] + "_" + kmer + ".best_sc.png"
-            mdtext += '| %i | %s | %.6f | <image src = "%s" width="150px"></image> | %i | %.6f | %.6f | <image src = "%s" width="150px"></image> | %.6f | %.6f | %i | %i |\n' %(sc_rank, kmer, best_sc, pp2, avg_sc_rank, avg_sc, avg_sc_stdev, pp1, sc_sum, sc_diff, kmer_count, kmer_count_rank)
-        mdtext += "\n&nbsp;\n&nbsp;\n"
-
-        if lookup_kmer:
-            # Lookup k-mer stats table for additional features.
-            print("Generate --lookup-kmer stats and plots ... ")
-            mdtext += """
-## Lookup k-mer statistics ### {#lookup-kmer-stats}
-
-**Table:** lookup k-mer statistics (best score (sc) rank, average (avg) score rank,
-k-mer score, k-mer count,
-count rank) for lookup k-mer %s and training data with additional features.
-
-""" %(lookup_kmer)
-
-            mdtext += "| best sc rank | avg sc rank | &nbsp; k-mer &nbsp; | best k-mer sc | avg k-mer sc | avg sc stdev | best sc motif | avg sc motif | k-mer count | k-mer count rank | \n"
-            mdtext += "| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | \n"
-            lk_best_sc_rank = kmer2scrank_dic[lookup_kmer]
-            lk_avg_sc_rank = kmer2avgscrank_dic[lookup_kmer]
-            lk_best_sc = kmer2bestsc_dic[lookup_kmer]
-            lk_avg_sc = kmer2sc_dic[lookup_kmer]
-            lk_avg_sc_stdev = kmer2scstdev_dic[lookup_kmer]
-            lk_count_rank = kmer2rank_dic[lookup_kmer]
-            lk_count = kmer2c_dic[lookup_kmer]
-            lk_avg_plot_file = plots_out_folder + "/lookup_kmer_%s.avg_sc.png" %(lookup_kmer)
-            make_motif_plot(kmer2mm_dic[lookup_kmer], ch_info_dic, lk_avg_plot_file,
-                            fid2stdev_dic=kmer_stdev_dic[lookup_kmer])
-            pp1 = plots_folder + "/lookup_kmer_%s.avg_sc.png" %(lookup_kmer)
-
-            lk_best_plot_file = plots_out_folder + "/lookup_kmer_%s.best_sc.png" %(lookup_kmer)
-            make_motif_plot(kmer2bestmm_dic[lookup_kmer], ch_info_dic, lk_best_plot_file,
-                            fid2stdev_dic=False)
-            pp2 = plots_folder + "/lookup_kmer_%s.best_sc.png" %(lookup_kmer)
-            mdtext += '| %i | %i | %s | %.6f | %.6f | %.6f | <image src = "%s" width="150px"></image> | <image src = "%s" width="150px"></image> | %i | %i |\n' %(lk_best_sc_rank, lk_avg_sc_rank, kmer, lk_best_sc, lk_avg_sc, lk_avg_sc_stdev, pp2, pp1, kmer_count, kmer_count_rank)
-            mdtext += "\n&nbsp;\n&nbsp;\n"
 
     """
     Model comparison plot.
@@ -8497,6 +8178,8 @@ count rank) for lookup k-mer %s and training data with additional features.
     if add_ws_scores:
 
         r_squared = calc_r2_corr_measure(ws_scores, add_ws_scores)
+
+        print("r_squared:", r_squared)
 
         print("Generate --train-in vs --add-train-in model comparison plot ... ")
         create_m1m2sc_plotly_scatter_plot(ws_scores, add_ws_scores, idx2id_dic,
@@ -8576,12 +8259,11 @@ def calc_r2_corr_measure(scores1, scores2,
 ################################################################################
 
 def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
-                             worst_win_pos_dic, worst_win_id2sc_dic,
+                             sal_peak_pos_dic, sal_peak_sc_dic,
+                             sal_peak_win_dic,
                              out_html, plotly_js,
                              x_label="site rank",
                              y_label="whole-site score",
-                             z_label="mutation score diff",
-                             win_extlr=5,
                              theme=1):
     """
     Plot rank of whole-site score (x-axis) vs score (y-axis).
@@ -8589,34 +8271,41 @@ def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
     """
 
     ws_sc_df = "whole_site_score"
-    win_sc_df = "win_mut_score_diff"
-    win_pos_df = "win_mut_center_pos"
-    win_seq_df = "win_seq"
+    sal_peak_pos_df = "saliency_peak_position"
+    sal_peak_sc_df = "saliency_peak_score"
+    sal_win_coords_df = "saliency_peak_region"
+    sal_win_seq_df = "saliency_peak_win_seq"
     seq_df = "seq"
     seq_id_df = "seq_id"
     rank_df = "rank"
 
-    data = {ws_sc_df : [], win_sc_df : [], win_pos_df : [], win_seq_df : [], seq_df : [], seq_id_df : [], rank_df : []}
+    data = {ws_sc_df : [], sal_peak_pos_df : [], sal_peak_sc_df : [], sal_win_coords_df : [], sal_win_seq_df : [], seq_df : [], seq_id_df : [], rank_df : []}
 
     ws_rank = 0
     for seq_id, ws_sc in sorted(id2wssc_dic.items(), key=lambda item: item[1], reverse=True):
         ws_rank += 1
-        if ws_sc < 0 or seq_id not in worst_win_pos_dic:
+        if ws_sc < 0 or seq_id not in sal_peak_pos_dic:
             break
-        win_sc = worst_win_id2sc_dic[seq_id]
-        win_pos = worst_win_pos_dic[seq_id] + 1 # make 1-based.
+        sal_peak_pos = sal_peak_pos_dic[seq_id] + 1 # make 1-based.
+        sal_peak_sc = sal_peak_sc_dic[seq_id]
         seq = seqs_dic[seq_id]
-        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
+        sal_peak_s = sal_peak_win_dic[seq_id][0]
+        sal_peak_e = sal_peak_win_dic[seq_id][1]
+        sal_win_coords = "%i-%i" % (sal_peak_s+1, sal_peak_e)
+        sal_win_seq = seq[sal_peak_s:sal_peak_e]
 
-        data[win_sc_df].append(win_sc)
         data[ws_sc_df].append(ws_sc)
-        data[win_pos_df].append(win_pos)
-        data[win_seq_df].append(win_seq)
+        data[sal_peak_pos_df].append(sal_peak_pos)
+        data[sal_peak_sc_df].append(sal_peak_sc)
+        data[sal_win_coords_df].append(sal_win_coords)
+        data[sal_win_seq_df].append(sal_win_seq)
         data[seq_df].append(seq)
         data[seq_id_df].append(seq_id)
         data[rank_df].append(ws_rank)
 
-    df = pd.DataFrame(data, columns = [win_sc_df, ws_sc_df, win_pos_df, win_seq_df, seq_df, seq_id_df, rank_df])
+    df = pd.DataFrame(data, columns = [ws_sc_df, sal_peak_pos_df, sal_peak_sc_df, sal_win_coords_df, sal_win_seq_df, seq_df, seq_id_df, rank_df])
+
+    # alamo
 
     # Color of dots.
     dot_col = "#69e9f6"
@@ -8624,13 +8313,12 @@ def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
         dot_col = "blue"
 
     # Axis labels.
-    ax_labels_dic = {rank_df : x_label, ws_sc_df : y_label, win_sc_df : z_label}
+    ax_labels_dic = {rank_df : x_label, ws_sc_df : y_label}
 
-    plot = px.scatter_3d(df, x=rank_df, y=ws_sc_df, z=win_sc_df,
-                         hover_name=seq_id_df,
-                         labels=ax_labels_dic,
-                         hover_data=[win_pos_df, win_seq_df, seq_df],
-                         color_discrete_sequence=[dot_col])
+    plot = px.scatter(data_frame=df, x=rank_df, y=ws_sc_df, hover_name=seq_id_df,
+                      labels=ax_labels_dic,
+                      hover_data=[sal_peak_pos_df, sal_peak_sc_df, sal_win_coords_df, sal_win_seq_df, seq_df],
+                      color_discrete_sequence=[dot_col])
 
     plot.layout.template = 'seaborn'
     plot.update_layout(hoverlabel=dict(font_size=11))
@@ -11774,7 +11462,7 @@ def get_peak_region(pos, sc_list,
                     set_mean=False):
     """
     For a list of scores get peak region around score position which
-    lies above the mean score.
+    lies above the mean score. Return 0-based start, 1-based end.
 
     reverse:
         Instead of region above, get region below the mean. Set this True
@@ -11930,6 +11618,8 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
     got_saliencies:
         This means position-wise scores for generating motif are positive,
         not negative like when worst windows are given.
+        worst_win_pert_dic stores saliency score lists,
+        worst_win_pos_dic stores saliency peak positions.
     calc_stdev:
         If standard deviations for numerical features should be calculated
         for plotting.
@@ -11950,7 +11640,6 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
     if motif_mode == 1:
         weighted_motif = True
     map_nt2idx_dix = {"A" : 0, "C" : 1, "G" : 2, "U" : 3}
-    win_info_str = "w%i" %(args.win_size)
     # Plot format.
     plot_format = "png"
     if args.plot_format == 2:
@@ -12083,9 +11772,9 @@ def gp_eval_make_motif_plots(args, motif_plots_folder,
 
             # Plot motif.
             if got_saliencies:
-                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + ".saliencies." + plot_format
+                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_top" + str(nr_top_sites) + "." + plot_format
             else:
-                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_" + win_info_str + "_top" + str(nr_top_sites) + "." + plot_format
+                motif_out_file = motif_plots_folder + "/" + "top_motif_l" + str(motif_size) + "_top" + str(nr_top_sites) + ".win." + plot_format
 
             make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
                                 fid2stdev_dic=fid2stdev_dic)
@@ -13308,7 +12997,7 @@ def add_label_plot(df, fig, gs, i,
 
     x_tick_start:
         One-based start coordinate for x ticks. For whole sites this
-        equals to 1.
+        equals to 1. For x_tick_start = 1, first tick would be at 10.
     koma_sepp_1000:
         Separate x tick coordinates > 999 with "," (comma separator
         for numbers > 999).
@@ -13330,19 +13019,23 @@ def add_label_plot(df, fig, gs, i,
         anchor = round10down(x_tick_start) - x_tick_start
         l_seq = len(df)
 
+        end_range = first_tick-x_tick_spacing+l_seq-anchor
+        if not anchor:
+            end_range = first_tick+l_seq+anchor
+
         # Fix xticks.
         logo.style_xticks(rotation=0, fmt='%d', anchor=anchor, spacing=10)
         x_tick_labels = []
-        for x in range(first_tick, first_tick+l_seq+anchor, x_tick_spacing):
+        for x in range(first_tick, end_range, x_tick_spacing):
             if koma_sepp_1000:
                 x_tick_labels.append('{:,}'.format(x))
             else:
                 x_tick_labels.append('%d'%x)
 
-        #print("x_tick_start:", x_tick_start)
-        #print("first_tick:", first_tick)
-        #print("anchor:", anchor)
-        #print("x_tick_labels:", x_tick_labels)
+        print("x_tick_start:", x_tick_start)
+        print("first_tick:", first_tick)
+        print("anchor:", anchor)
+        print("x_tick_labels:", x_tick_labels)
 
         #del x_tick_labels[0]
         logo.ax.set_xticklabels(tuple(x_tick_labels))

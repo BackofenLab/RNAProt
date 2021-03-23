@@ -43,8 +43,6 @@ rnaprot -h
 
 # Loss criterion.
 criterion = BCEWithLogitsLoss()
-# Window sizes used to identify site regions the model regards as important.
-win_sizes = [5, 7, 9, 11, 13, 15, 17, 19, 21]
 
 
 ################################################################################
@@ -144,22 +142,17 @@ def setup_argument_parser():
     # Add advanced model definition arguments group.
     p_tra = p_tr.add_argument_group("model definition arguments")
     # Optional arguments for train.
-    p_tra.add_argument("--gen-cv",
+    p_tra.add_argument("--cv",
                    dest = "gen_cv",
                    default = False,
                    action = "store_true",
                    help = "Run cross validation in combination with set hyperparameters to evaluate model generalization performance (default: False)")
-    p_tra.add_argument("--gen-cv-k",
+    p_tra.add_argument("--cv-k",
                    dest="gen_cv_k",
                    type = int,
                    default = 10,
                    choices = [5,10],
-                   help = "Cross validation k for evaluating generalization performance (use together with --gen-cv) (default: 10)")
-    p_tra.add_argument("--gm-cv",
-                   dest = "gm_cv",
-                   default = False,
-                   action = "store_true",
-                   help = "Treat data as generic model data (positive IDs with specific format required). This turns on generic model data cross validation, with every fold leaving one RBP set out for testing (ignoring --gen-cv and --gen-cv-k) (default: False)")
+                   help = "Cross validation k for evaluating generalization performance (use together with --cv) (default: 10)")
     p_tra.add_argument("--val-size",
                    dest = "val_size",
                    type = float,
@@ -175,7 +168,7 @@ def setup_argument_parser():
                    dest="test_ids",
                    type=str,
                    metavar='str',
-                   help = "Provide file with test IDs to be used as a test set for testing final model. Test IDs need to be part of --in training set. Not compatible with --add-test, --gen-cv, or --gm-cv")
+                   help = "Provide file with test IDs to be used as a test set for testing final model. Test IDs need to be part of --in training set. Not compatible with --add-test, --cv, or --gm-cv")
     p_tra.add_argument("--keep-order",
                    dest="keep_order",
                    default = False,
@@ -288,8 +281,8 @@ def setup_argument_parser():
                    dest="bohb_max_budget",
                    type = int,
                    metavar='int',
-                   default=25,
-                   help = "BOHB maximum budget (default: 30)")
+                   default=40,
+                   help = "BOHB maximum budget (default: 40)")
     p_tra.add_argument("--bohb-workers",
                    dest="bohb_workers",
                    type = int,
@@ -357,30 +350,12 @@ def setup_argument_parser():
                    type = int,
                    nargs='+',
                    default = [7],
-                   help = "Motif size(s) (widths) for extracting and plotting motifs. Provide multiple sizes (e.g. --motif-size 5 7 9 ) to extract a motif for each size. NOTE that --win-size needs to >= max --motif-size (default: 7)")
-    p_ev.add_argument("--win-size",
-                   dest="win_size",
-                   type = int,
-                   default = 7,
-                   choices = win_sizes,
-                   metavar='int',
-                   help = "Windows size for calculating position-wise scoring profiles (default: 7)")
+                   help = "Motif size(s) (widths) for extracting and plotting motifs. Provide multiple sizes (e.g. --motif-size 5 7 9) to extract a motif for each size (default: 7)")
     p_ev.add_argument("--report",
                    dest="report",
                    default = False,
                    action = "store_true",
-                   help = "Generate additional statistics and plots regarding k-mer content and scores and also output an .html report containing various statistics and plots (default: False)")
-    p_ev.add_argument("--kmer-size",
-                   dest="kmer_size",
-                   type = int,
-                   default = 6,
-                   metavar='int',
-                   help = "Size (length) of k-mers to extract for --report (default: 6)")
-    p_ev.add_argument("--lookup-kmer",
-                   dest="lookup_kmer",
-                   type=str,
-                   metavar='str',
-                   help = "Provide RNA k-mer of size --kmer-size to look up and return stats and motif (if found in sequences, no plot if --only-seq)")
+                   help = "Generate an .html report containing various additional statistics and plots (default: False)")
     p_ev.add_argument("--add-train-in",
                    dest="add_train_folder",
                    type=str,
@@ -434,26 +409,13 @@ def setup_argument_parser():
                    default = 1,
                    choices = [1,2],
                    help = "Define prediction mode. (1) predict whole sites, (2) predict binding sites on longer sequences using moving window predictions (default: 1)")
-    p_pr.add_argument("--step-size",
-                   dest="step_size",
-                   type = int,
-                   metavar='int',
-                   default = 10,
-                   help = "Moving window step size (stride) for --mode 2 (default: 10)")
-    p_pr.add_argument("--win-size",
-                   dest="win_size",
-                   type = int,
-                   default = 7,
-                   choices = win_sizes,
-                   metavar='int',
-                   help = "Window size for extracting peak regions inside moving windows (default: 7)")
     p_pr.add_argument("--max-merge-dist",
                    dest = "max_merge_dist",
                    type = int,
                    metavar='int',
                    default = 0,
                    help = "Maximum distance between two peaks for merging. Two peaks get merged to one if they are <= --max-merge-dist away from each other (default: 0)")
-    p_pr.add_argument("--plot-top-win-profiles",
+    p_pr.add_argument("--plot-top-profiles",
                    dest="plot_top_win_profiles",
                    default = False,
                    action = "store_true",
@@ -464,6 +426,12 @@ def setup_argument_parser():
                    default = 1,
                    choices = [1,2],
                    help = "Plotting format of top window profiles. 1: png, 2: pdf (default: 1)")
+    p_pr.add_argument("--thr",
+                   dest="thr",
+                   type = int,
+                   default = 2,
+                   choices = [1,2,3],
+                   help = "Define site score threshold setting for reporting peak regions in --mode 2 (window prediction). 1: relaxed, 2: standard, 3: strict (default: 2)")
 
     """
     Training set generation mode.
@@ -804,6 +772,9 @@ def main_train(args):
     print("Start time:", start_time)
     start_sec = time.time()
 
+    # Disable generic model CV for now.
+    args.gm_cv = False
+
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
     indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
@@ -815,12 +786,12 @@ def main_train(args):
     else:
         assert args.val_size >= 0.1 and args.val_size <= 0.5, "use reasonable values for --val-size (>= 0.1 and <= 0.5)"
     if args.gm_cv and args.gen_cv:
-        assert False, "use either --gen-cv to estimate single model generalization performance, or --gm-cv to estimate generic model generalization performance"
+        assert False, "use either --cv to estimate single model generalization performance, or --gm-cv to estimate generic model generalization performance"
     if args.gen_cv:
-        assert not args.run_bohb, "incompatible options --run-bohb and --gen-cv. Use either --run-bohb to optimize hyperparameters, or --gen-cv to use the set of optimized parameters (provided as command line arguments) to estimate generalization performance via cross validation"
-        assert not args.keep_order, "incompatible options --keep-order and --gen-cv. --keep-order is only effective for final model training (--gen-cv disabled)"
-        assert not args.add_test, "incompatible options --add-test and --gen-cv. --add-test only for training final model, not for --gen-cv cross validation"
-        assert not args.test_ids, "incompatible options --test-ids and --gen-cv. --test-ids only for training final model, not for --gen-cv cross validation"
+        assert not args.run_bohb, "incompatible options --run-bohb and --cv. Use either --run-bohb to optimize hyperparameters, or --cv to use the set of optimized parameters (provided as command line arguments) to estimate generalization performance via cross validation"
+        assert not args.keep_order, "incompatible options --keep-order and --cv. --keep-order is only effective for final model training (--cv disabled)"
+        assert not args.add_test, "incompatible options --add-test and --cv. --add-test only for training final model, not for --cv cross validation"
+        assert not args.test_ids, "incompatible options --test-ids and --cv. --test-ids only for training final model, not for --cv cross validation"
     if args.gm_cv:
         assert not args.run_bohb, "incompatible options --run-bohb and --gm-cv. Use either --run-bohb to optimize hyperparameters, or --gm-cv to apply the set of optimized parameters (provided as command line arguments) to estimate generic model performance via cross validation"
         assert not args.keep_order, "incompatible options --keep-order and --gm-cv. --keep-order is only effective for final model training (--gm-cv disabled)"
@@ -965,14 +936,14 @@ def main_train(args):
     print("Dataset size:        %i" %(len(all_features)))
 
     """
-    Run cross validation (--gen-cv, --gen-cv-k) to estimate generalization
+    Run cross validation (--cv, --cv-k) to estimate generalization
     performance.
 
     """
 
     if args.gen_cv:
 
-        print("Running CV to estimate generalization performance (--gen-cv) ... ")
+        print("Running CV to estimate generalization performance (--cv) ... ")
 
         # Path to store CV models.
         model_folder = out_folder + "/cv_models/"
@@ -996,11 +967,11 @@ def main_train(args):
         # Fold count.
         i_cv = 0
 
-        # Run --gen-cv-k fold cross validation with hyperparameter optimization.
+        # Run --cv-k fold cross validation with hyperparameter optimization.
         for list_tr_idx, list_te_idx in skf.split(np.zeros(len(labels)), labels):
 
             i_cv += 1
-            print("Starting --gen-cv fold %i ... " %(i_cv))
+            print("Starting --cv fold %i ... " %(i_cv))
 
             test_dataset = RNNDataset([all_features[idx] for idx in list_te_idx], [labels[idx] for idx in list_te_idx])
 
@@ -1081,8 +1052,8 @@ def main_train(args):
         print("End time:             %s" %(end_time))
         print("Run time (HH:MM:SS):  %s" %(elapsed_time))
 
-        print("Average accuracy + stdev (--gen-cv):  %f (+- %f)" %(avg_acc, stdev_acc))
-        print("Average AUC + stdev (--gen-cv):       %f (+- %f)" %(avg_auc, stdev_auc))
+        print("Average accuracy + stdev (--cv):  %f (+- %f)" %(avg_acc, stdev_acc))
+        print("Average AUC + stdev (--cv):       %f (+- %f)" %(avg_auc, stdev_auc))
 
         avg_acc_out_file = args.out_folder + "/avg_acc_auc.gen_cv.out"
         #AAOUT = open(avg_acc_out_file, "a+")
@@ -1134,7 +1105,6 @@ def main_train(args):
         random.seed(1)
         random.shuffle(all_neg_feat)
 
-
         #list_pos_feat_labels = [l.items() for l in all_pos_feat_labels]
         #list_uniq_pos_feat_labels = list(set(list_pos_feat_labels))
         list_uniq_pos_feat_labels = list(set(all_pos_feat_labels))
@@ -1150,8 +1120,6 @@ def main_train(args):
                     test_feat_pos.append(feat)
                 else:
                     train_feat_pos.append(feat)
-
-            # alamo.
 
             # Get RBP label.
             assert li2label_dic[pos_feat_label], "No RBP label for positive class label %i" %(pos_feat_label)
@@ -1189,7 +1157,6 @@ def main_train(args):
             # print("c_test:", c_test)
             # print("c_train:", c_train)
             # print("c_val:", c_val)
-            # alamo.
 
             train_dataset = RNNDataset(train_feat, train_feat_labels)
             test_dataset = RNNDataset(test_feat, test_feat_labels)
@@ -1493,7 +1460,7 @@ def main_train(args):
 
     # Train model on fold dataset.
     print("Training model ... ")
-    print("CALEB: tickets please ... ")
+    #print("CALEB: tickets please ... ")
     val_auc, val_acc, c_epochs = rnn_util.train_model(args, train_loader,
                                                       val_loader, final_model_path,
                                                       device, criterion,
@@ -1733,8 +1700,8 @@ def main_eval(args):
     # Model + model parameter file.
     params_file = args.in_train_folder + "/final.params"
     model_file = args.in_train_folder + "/final.model"
-    assert os.path.isfile(model_file), "--train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model"
-    assert os.path.isfile(params_file), "--train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model"
+    assert os.path.isfile(model_file), "--train-in folder is missing a model file. Run rnaprot train without --cv to generate and store a model"
+    assert os.path.isfile(params_file), "--train-in folder is missing a model parameter file. Run rnaprot train without --cv to generate and store a model"
     # Additional model checks.
     model_file2 = False
     if args.add_train_folder:
@@ -1742,8 +1709,8 @@ def main_eval(args):
         # Model + model parameter file.
         params_file2 = args.add_train_folder + "/final.params"
         model_file2 = args.add_train_folder + "/final.model"
-        assert os.path.isfile(model_file2), "--add-train-in folder is missing a model file. Run rnaprot train without --gen-cv to generate and store a model"
-        assert os.path.isfile(params_file2), "--add-train-in folder is missing a model parameter file. Run rnaprot train without --gen-cv to generate and store a model"
+        assert os.path.isfile(model_file2), "--add-train-in folder is missing a model file. Run rnaprot train without --cv to generate and store a model"
+        assert os.path.isfile(params_file2), "--add-train-in folder is missing a model parameter file. Run rnaprot train without --cv to generate and store a model"
 
     # Read in model parameters.
     params_dic = rplib.read_settings_into_dic(params_file)
@@ -1799,6 +1766,19 @@ def main_eval(args):
     args.only_seq = False
     if train_settings_dic["only_seq"] == "True":
         args.only_seq = True
+    # If only_seq not set but still sequence model.
+    rp_train_features_file = args.in_train_folder + "/features.out"
+    train_fid_dic = {}
+    with open(rp_train_features_file) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            cols_str = ",".join(cols)
+            train_fid_dic[cols[0]] = cols_str
+    f.closed
+    assert train_fid_dic, "train_fid_dic empty"
+    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
+    if len(train_fid_dic) == 1:
+        args.only_seq = True
     onlyseq = args.only_seq
     # Checks.
     if onlyseq:
@@ -1828,21 +1808,21 @@ def main_eval(args):
 
     # More checks.
     # Window size.
-    if (args.win_size-1) % 2:
-        assert False, "only uneven window size values (--win-size) supported (5,7,9, ...)"
-    if args.win_size < 5:
-        assert False, "window size should be >= 5"
-    win_info_str = "w%i" %(args.win_size)
+    # if (args.win_size-1) % 2:
+    #     assert False, "only uneven window size values (--win-size) supported (5,7,9, ...)"
+    # if args.win_size < 5:
+    #     assert False, "window size should be >= 5"
+    #win_info_str = "w%i" %(args.win_size)
     # k-mer size.
-    if args.report:
-        assert args.kmer_size >= 3 and args.kmer_size <= 12, "set a reasonable k-mer size (--kmer-size) (>= 3 and <= 12)"
-        if args.lookup_kmer:
-            assert len(args.lookup_kmer) == args.kmer_size, "--lookup-kmer length needs to be == --kmer-size"
-    else:
-        assert not args.lookup_kmer, "--lookup-kmer requires --report to be set"
+    # if args.report:
+    #     assert args.kmer_size >= 3 and args.kmer_size <= 12, "set a reasonable k-mer size (--kmer-size) (>= 3 and <= 12)"
+    #     if args.lookup_kmer:
+    #         assert len(args.lookup_kmer) == args.kmer_size, "--lookup-kmer length needs to be == --kmer-size"
+    # else:
+    #     assert not args.lookup_kmer, "--lookup-kmer requires --report to be set"
 
     # Window extension from center left and right.
-    win_extlr = int(args.win_size/2)
+    #win_extlr = int(args.win_size/2)
 
     # Motif size.
     max_motif_size = 0
@@ -1853,14 +1833,14 @@ def main_eval(args):
             assert False, "only uneven motif size values supported"
         if motif_size < 5:
             assert False, "motif sizes should be >= 5"
-        if motif_size > 21:
-            assert False, "motif sizes should be <= 21"
+        if motif_size > 15:
+            assert False, "motif sizes should be <= 15"
     max_motif_extlr = int(max_motif_size/2)
-    assert max_motif_size <= args.win_size, "maximum --motif-size needs to be <= --win-size"
+    #assert max_motif_size <= args.win_size, "maximum --motif-size needs to be <= --win-size"
 
     # Some facts.
     print("# dataset features:    %i" %(args.n_feat))
-    print("Window size:          ", args.win_size)
+    #print("Window size:          ", args.win_size)
     print("Top site numbers:     ", args.list_nr_top_sites)
     print("Motif sizes:          ", args.list_motif_sizes)
 
@@ -1895,9 +1875,10 @@ def main_eval(args):
     if args.list_lookup_ids:
         for seq_id in args.list_lookup_ids:
             assert seq_id in seqs_dic, "given --lookup-profile ID %s not found in --gt-in positive set" %(seq_id)
-        lookup_out_folder = args.out_folder + "/lookup_profiles"
-        if not os.path.exists(lookup_out_folder):
-            os.makedirs(lookup_out_folder)
+        lookup_out_folder = args.out_folder + "/lookup_profiles_out"
+        if os.path.exists(lookup_out_folder):
+            shutil.rmtree(lookup_out_folder)
+        os.makedirs(lookup_out_folder)
 
     # Convert to tensors for prediction, keep all_features for motif extraction later.
     all_feat_tens = []
@@ -1912,9 +1893,7 @@ def main_eval(args):
         all_seq_len += seq_l
         if seq_l < min_seq_len:
             min_seq_len = seq_l
-    assert win_extlr <= min_seq_len+1, "--win-size needs to be < 2*min_seq_len+1. Please lower --win-size"
-    if args.report:
-        assert args.kmer_size <= min_seq_len, "minimum sequence length < --kmer-size (%i < %i). Please lower --kmer-size" %(min_seq_len, args.kmer_size)
+    #assert win_extlr <= min_seq_len+1, "--win-size needs to be < 2*min_seq_len+1. Please lower --win-size"
 
     # Check # features.
     check_num_feat = 0
@@ -1961,6 +1940,7 @@ def main_eval(args):
     """
     neg_ws_scores = []
     if args.report:
+
         # Load data again.
         print("Load negative training set for --report ... ")
         neg_seqs_dic, idx2negid_dic, all_neg_feat, ch_info_neg_dic = rplib.load_eval_data(args,
@@ -1998,6 +1978,7 @@ def main_eval(args):
     """
 
     add_ws_scores = []
+    id2add_ws_sc_dic = {}
     if args.add_train_folder:
         print("Take care of additional model from --add-train-in ... ")
         # Model + model parameter file.
@@ -2110,6 +2091,9 @@ def main_eval(args):
         if add_ws_scores:
             assert len(add_ws_scores) == len(ws_scores), "len(add_ws_scores) != len(ws_scores) (%i != %i)" %(len(add_ws_scores), len(ws_scores))
 
+        print("Maximum whole-site score: ", max(add_ws_scores))
+        print("Minimum whole-site score: ", min(add_ws_scores))
+
         # Print out two model scores stats.
         print("Output whole-site scores for both models ... ")
 
@@ -2123,21 +2107,21 @@ def main_eval(args):
             ws_sc_rank += 1
             add_ws_sc = add_ws_scores[si]
             seq_id = idx2id_dic[si]
+            id2add_ws_sc_dic[seq_id] = add_ws_sc
             seq = seqs_dic[seq_id]
+            l_seq = len(seq)
             abs_diff = abs(ws_sc - add_ws_sc)
             TMOUT.write("%i\t%s\t%.6f\t%.6f\t%.6f\t%s\n" %(ws_sc_rank, seq_id, ws_sc, add_ws_sc, abs_diff, seq))
 
             # Plot lookup profile for --add-train-in model too.
             if args.list_lookup_ids and seq_id in args.list_lookup_ids:
 
-                print("Generate lookup profile plot %s for additional model ... " %(seq_id))
-
                 sal_list = rnn_util.get_saliency_from_feat_list(all_feat2[si],
                                             add_model, device,
                                             got_tensors=True,
                                             sal_type=1)
                 l_sal = len(sal_list)
-                assert l_sal == l_sc, "length saliency list (--lookup-profile, --add-train-in) != length profile scores list (%i != %i)" %(l_sal, l_sc)
+                assert l_sal == l_seq, "length saliency list (--lookup-profile, --add-train-in) != length sequence (%i != %i)" %(l_sal, l_seq)
                 all_feat2_no_tens = all_feat2[si].tolist()
 
                 single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
@@ -2146,7 +2130,8 @@ def main_eval(args):
                                             model_hp_dic=m2p_dic,
                                             load_model=False)
 
-                plot_out_file = lookup_out_folder + "/" + seq_id + "_" + win_info_str + "_sc" + str(add_ws_sc) + ".add_model." + plot_format
+                plot_out_file = lookup_out_folder + "/" + seq_id + "_sc" + str(add_ws_sc) + ".add_model." + plot_format
+                print("Plotting --lookup-profile %s for additional model ... " %(seq_id))
 
                 rplib.make_feature_attribution_plot(seq, all_feat2_no_tens,
                                             ch_info_dic2, plot_out_file,
@@ -2155,23 +2140,6 @@ def main_eval(args):
 
         TMOUT.close()
 
-    """
-    Window predictions.
-
-    """
-
-    print("Create and predict windows ... ")
-    profile_scores_ll = rnn_util.get_window_predictions(args, model, device,
-                                                        all_feat_tens, win_extlr,
-                                                        load_model=False,
-                                                        got_tensors=True)
-
-    assert len(profile_scores_ll) == c_ws_scores, "length profile scores list != # whole-site scores"
-
-    # Get best + worst scoring window.
-    best_sc_win, worst_sc_win = rnn_util.get_best_worst_scoring_window(profile_scores_ll, all_features, win_extlr)
-
-    #print("best_sc_win:", best_sc_win)
 
     """
     Plot profiles and extract stats
@@ -2182,11 +2150,11 @@ def main_eval(args):
 
     """
 
-    top_profiles_folder = args.out_folder + "/" + "top_profiles_" + win_info_str + "_out"
+    top_profiles_folder = args.out_folder + "/top_profiles_out"
     if os.path.exists(top_profiles_folder):
         shutil.rmtree(top_profiles_folder)
     os.makedirs(top_profiles_folder)
-    bottom_profiles_folder = args.out_folder + "/" + "bottom_profiles_" + win_info_str + "_out"
+    bottom_profiles_folder = args.out_folder + "/bottom_profiles_out"
     if os.path.exists(bottom_profiles_folder):
         shutil.rmtree(bottom_profiles_folder)
     if args.bottom_up:
@@ -2195,26 +2163,21 @@ def main_eval(args):
     # Sort sites by score to evaluate top sites.
     rank_scores_out = args.out_folder + "/whole_site_scores.out"
     RSOUT = open(rank_scores_out, "w")
+    RSOUT.write("score_rank\tsite_id\twhole_site_score\tsequence\n")
+
     site_count = 0
     id_i = 10 ** len(str(args.nr_top_profiles))
 
     # Collect window perturbation score infos.
-    worst_win_pert_dic = {}
-    worst_win_pos_dic = {}
-    worst_win_si2sc_dic = {}
-    worst_win_id2sc_dic = {}
+    # worst_win_pert_dic = {}
+    # worst_win_pos_dic = {}
+    # worst_win_si2sc_dic = {}
+    # worst_win_id2sc_dic = {}
     # Collect saliency infos.
     sal_peak_pos_dic = {}
+    sal_peak_sc_dic = {}
     sal_lists_dic = {}
-
-    # Store min/max score positions for each sequence.
-    # id2minpos_dic = {}
-    # id2maxpos_dic = {}
-    # Store min/max saliency positions for each sequence.
-    # id2minsalpos_dic = {}
-    # id2maxsalpos_dic = {}
-    # c_maxsal_borders = 0
-    # c_maxsal_center = 0
+    sal_peak_win_dic = {}
 
     # Go through positive sites by descending score.
     if args.report:
@@ -2235,14 +2198,14 @@ def main_eval(args):
 
     for si, ws_sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=True):
 
-        profile_scores = profile_scores_ll[si]
-        if not profile_scores:
-            continue
+        # profile_scores = profile_scores_ll[si]
+        # if not profile_scores:
+        #     continue
         site_count += 1
         id_i += 1
         seq_id = idx2id_dic[si]
         seq = seqs_dic[seq_id]
-        l_sc = len(profile_scores)
+        l_seq = len(seq)
 
         # Decide what to extract for given site.
         sal_list = False
@@ -2250,37 +2213,39 @@ def main_eval(args):
         single_pert_list = False
         get_sal = False
         get_single_pert = False
-        worst_stats = False
+        #worst_stats = False
         if site_count <= args.nr_top_profiles:
             get_sal = True
             get_single_pert = True
-            worst_stats = True
+            #worst_stats = True
+        if args.report and ws_sc >= 0:
+            get_sal = True
         if args.list_lookup_ids and seq_id in args.list_lookup_ids:
             get_sal = True
             get_single_pert = True
-            worst_stats = True
-        if args.report and ws_sc >= 0:
-            worst_stats = True
+            #worst_stats = True
+        # if args.report and ws_sc >= 0:
+        #     worst_stats = True
         if site_count <= max_nr_top_sites:
-            worst_stats = True
+            #worst_stats = True
             get_sal = True
 
-        if worst_stats:
-            # Get worst scoring window perturbation scores.
-            worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
-                                            all_features[si], worst_sc_win,
-                                            model, device,
-                                            avg_win_extlr=3,
-                                            load_model=False)
-
-            worst_win_pert_dic[seq_id] = worst_win_pert_list
-            # Get worst score position in site (with padding, zero-based pos).
-            worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
-                                                    get_lowest=True,
-                                                    padding=win_extlr)
-            worst_win_pos_dic[seq_id] = worst_pos
-            worst_win_si2sc_dic[si] = worst_sc
-            worst_win_id2sc_dic[seq_id] = worst_sc
+        # if worst_stats:
+        #     # Get worst scoring window perturbation scores.
+        #     worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
+        #                                     all_features[si], worst_sc_win,
+        #                                     model, device,
+        #                                     avg_win_extlr=3,
+        #                                     load_model=False)
+        #
+        #     worst_win_pert_dic[seq_id] = worst_win_pert_list
+        #     # Get worst score position in site (with padding, zero-based pos).
+        #     worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
+        #                                             get_lowest=True,
+        #                                             padding=win_extlr)
+        #     worst_win_pos_dic[seq_id] = worst_pos
+        #     worst_win_si2sc_dic[si] = worst_sc
+        #     worst_win_id2sc_dic[seq_id] = worst_sc
 
         if get_sal:
             # Get mean saliency profile for site.
@@ -2292,12 +2257,21 @@ def main_eval(args):
                                                     win_extlr=2)
             best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
                                                     get_lowest=False,
-                                                    padding=win_extlr)
-
-            #ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
-            #                                             reverse=False)
+                                                    padding=max_motif_extlr)
             sal_peak_pos_dic[seq_id] = best_pos
+            sal_peak_sc_dic[seq_id] = best_sc
             sal_lists_dic[seq_id] = avg_sal_list
+
+            # Again for finding saliency peak window.
+            avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
+                                                    win_extlr=5)
+            best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
+                                                    get_lowest=False,
+                                                    padding=3)
+            # ext_win_s 0-based, ext_win_e 1-based.
+            ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
+                                                         reverse=False)
+            sal_peak_win_dic[seq_id] = (ext_win_s, ext_win_e)
 
         if get_single_pert:
             # Get single position perturbation scores.
@@ -2309,7 +2283,7 @@ def main_eval(args):
         # Plot profile if site ID == lookup site ID.
         if args.list_lookup_ids and seq_id in args.list_lookup_ids:
             print("Plotting --lookup-profile %s ... " %(seq_id))
-            plot_out_file = lookup_out_folder + "/" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
+            plot_out_file = lookup_out_folder + "/" + seq_id + "_sc" + str(ws_sc) + "." + plot_format
             rplib.make_feature_attribution_plot(seq, all_features[si],
                                         ch_info_dic, plot_out_file,
                                         sal_list=sal_list,
@@ -2319,7 +2293,7 @@ def main_eval(args):
 
         # Plot --nr-top-profiles profiles.
         if site_count <= args.nr_top_profiles:
-            plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(ws_sc) + "." + plot_format
+            plot_file_name = str(id_i)[1:] + "_" + seq_id + "_sc" + str(ws_sc) + "." + plot_format
             plot_out_file = top_profiles_folder + "/" + plot_file_name
             #print("Plotting %s ... " %(plot_file_name))
             rplib.make_feature_attribution_plot(seq, all_features[si],
@@ -2332,6 +2306,7 @@ def main_eval(args):
         if args.report:
             if not site_count % 500:
                 print("%i sites processed" %(site_count))
+
 
     """
     Bottom profiles.
@@ -2350,24 +2325,24 @@ def main_eval(args):
         site_count = 0
         for si, sc in sorted(si2sc_dic.items(), key=lambda item: item[1], reverse=False):
             # Profile scores.
-            profile_scores = profile_scores_ll[si]
-            if not profile_scores:
-                continue
+            # profile_scores = profile_scores_ll[si]
+            # if not profile_scores:
+            #     continue
             site_count += 1
             id_i += 1
             seq_id = idx2id_dic[si]
             seq = seqs_dic[seq_id]
-            l_sc = len(profile_scores)
+            l_seq = len(seq)
 
             # Print only top --nr-top-profiles profiles.
             if site_count <= args.nr_top_profiles:
 
                 # Get best scoring window perturbation scores.
-                best_win_pert_list = rnn_util.get_window_perturb_scores(args,
-                                                all_features[si], best_sc_win,
-                                                model, device,
-                                                avg_win_extlr=3,
-                                                load_model=False)
+                # best_win_pert_list = rnn_util.get_window_perturb_scores(args,
+                #                                 all_features[si], best_sc_win,
+                #                                 model, device,
+                #                                 avg_win_extlr=3,
+                #                                 load_model=False)
 
                 # Get mean saliency profile for site.
                 sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
@@ -2382,14 +2357,14 @@ def main_eval(args):
                                             load_model=False)
 
                 # Plot file.
-                plot_file_name = str(id_i)[1:] + "_" + seq_id + "_" + win_info_str + "_sc" + str(sc) + "." + plot_format
+                plot_file_name = str(id_i)[1:] + "_" + seq_id + "_sc" + str(sc) + "." + plot_format
                 plot_out_file = bottom_profiles_folder + "/" + plot_file_name
 
                 rplib.make_feature_attribution_plot(seq, all_features[si],
                                             ch_info_dic, plot_out_file,
                                             sal_list=sal_list,
                                             single_pert_list=single_pert_list,
-                                            best_win_pert_list=best_win_pert_list)
+                                            best_win_pert_list=False)
 
             else:
                 break
@@ -2436,13 +2411,13 @@ def main_eval(args):
     #sys.exit()
 
 
-    rplib.gp_eval_make_motif_plots(args, motif_plots_folder,
-                                   ch_info_dic, all_features,
-                                   si2sc_dic, idx2id_dic, seqs_dic,
-                                   worst_win_pert_dic, worst_win_pos_dic,
-                                   calc_stdev=calc_stdev,
-                                   motif_file_dic=top_motif_file_dic,
-                                   motif_mode=1)
+    # rplib.gp_eval_make_motif_plots(args, motif_plots_folder,
+    #                                ch_info_dic, all_features,
+    #                                si2sc_dic, idx2id_dic, seqs_dic,
+    #                                worst_win_pert_dic, worst_win_pos_dic,
+    #                                calc_stdev=calc_stdev,
+    #                                motif_file_dic=top_motif_file_dic,
+    #                                motif_mode=1)
 
     # Create motifs using saliency info.
     rplib.gp_eval_make_motif_plots(args, motif_plots_folder,
@@ -2468,309 +2443,30 @@ def main_eval(args):
     #                                motif_mode=3)
 
 
-    sys.exit()
-
-    # hallo 123
-
     """
     Generate --report statistics and plots.
 
-    - Get k-mer scores:
-        - If onlyseq, just score present sequence k-mers
-        - If additional features, get average brick scores (containing k-mer),
-          and bricks for plotting. Also get top scoring bricks and scores
-          for each k-mer.
-        - HTML report
-
     """
-    lookup_kmer = False
-    lookup_plot_file = False
-    c_top_kmers = 20
+
+    # Output saliency regions and infos.
+    sal_info_out = args.out_folder + "/saliency_regions.out"
+    SALOUT = open(sal_info_out, "w")
+    SALOUT.write("site_id\twhole_site_score\tsaliency_peak_score\tsaliency_peak_pos\tpeak_sequence\n")
+
+    for seq_id in sal_peak_pos_dic:
+        peak_pos = sal_peak_pos_dic[seq_id]
+        peak_sc = sal_peak_sc_dic[seq_id]
+        seq = seqs_dic[seq_id]
+        sal_s = peak_pos - 3
+        sal_e = peak_pos + 4
+        sal_seq = seq[sal_s:sal_e]
+        sal_pos = peak_pos + 1
+        ws_sc = id2wssc_dic[seq_id]
+        SALOUT.write("%s\t%s\t%s\t%i\t%s\n" %(seq_id, str(ws_sc), str(peak_sc), sal_pos, sal_seq))
+    SALOUT.close()
+
 
     if args.report:
-
-        kmer_feat = []
-        kmer2sc_dic = {}
-        # Dictionaries for additional feature analysis.
-        kmer2mm_dic = {} # Dictionary of motif matrices.
-        kmer_stdev_dic = {} # Standard deviation infos.
-        # k-mer to best scoring matrix dictionary.
-        kmer2bestmm_dic = {}
-        # Store top scores for each k-mer.
-        kmer2bestsc_dic = {}
-        # k-mer score stdev.
-        kmer2scstdev_dic = {}
-
-        print("--report set. Gather more results ... ")
-        print("Score k-mers ... ")
-        print("--kmer-size:  %i" %(args.kmer_size))
-        print("Extract %i-mers from sequences ... " %(args.kmer_size))
-        kmer2c_dic = rplib.seqs_dic_count_kmer_freqs(seqs_dic, args.kmer_size,
-                                                     rna=True,
-                                                     convert_to_uc=True,
-                                                     report_key_error=True)
-        assert kmer2c_dic, "kmer2c_dic k-mer counts dictionary empty"
-
-        # Check lookup k-mer.
-        if args.lookup_kmer:
-            # Check given k-mer.
-            rna_alphabet = ["A", "C", "G", "U"]
-            lookup_kmer = args.lookup_kmer.upper()
-            for c in args.lookup_kmer:
-                if c not in rna_alphabet:
-                    assert False, "non-RNA character %s encountered in --lookup-kmer" %(c)
-            if lookup_kmer in kmer2c_dic:
-                print("--lookup-kmer %s present in sequences (count: %i) ... " %(lookup_kmer, kmer2c_dic[lookup_kmer]))
-            else:
-                print("--lookup-kmer %s not found in training sequences!" %(lookup_kmer))
-
-        kmer_list = []
-        for kmer, kmerc in sorted(kmer2c_dic.items()):
-            if kmerc != 0:
-                kmer_list.append(kmer)
-
-        # If only sequence features.
-        if onlyseq:
-            print("--train-in model trained on sequences only. Generate k-mer features ... ")
-            # Construct sequence kmer graphs.
-            for kmer in kmer_list:
-                if args.embed:
-                    feat_list = rplib.convert_seq_to_kmer_embedding(kmer, args.embed_k, kmer2idx_dic,
-                                                                     l2d=True)
-                else:
-                    feat_list = rplib.string_vectorizer(kmer, custom_alphabet=['A','C','G','U'])
-                kmer_feat.append(torch.tensor(feat_list, dtype=torch.float))
-            # Score kmers.
-            c_kmer_feat = len(kmer_feat)
-            kmer_feat_labels = [1]*c_kmer_feat
-            predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
-            predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
-
-            print("Score k-mers present in sequences ... ")
-            kmer_scores = rnn_util.test_scores(predict_loader, model, device)
-
-            assert c_kmer_feat == len(kmer_scores), "size k-mer features list != # k-mer scores"
-
-            for i,kmer in enumerate(kmer_list):
-                kmer_score = kmer_scores[i]
-                kmer2sc_dic[kmer] = kmer_score
-
-        else:
-
-            # More features comin at ya.
-            print("--train-in model trained on sequences + additionrplib_pathal features. Generate k-mer features ... ")
-
-            for feat_list in all_feat_tens:
-                # For each position in feat_list.
-                l_feat = len(feat_list)
-                for wi in range(l_feat):
-                    reg_s = wi
-                    reg_e = wi + args.kmer_size
-                    if reg_e > l_feat:
-                        break
-                    kmer_feat.append(feat_list[reg_s:reg_e])
-
-            # Score kmers.
-            c_kmer_feat = len(kmer_feat)
-            kmer_feat_labels = [1]*c_kmer_feat
-            predict_dataset = RNNDataset(kmer_feat, kmer_feat_labels)
-            predict_loader = DataLoader(dataset=predict_dataset, batch_size=args.batch_size, collate_fn=rnn_util.pad_collate, pin_memory=True)
-
-            print("Score k-mers ... ")
-            kmer_scores = rnn_util.test_scores(predict_loader, model, device)
-
-            assert len(kmer_feat) == len(kmer_scores), "len(kmer_feat) != len(kmer_scores)"
-
-            """
-            kmer2matrix_dic = {}
-            Go through all_features, store score for each
-            # Dictionary of motif matrices (2d lists) for kmers.
-            motif_matrix_dic = {}
-            # Standard deviation infos.
-            mm_stdev_dic = {}
-
-            """
-            # "k-mer,fid" to 2d scores list (each k-mer position one scores list).
-            kmerfid2scl_dic = {}
-            # Check how many times k-mer seen.
-            kmer2seenc_dic = {}
-
-            # Motif matrix sizes.
-            l_mm = args.kmer_size
-            l_sv = n_feat_matrix
-
-            # Init dictionaries.
-            for kmer in kmer_list:
-                # Init motif matrix for kmer.rplib_path
-                motif_matrix = []
-                for i in range(args.kmer_size):
-                    motif_matrix.append([0.0]*n_feat_matrix)
-                kmer2mm_dic[kmer] = motif_matrix
-                # Init best scoring brick for k-mer matrix.
-                best_motif_matrix = []
-                for i in range(args.kmer_size):
-                    best_motif_matrix.append([0.0]*n_feat_matrix)
-                kmer2bestmm_dic[kmer] = best_motif_matrix
-                # Init dictionary to store scores for stdev calculations.
-                if calc_stdev:
-                    for fid in stdev_fid2fidx_dic: # all numerical 1-channel features.
-                        kmer_fid = "%s,%s" %(kmer, fid)
-                        kmerfid2scl_dic[kmer_fid] = []
-                        for i in range(args.kmer_size):
-                            kmerfid2scl_dic[kmer_fid].append([])
-                # Init best scores dic.
-                kmer2bestsc_dic[kmer] = -1000
-
-            # Go over all sequence windows.
-            sc_i = 0
-            kmer2sclist_dic = {}
-            for si,feat_list in enumerate(all_features):
-
-                # If embed, convert feature list to sequence one-hot containing list.
-                if args.embed:
-                    feat_list = rplib.conv_embed_feature_list(feat_list)
-
-                seq_id = idx2id_dic[si]
-                seq = seqs_dic[seq_id]
-                # For each position in feat_list.
-                l_feat = len(feat_list)
-                l_seq = len(seq)
-                assert l_feat == l_seq, "l_feat != l_seq"
-                for wi in range(l_feat):
-                    brick_s = wi
-                    brick_e = wi + args.kmer_size
-                    if brick_e > l_feat:
-                        break
-                    feat_list_win = feat_list[brick_s:brick_e]
-                    win_score = float(kmer_scores[sc_i])
-                    win_kmer = seq[brick_s:brick_e]
-                    win_lookup_kmer = False
-                    if lookup_kmer:
-                        if win_kmer == lookup_kmer:
-                            win_lookup_kmer = True
-
-                    # Record score for average score calculation later.
-                    if win_kmer not in kmer2sclist_dic:
-                        kmer2sclist_dic[win_kmer] = [win_score]
-                    else:
-                        kmer2sclist_dic[win_kmer].append(win_score)
-                    if win_kmer in kmer2seenc_dic:
-                        kmer2seenc_dic[win_kmer] += 1
-                    else:
-                        kmer2seenc_dic[win_kmer] = 1
-                    sc_i += 1
-                    # Add hit brick values to kmer2mm_dic.
-                    for i in range(l_mm):
-                        for j in range(l_sv):
-                            kmer2mm_dic[win_kmer][i][j] += feat_list_win[i][j]
-                            # For 1-channel numerical features, store scores to calculate stdev.
-                            if calc_stdev:
-                                for fid in stdev_fid2fidx_dic: # all numerical 1-channel features.
-                                    kmer_fid = "%s,%s" %(win_kmer, fid)
-                                    kmerfid2scl_dic[kmer_fid][i].append(feat_list_win[i][j])
-                    # Store best scoring brick for k-mer.
-                    if win_score > kmer2bestsc_dic[win_kmer]:
-                        kmer2bestsc_dic[win_kmer] = win_score
-                        for i in range(l_mm):
-                            for j in range(l_sv):
-                                kmer2bestmm_dic[win_kmer][i][j] = feat_list_win[i][j]
-
-            # Averaging of feature+k-mer scores and stdev calculation.
-            assert sc_i == len(kmer_scores), "sc_i != len(kmer_scores) (%i != %i)" %(sc_i, len(kmer_scores))
-            for kmer in kmer_list:
-                kmer_count = kmer2c_dic[kmer]
-                kmer_seen_count = kmer2seenc_dic[kmer]
-                assert kmer_seen_count == kmer_count, "kmer_seen_count != kmer_count (%i != %i)" %(kmer_seen_count, kmer_count)
-                # Average feature scores for plotting.
-                for i in range(l_mm):
-                    for j in range(l_sv):
-                        kmer2mm_dic[kmer][i][j] = kmer2mm_dic[kmer][i][j] / kmer_count
-                # Average k-mer score.
-                kmer_sc_avg = kmer2sclist_dic[kmer][0]
-                kmer_sc_stdev = 0.0
-                if len(kmer2sclist_dic[kmer]) != 1:
-                    #print(kmer2sclist_dic[kmer])
-                    kmer_sc_avg = statistics.mean(kmer2sclist_dic[kmer])
-                    kmer_sc_stdev = statistics.stdev(kmer2sclist_dic[kmer])
-                kmer2sc_dic[kmer] = kmer_sc_avg
-                kmer2scstdev_dic[kmer] = kmer_sc_stdev
-                # Calculate standard deviations for one-channel numerical features at each motif position.
-                fid2stdev_dic = {}
-                if calc_stdev:
-                    for fid in stdev_fid2fidx_dic:
-                        fid2stdev_dic[fid] = []
-                        kmer_fid = "%s,%s" %(kmer, fid)
-                        for i in range(l_mm):
-                            fid2stdev_dic[fid].append(statistics.stdev(kmerfid2scl_dic[kmer_fid][i]))
-                kmer_stdev_dic[kmer] = fid2stdev_dic
-
-        # Get k-mer count ranks and output sorted by score.
-        kmer2rank_dic = {}
-        kmer_rank = 0
-        for kmer, kmerc in sorted(kmer2c_dic.items(), key=lambda item: item[1], reverse=True):
-            kmer_rank += 1
-            kmer2rank_dic[kmer] = kmer_rank
-
-        """
-        Output k-mer stats tables.
-
-        """
-        kmer2scrank_dic = {}
-        kmer2avgscrank_dic = {}
-        kmer_stats_out = motif_plots_folder + "/kmer_stats.out"
-        KSOUT = open(kmer_stats_out, "w")
-        if lookup_kmer:
-            lookup_kmer_stats_out = motif_plots_folder + "/lookup_kmer_stats.out"
-            LKSOUT = open(lookup_kmer_stats_out, "w")
-            if onlyseq:
-                LKSOUT.write("score_rank\tkmer\tscore\tkmer_count\tcount_rank\n")
-            else:
-                LKSOUT.write("best_score_rank\tavg_score_rank\tkmer\tbest_score\tavg_score\tavg_sc_stdev\tkmer_count\tcount_rank\n")
-
-        if onlyseq:
-            sc_rank = 0
-            KSOUT.write("score_rank\tkmer\tscore\tkmer_count\tcount_rank\n")
-            for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=True):
-                sc_rank += 1
-                kmer_count_rank = kmer2rank_dic[kmer]
-                kmer_count = kmer2c_dic[kmer]
-                kmer2scrank_dic[kmer] = sc_rank
-                if lookup_kmer and kmer == lookup_kmer:
-                    LKSOUT.write("%i\t%s\t%.6f\t%i\t%i\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank))
-                else:
-                    KSOUT.write("%i\t%s\t%.6f\t%i\t%i\n" %(sc_rank, kmer, sc, kmer_count, kmer_count_rank))
-        else:
-            # Get k-mer average score ranks.
-            avg_sc_rank = 0
-            for kmer, sc in sorted(kmer2sc_dic.items(), key=lambda item: item[1], reverse=True):
-                avg_sc_rank += 1
-                kmer2avgscrank_dic[kmer] = avg_sc_rank
-            sc_rank = 0
-            KSOUT.write("best_score_rank\tavg_score_rank\tkmer\tbest_score\tavg_score\tavg_sc_stdev\tkmer_count\tcount_rank\n")
-            for kmer, sc in sorted(kmer2bestsc_dic.items(), key=lambda item: item[1], reverse=True):
-                sc_rank += 1
-                kmer_count_rank = kmer2rank_dic[kmer]
-                kmer_count = kmer2c_dic[kmer]
-                kmer2scrank_dic[kmer] = sc_rank
-                avg_sc = kmer2sc_dic[kmer]
-                avg_sc_stdev = kmer2scstdev_dic[kmer]
-                avg_sc_rank = kmer2avgscrank_dic[kmer]
-                if lookup_kmer and kmworst_win_si2sc_dicer == lookup_kmer:
-                    LKSOUT.write("%i\t%i\t%s\t%.6f\t%.6f\t%.6f\t%i\t%i\n" %(sc_rank, avg_sc_rank, kmer, sc, avg_sc, avg_sc_stdev, kmer_count, kmer_count_rank))
-                else:
-                    KSOUT.write("%i\t%i\t%s\t%.6f\t%.6f\t%.6f\t%i\t%i\n" %(sc_rank, avg_sc_rank, kmer, sc, avg_sc, avg_sc_stdev, kmer_count, kmer_count_rank))
-        KSOUT.close()
-        if lookup_kmer:
-            LKSOUT.close()
-
-        # Plot / report lookup k-mer stats.
-        lookup_plot_file = False
-
-        if lookup_kmer and not onlyseq:
-            lookup_plot_file = motif_plots_folder + "/" "lookup_" + lookup_kmer + "." + plot_format
-            print("Plotting %s ... " %(lookup_plot_file))
-            rplib.make_motif_plot(kmer2mm_dic[kmer], ch_info_dic, lookup_plot_file,
-                                   fid2stdev_dic=kmer_stdev_dic[kmer])
 
         # HTML report output file.
         html_report_out = args.out_folder + "/" + "report.rnaprot_eval.html"
@@ -2782,29 +2478,15 @@ def main_eval(args):
         rplib.rp_eval_generate_html_report(ws_scores, neg_ws_scores,
                                            args.out_folder, rplib_path,
                                            html_report_out=html_report_out,
-                                           kmer2rank_dic=kmer2rank_dic,
-                                           kmer2sc_dic=kmer2sc_dic,
-                                           kmer2scstdev_dic=kmer2scstdev_dic,
-                                           kmer2bestsc_dic=kmer2bestsc_dic,
-                                           kmer2scrank_dic=kmer2scrank_dic,
-                                           kmer2avgscrank_dic=kmer2avgscrank_dic,
-                                           kmer2mm_dic=kmer2mm_dic,
-                                           kmer_stdev_dic=kmer_stdev_dic,
-                                           kmer2bestmm_dic=kmer2bestmm_dic,
-                                           kmer2c_dic=kmer2c_dic,
-                                           kmer_size=args.kmer_size,
-                                           ch_info_dic=ch_info_dic,
-                                           kmer_top_n=c_top_kmers,
                                            add_ws_scores=add_ws_scores,
                                            id2wssc_dic=id2wssc_dic,
                                            idx2id_dic=idx2id_dic,
                                            seqs_dic=seqs_dic,
-                                           worst_win_pos_dic=worst_win_pos_dic,
-                                           worst_win_id2sc_dic=worst_win_id2sc_dic,
+                                           sal_peak_pos_dic=sal_peak_pos_dic,
+                                           sal_peak_sc_dic=sal_peak_sc_dic,
+                                           sal_peak_win_dic=sal_peak_win_dic,
                                            onlyseq=onlyseq,
-                                           win_extlr=win_extlr,
                                            theme=args.theme,
-                                           lookup_kmer=lookup_kmer,
                                            plots_subfolder=plots_subfolder)
 
     print("")
@@ -2815,16 +2497,13 @@ def main_eval(args):
     print("Top profile plots folder:\n%s" %(top_profiles_folder))
     if args.bottom_up:
         print("Bottom profile plots folder:\n%s" %(bottom_profiles_folder))
+    if args.list_lookup_ids:
+        print("Lookup profile plots folder:\n%s" %(lookup_out_folder))
     print("Whole-site scores output table file:\n%s" %(rank_scores_out))
     if add_ws_scores:
         print("Two model whole-site scores output table file:\n%s" %(two_model_scores_out))
     if args.report:
-        print("Output table file with k-mer statistics:\n%s" %(kmer_stats_out))
-        if lookup_kmer:
-                print("Output table file with lookup k-mer statistics:\n%s" %(lookup_kmer_stats_out))
         print("Model evaluation report .html:\n%s" %(html_report_out))
-    if lookup_plot_file:
-        print("Look-up k-mer %s plot:\n%s" %(lookup_kmer, lookup_plot_file))
     print("")
 
 
@@ -2926,7 +2605,22 @@ def main_predict(args):
     args.only_seq = False
     if train_settings_dic["only_seq"] == "True":
         args.only_seq = True
+
+    # If only_seq not set but still sequence model.
+    rp_train_features_file = args.in_train_folder + "/features.out"
+    train_fid_dic = {}
+    with open(rp_train_features_file) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            cols_str = ",".join(cols)
+            train_fid_dic[cols[0]] = cols_str
+    f.closed
+    assert train_fid_dic, "train_fid_dic empty"
+    assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
+    if len(train_fid_dic) == 1:
+        args.only_seq = True
     onlyseq = args.only_seq
+
     # Checks.
     if onlyseq:
         if args.embed:
@@ -3245,12 +2939,13 @@ seqs_dic, idx2id_dic, all_features
     # Profile and peak predictions.
     if args.mode == 2:
 
-        print("CALEB: I have something for you ... ")
+        #print("CALEB: I have something for you ... ")
 
         top_win_prof_folder = args.out_folder + "/top_win_profiles"
         if args.plot_top_win_profiles:
-            if not os.path.exists(top_win_prof_folder):
-                os.makedirs(top_win_prof_folder)
+            if os.path.exists(top_win_prof_folder):
+                shutil.rmtree(top_win_prof_folder)
+            os.makedirs(top_win_prof_folder)
 
         # Create window graphs.
         all_win_feat = []
@@ -3298,12 +2993,22 @@ seqs_dic, idx2id_dic, all_features
         alamo
 
         """
-        peak_reg_sc_thr = pos_ws_sc_perc25
+
+        # Minimum score of 0 required.
         if pos_ws_sc_perc25 < 0:
-            peak_reg_sc_thr = 0
-        peak_win_sc_thr = pos_ws_sc_perc50
+            pos_ws_sc_perc25 = 0
         if pos_ws_sc_perc50 < 0:
-            peak_win_sc_thr = 0
+            pos_ws_sc_perc50 = 0
+        if pos_ws_sc_perc75 < 0:
+            pos_ws_sc_perc75 = 0
+
+        peak_reg_sc_thr = pos_ws_sc_perc25
+        peak_win_sc_thr = pos_ws_sc_perc25
+        if args.thr == 2:
+            peak_win_sc_thr = pos_ws_sc_perc50
+        if args.thr == 3:
+            peak_reg_sc_thr = pos_ws_sc_perc50
+            peak_win_sc_thr = pos_ws_sc_perc75
 
         score_profiles_out = out_folder + "/" + "profiles.out"
         peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
@@ -3312,17 +3017,22 @@ seqs_dic, idx2id_dic, all_features
         peak_reg_ref_bed = out_folder + "/" + "profiles.peak_regions.ref.bed"
         peak_win_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.bed"
         peak_win_merged_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.merged.bed"
+        win_peak_reg_bed = out_folder + "/" + "peak_regions.bed"
+        win_peak_reg_out = out_folder + "/" + "peak_regions.out"
 
-        PROFOUT = open(score_profiles_out, "w")
-        PEAKREGOUT = open(peak_reg_bed, "w")
-        PEAKWINOUT = open(peak_win_bed, "w")
-        PEAKWINMRGOUT = open(peak_win_merged_bed, "w")
+        #PROFOUT = open(score_profiles_out, "w")
+        #PEAKREGOUT = open(peak_reg_bed, "w")
+        #PEAKWINOUT = open(peak_win_bed, "w")
+        #PEAKWINMRGOUT = open(peak_win_merged_bed, "w")
+        WINPEAKOUT = open(win_peak_reg_out, "w")
+        WINPEAKBED = open(win_peak_reg_bed, "w")
+
 
         # Reference BED files.
-        if not only_seq:
-            PEAKREGREFOUT = open(peak_reg_ref_bed, "w")
-            PEAKWINREFOUT = open(peak_win_ref_bed, "w")
-            PEAKWINMRGREFOUT = open(peak_win_merged_ref_bed, "w")
+        # if not only_seq:
+        #     PEAKREGREFOUT = open(peak_reg_ref_bed, "w")
+        #     PEAKWINREFOUT = open(peak_win_ref_bed, "w")
+        #     PEAKWINMRGREFOUT = open(peak_win_merged_ref_bed, "w")
 
         peaks_found = 0
 
@@ -3333,6 +3043,9 @@ seqs_dic, idx2id_dic, all_features
             scl_l = len(profile_scores_ll[idx])
             assert seq_l == scl_l, "differing lengths for sequence and profile scores list (seq_id: %s, %i != %i)" %(seq_id, seq_l, scl_l)
 
+            # Reference coords info.
+            chr_id = seq_id
+            ref_pol = "+"
             if not only_seq:
                 chr_id = id2chr_dic[seq_id]
                 ref_s = id2s_dic[seq_id]
@@ -3341,11 +3054,11 @@ seqs_dic, idx2id_dic, all_features
 
             seq_list = list(seq)
 
-            PROFOUT.write(">%s\n" %(seq_id))
-            for i,sc in enumerate(profile_scores_ll[idx]):
-                nt = seq_list[i]
-                pos = i + 1
-                PROFOUT.write("%i\t%s\t%f\n" %(pos, nt, sc))
+            # PROFOUT.write(">%s\n" %(seq_id))
+            # for i,sc in enumerate(profile_scores_ll[idx]):
+            #     nt = seq_list[i]
+            #     pos = i + 1
+            #     PROFOUT.write("%i\t%s\t%f\n" %(pos, nt, sc))
 
             # Get peak regions + positions.
             peak_list = rplib.list_extract_peaks(profile_scores_ll[idx],
@@ -3360,11 +3073,11 @@ seqs_dic, idx2id_dic, all_features
                 peak_s = peak_reg[0]
                 peak_e = peak_reg[1]
                 top_pos = peak_reg[2] # top_pos 1-based if "bed".
-                top_sc = peak_reg[3]
+                top_sc = peak_reg[3] # window score.
                 if top_sc < peak_win_sc_thr:
                     continue
                 top_pos_s = top_pos - 1
-                top_pos_ext_s = top_pos_s - win_extlr
+                top_pos_ext_s = top_pos_s - win_extlr # extend to full window again.
                 top_pos_ext_e = top_pos + win_extlr
                 if top_pos_ext_s < 0:
                     top_pos_ext_s = 0
@@ -3375,44 +3088,87 @@ seqs_dic, idx2id_dic, all_features
                 peaks_found += 1
                 peak_id = "peak_%i" %(peak_i)
 
-                """
-                If top profiles should be plotted, get window and additional
-                stats (saliency, single mutations).
+                # Get saliency profile of window.
+                win_feat_list = all_features[idx][top_pos_ext_s:top_pos_ext_e]
+                # Check length.
+                l_wfl = len(win_feat_list)
+                assert l_wfl == tp_ext_l, "len(win_feat_list) != tp_ext_l for seq_id %s, peak_id %s (top_pos: %i) (%i != %i)" %(seq_id, peak_id, top_pos, l_wfl, tp_ext_l)
 
-                alamo
+                sal_list = rnn_util.get_saliency_from_feat_list(win_feat_list,
+                                            model, device,
+                                            got_tensors=False,
+                                            sal_type=1)
 
-                """
+                best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
+                                                        get_lowest=False,
+                                                        padding=3)
+
+                peak_pos_best = best_pos + top_pos_ext_s + 1
+
+                # Get peak region of window from average saliency profile.
+                avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
+                                                        win_extlr=5)
+                best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
+                                                        get_lowest=False,
+                                                        padding=3)
+                ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
+                                                             reverse=False)
+
+                # Peak region start+end on the whole sequence (seq).
+                win_peak_reg_s = ext_win_s + top_pos_ext_s
+                win_peak_reg_e = ext_win_e + top_pos_ext_s
+
+                # Get peak score (win_extlr=2).
+                avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
+                                                        win_extlr=2)
+                best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
+                                                        get_lowest=False,
+                                                        padding=3)
+
+                # Get sequence window around best_pos.
+                best_pos_on_seq = best_pos + top_pos_ext_s
+                sal_s = best_pos_on_seq - 3
+                sal_e = best_pos_on_seq + 4
+                sal_peak_seq = seq[sal_s:sal_e]
+                sal_peak_pos = best_pos_on_seq + 1
+
+                # Convert to reference coords.
+                seq_win_s = top_pos_ext_s
+                seq_win_e = top_pos_ext_e
+
+                if not only_seq:
+                    # Full window coords on ref.
+                    top_pos_ext_s, top_pos_ext_e = rplib.bed_convert_coords(top_pos_ext_s, top_pos_ext_e, ref_s, ref_e, ref_pol)
+                    # Peak region inside window coords on ref.
+                    win_peak_reg_s, win_peak_reg_e = rplib.bed_convert_coords(win_peak_reg_s, win_peak_reg_e, ref_s, ref_e, ref_pol)
+                    # Saliency peak position on ref.
+                    sal_peak_pos_s, sal_peak_pos = rplib.bed_convert_coords(sal_peak_pos-1, sal_peak_pos, ref_s, ref_e, ref_pol)
+                    # Check.
+                    tp_ext_ref_l = top_pos_ext_e - top_pos_ext_s
+                    assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i) for site ID %s" %(tp_ext_ref_l, tp_ext_l, seq_id)
+
+                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol))
+                WINPEAKOUT.write("%s\t%i\t%i\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, top_pos_ext_s, top_pos_ext_e, ref_pol, peak_id, str(top_sc), str(best_sc), sal_peak_pos, sal_peak_seq))
+
+                # If plot windows, also calculate single mutations.
                 if args.plot_top_win_profiles:
 
-                    win_feat_list = all_features[idx][top_pos_ext_s:top_pos_ext_e]
-                    win_seq = seq[top_pos_ext_s:top_pos_ext_e]
+                    win_seq = seq[seq_win_s:seq_win_e]
                     top_pos_ext_s_1b = top_pos_ext_s + 1
-                    l_wfl = len(win_feat_list)
-                    assert l_wfl == tp_ext_l, "len(win_feat_list) != tp_ext_l for seq_id %s, peak_id %s (top_pos: %i) (%i != %i)" %(seq_id, peak_id, top_pos, l_wfl, tp_ext_l)
-                    sal_list = rnn_util.get_saliency_from_feat_list(win_feat_list,
-                                                model, device,
-                                                got_tensors=False,
-                                                sal_type=1)
-
-                    avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
-                                                            win_extlr=5)
-                    best_pos, best_sc = rplib.get_top_sc_list_pos(avg_sal_list,
-                                                            get_lowest=False,
-                                                            padding=3)
-
-                    ext_win_s, ext_win_e = rplib.get_peak_region(best_pos, avg_sal_list,
-                                                                 reverse=False)
-                    print("sal_peak_start:", ext_win_s+top_pos_ext_s_1b)
-                    print("sal_peak_end:", ext_win_e+top_pos_ext_s_1b)
 
                     single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
                                                 win_seq, win_feat_list,
                                                 model, device,
                                                 load_model=False)
 
+
                     plot_file_name =  peak_id + "_" + seq_id + "_" + str(top_pos_ext_s_1b) + "-" + str(top_pos_ext_e) + "_sc" + str(top_sc) + "." + plot_format
                     plot_out_file = top_win_prof_folder + "/" + plot_file_name
                     print("Plotting peak window %s ... " %(peak_id))
+
+                    print("Top saliency pos:", peak_pos_best)
+
+
                     rplib.make_feature_attribution_plot(win_seq, win_feat_list,
                                                 ch_info_dic, plot_out_file,
                                                 x_tick_start=top_pos_ext_s_1b,
@@ -3422,52 +3178,55 @@ seqs_dic, idx2id_dic, all_features
                                                 single_pert_list=single_pert_list,
                                                 worst_win_pert_list=False)
 
-                PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
-                #PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
-                PEAKWINOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
-                # Reference coordinates.
-                if not only_seq:
-                    new_s, new_e = rplib.bed_convert_coords(peak_s, peak_e, ref_s, ref_e, ref_pol)
-                    new_top_s, new_top_e = rplib.bed_convert_coords(top_pos-1, top_pos, ref_s, ref_e, ref_pol)
-                    new_top_ext_s = new_top_s - win_extlr
-                    new_top_ext_e = new_top_e + win_extlr
-                    if new_top_ext_s < ref_s:
-                        new_top_ext_s = ref_s
-                    if new_top_ext_e > ref_e:
-                        new_top_ext_e = ref_e
-                    # Check.
-                    tp_ext_ref_l = new_top_ext_e - new_top_ext_s
-                    assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i)" %(tp_ext_ref_l, tp_ext_l)
-                    PEAKREGREFOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t%s\n" %(chr_id, new_s, new_e, peak_id, new_top_e, top_sc, ref_pol))
-                    #PEAKPOSREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_s, new_top_e, peak_id, new_top_e, top_sc, ref_pol))
-                    PEAKWINREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_ext_s, new_top_ext_e, peak_id, new_top_e, top_sc, ref_pol))
+                # PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
+                # #PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
+                # PEAKWINOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
+                # # Reference coordinates.
+                # if not only_seq:
+                #     new_s, new_e = rplib.bed_convert_coords(peak_s, peak_e, ref_s, ref_e, ref_pol)
+                #     new_top_s, new_top_e = rplib.bed_convert_coords(top_pos-1, top_pos, ref_s, ref_e, ref_pol)
+                #     new_top_ext_s = new_top_s - win_extlr
+                #     new_top_ext_e = new_top_e + win_extlr
+                #     if new_top_ext_s < ref_s:
+                #         new_top_ext_s = ref_s
+                #     if new_top_ext_e > ref_e:
+                #         new_top_ext_e = ref_e
+                #     # Check.
+                #     tp_ext_ref_l = new_top_ext_e - new_top_ext_s
+                #     assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i)" %(tp_ext_ref_l, tp_ext_l)
+                #     PEAKREGREFOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t%s\n" %(chr_id, new_s, new_e, peak_id, new_top_e, top_sc, ref_pol))
+                #     #PEAKPOSREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_s, new_top_e, peak_id, new_top_e, top_sc, ref_pol))
+                #     PEAKWINREFOUT.write("%s\t%i\t%i\t%s,%i\t%f\t%s\n" %(chr_id, new_top_ext_s, new_top_ext_e, peak_id, new_top_e, top_sc, ref_pol))
 
             if not peak_i:
-                print("WARNING: no profile peaks found for sequence %s ... " %(seq_id))
+                print("WARNING: no peak regions extracted for sequence %s ... " %(seq_id))
 
-        PROFOUT.close()
-        PEAKREGOUT.close()
-        PEAKWINOUT.close()
-        if not only_seq:
-            PEAKREGREFOUT.close()
-            PEAKWINREFOUT.close()
+        WINPEAKBED.close()
+        WINPEAKOUT.close()
+
+        # PROFOUT.close()
+        # PEAKREGOUT.close()
+        # PEAKWINOUT.close()
+        # if not only_seq:
+        #     PEAKREGREFOUT.close()
+        #     PEAKWINREFOUT.close()
 
         if not peaks_found:
-            print("WARNING: no profile peaks found for any input sequence!")
-            print("         Try with lower threshold to obtain profile peaks for the given sequences")
+            print("WARNING: no peak regions extracted for any input sequence!")
+            print("         Try to lower --thr to obtain peak regions for the given sequences")
             sys.exit()
 
-        # Merge extended peaks.
-        rplib.bed_sort_merge_output_top_entries(peak_win_bed, peak_win_merged_bed)
-        if only_seq:
-            if os.path.exists(peak_reg_ref_bed):
-                os.remove(peak_reg_ref_bed)
-            if os.path.exists(peak_win_ref_bed):
-                os.remove(peak_win_ref_bed)
-            if os.path.exists(peak_win_merged_ref_bed):
-                os.remove(peak_win_merged_ref_bed)
-        else:
-            rplib.bed_sort_merge_output_top_entries(peak_win_ref_bed, peak_win_merged_ref_bed)
+        # # Merge extended peaks.
+        # rplib.bed_sort_merge_output_top_entries(peak_win_bed, peak_win_merged_bed)
+        # if only_seq:
+        #     if os.path.exists(peak_reg_ref_bed):
+        #         os.remove(peak_reg_ref_bed)
+        #     if os.path.exists(peak_win_ref_bed):
+        #         os.remove(peak_win_ref_bed)
+        #     if os.path.exists(peak_win_merged_ref_bed):
+        #         os.remove(peak_win_merged_ref_bed)
+        # else:
+        #     rplib.bed_sort_merge_output_top_entries(peak_win_ref_bed, peak_win_merged_ref_bed)
 
     """
     Output file summary.
@@ -3485,16 +3244,16 @@ seqs_dic, idx2id_dic, all_features
         print("")
         print("PROFILE PREDICTION OUTPUT FILES")
         print("===============================")
-        print("Profiles output file:\n%s" %(score_profiles_out))
-        print("Peak regions:\n%s" %(peak_reg_bed))
-        if not only_seq:
-            print("Peak regions on reference:\n%s" %(peak_reg_ref_bed))
-        print("Peak regions top scoring windows:\n%s" %(peak_win_bed))
-        if not only_seq:
-            print("Peak regions top scoring windows on reference:\n%s" %(peak_win_ref_bed))
-        print("Peak regions top scoring windows merged:\n%s" %(peak_win_merged_bed))
-        if not only_seq:
-            print("Peak regions top scoring windows merged on reference:\n%s" %(peak_win_merged_ref_bed))
+        # print("Profiles output file:\n%s" %(score_profiles_out))
+        # print("Peak regions:\n%s" %(peak_reg_bed))
+        # if not only_seq:
+        #     print("Peak regions on reference:\n%s" %(peak_reg_ref_bed))
+        # print("Peak regions top scoring windows:\n%s" %(peak_win_bed))
+        # if not only_seq:
+        #     print("Peak regions top scoring windows on reference:\n%s" %(peak_win_ref_bed))
+        # print("Peak regions top scoring windows merged:\n%s" %(peak_win_merged_bed))
+        # if not only_seq:
+        #     print("Peak regions top scoring windows merged on reference:\n%s" %(peak_win_merged_ref_bed))
     print("")
 
 
@@ -5111,8 +4870,8 @@ def main_gp(args):
     assert os.path.exists(args.in_train_folder), "--train in folder not found"
     check_model_file = args.in_train_folder + "/final.model"
     check_params_file = args.in_train_folder + "/final.params"
-    assert os.path.exists(check_model_file), "--train-in contains no .model file (final.model missing). Please train model without --gen-cv option"
-    assert os.path.exists(check_params_file), "--train-in contains no .params file (final.params missing). Please train model without --gen-cv option"
+    assert os.path.exists(check_model_file), "--train-in contains no .model file (final.model missing). Please train model without --cv option"
+    assert os.path.exists(check_params_file), "--train-in contains no .params file (final.params missing). Please train model without --cv option"
 
     # Get infos from rnaprot train settings (partly ported over from gt).
     rp_train_settings_file = args.in_train_folder + "/settings.rnaprot_train.out"
@@ -6267,7 +6026,11 @@ if __name__ == '__main__':
     print(banner)
 
     # Drop a line.
-    print(rplib.drop_a_line())
+    drop_a_line = False
+    if drop_a_line:
+        print(rplib.drop_a_line())
+    else:
+        print("")
 
     # Are my tools ready?
     assert rplib.is_tool("bedtools"), "bedtools not in PATH!"
