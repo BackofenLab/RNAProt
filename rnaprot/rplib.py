@@ -38,14 +38,6 @@ python3 -m doctest rplib.py
 python3 -m doctest -v rplib.py
 
 
-TO DO:
-Decide on some usefull profile windows (for saliency and single pos scoring),
-maybe even merge these ...
-Once windows set, run on positive set in rnaprot train, to get a distribution
-(p50)
-
-
-
 """
 
 ################################################################################
@@ -121,6 +113,23 @@ def read_fasta_into_dic(fasta_file,
             if report == 2:
                 print("# of N-containing %s regions discarded:  %i" %(skip_data_id, c_skipped_n_ids))
     return seqs_dic
+
+
+################################################################################
+
+def read_scores_into_list(scores_file):
+    """
+    Read in scores file, where scores are stored in 2nd column.
+
+    """
+    scores_list = []
+    with open(scores_file) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            scores_list.append(float(cols[1]))
+    f.closed
+    assert scores_list, "no scores read in (scores_list empty)"
+    return scores_list
 
 
 ################################################################################
@@ -258,39 +267,6 @@ def char_vectorizer(char,
         else:
             vector.append(0)
     return vector
-
-
-################################################################################
-
-def update_sequence_viewpoint_regions(seqs_dic, vp_s_dic, vp_e_dic):
-    """
-    Update sequence viewpoint regions, i.e. regions marked by vp_s_dic and
-    vp_e_dic, converting nucleotides to uppercase.
-
-    >>> seqs_dic = {"S1" : "acgtACGTacgt"}
-    >>> vp_s_dic = {"S1" : 4}
-    >>> vp_e_dic = {"S1" : 9}
-    >>> update_sequence_viewpoint_regions(seqs_dic, vp_s_dic, vp_e_dic)
-    >>> seqs_dic
-    {'S1': 'acgTACGTAcgt'}
-    >>> seqs_dic = {"S2" : "acgtacgtACGTac"}
-    >>> vp_s_dic = {"S2" : 5}
-    >>> vp_e_dic = {"S2" : 16}
-    >>> update_sequence_viewpoint_regions(seqs_dic, vp_s_dic, vp_e_dic)
-    >>> seqs_dic
-    {'S2': 'acgtACGTACGTAC'}
-
-    """
-    for seq_id in seqs_dic:
-        vp_s = vp_s_dic[seq_id]
-        vp_e = vp_e_dic[seq_id]
-        seq = seqs_dic[seq_id]
-        # Extract and update case for sequence parts.
-        us_seq = seq[:vp_s-1].lower()
-        vp_seq = seq[vp_s-1:vp_e].upper()
-        ds_seq = seq[vp_e:].lower()
-        # Store new sequence in given dictionary.
-        seqs_dic[seq_id] = us_seq + vp_seq + ds_seq
 
 
 ################################################################################
@@ -479,60 +455,6 @@ def min_max_normalize(x, max_x, min_x,
             return a + (x-min_x)*(b-a) / (max_x - min_x)
         else:
             return (x-min_x) / (max_x - min_x)
-
-
-################################################################################
-
-def read_bpp_into_dic(bpp_file, vp_dic,
-                      bpp_dic=False,
-                      con_ext=False,
-                      bps_mode=1):
-    """
-    Read in base pair probabilities and store information in list for
-    each sequence, where region to extract values from is defined by
-    viewpoint (vp) start+end given in vp_dic.
-    Return dictionary with base pair+probability list for each sequence
-    (key: sequence id, value: "bp_start-bp_end,bp_prob").
-    bps_mode: define which base pairs get extracted.
-    bps_mode=1 : bps in extended vp region with start or end in base vp
-    bps_mode=2 : only bps with start+end in base vp
-
-    >>> bpp_test = "test_data/test.bpp"
-    >>> vp_dic = {"CLIP_01": [150, 250]}
-    >>> read_bpp_into_dic(bpp_test, vp_dic, bps_mode=1)
-    {'CLIP_01': ['130-150,0.33', '160-200,0.44', '240-260,0.55']}
-    >>> read_bpp_into_dic(bpp_test, vp_dic, bps_mode=2)
-    {'CLIP_01': ['160-200,0.44']}
-
-    """
-    if not bpp_dic:
-        bpp_dic = {}
-    seq_id = ""
-    # Go through base pairs file, extract sequences.
-    with open(bpp_file) as f:
-        for line in f:
-            if re.search(">.+", line):
-                m = re.search(">(.+)", line)
-                seq_id = m.group(1)
-                assert seq_id in vp_dic, "bpp_file ID \"%s\" not found in vp_dic" % ( seq_id)
-                bpp_dic[seq_id] = []
-            else:
-                m = re.search("(\d+)\t(\d+)\t(.+)", line)
-                s = int(m.group(1))
-                e = int(m.group(2))
-                bpp = float(m.group(3))
-                bpp_se = "%s-%s,%s" % (s,e,bpp)
-                if bps_mode == 1:
-                    #if (s >= (vp_dic[seq_id][0]-con_ext) and (e <= (vp_dic[seq_id][1]) and e >= vp_dic[seq_id][0])) or (e <= (vp_dic[seq_id][1]+con_ext) and (s <= (vp_dic[seq_id][1]) and s >= vp_dic[seq_id][0])):
-                    if (e >= vp_dic[seq_id][0] and e <= vp_dic[seq_id][1]) or (s >= vp_dic[seq_id][0] and s <= vp_dic[seq_id][1]):
-                        bpp_dic[seq_id].append(bpp_se)
-                elif bps_mode == 2:
-                    if s >= vp_dic[seq_id][0] and e <= vp_dic[seq_id][1]:
-                        bpp_dic[seq_id].append(bpp_se)
-                else:
-                    assert False, "ERROR: invalid bps_mode given (valid values: 1,2)"
-    f.closed
-    return bpp_dic
 
 
 ################################################################################
@@ -773,26 +695,6 @@ def list_extract_peaks(in_list,
 def is_tool(name):
     """Check whether tool "name" is in PATH."""
     return find_executable(name) is not None
-
-
-################################################################################
-
-def count_file_rows(in_file):
-    """
-    Count number of file rows for given input file.
-
-    >>> test_file = "test_data/test1.bed"
-    >>> count_file_rows(test_file)
-    7
-    >>> test_file = "test_data/empty_file"
-    >>> count_file_rows(test_file)
-    0
-
-    """
-    check_cmd = "cat " + in_file + " | wc -l"
-    output = subprocess.getoutput(check_cmd)
-    row_count = int(output.strip())
-    return row_count
 
 
 ################################################################################
@@ -3209,35 +3111,6 @@ def merge_files(files_list, out_file):
 
 ################################################################################
 
-def center_seq_make_context_lc(cl, seq):
-    """
-    Take the center region of a sequence of length cl, and make flanking
-    sequence parts lowercase.
-
-    >>> cl = 4
-    >>> seq = "AAACGCGTTT"
-    >>> center_seq_make_context_lc(cl, seq)
-    'aaaCGCGttt'
-
-    """
-    assert cl > 0, "invalid cl given"
-    assert seq, "invalid sequence given"
-    assert cl < len(seq), "cl != len(seq), supply a sequence > cl"
-    usl = int((len(seq) - cl) / 2)
-    if re.search(".{%i}.{%i}.*" %(usl, cl), seq):
-        m = re.search("(.{%i})(.{%i})(.*)" %(usl, cl), seq)
-        us = m.group(1)
-        c = m.group(2)
-        ds = m.group(3)
-        new_seq = us.lower() + c + ds.lower()
-        assert len(new_seq) == len(seq), "differing lengths after processing"
-        return new_seq
-    else:
-        assert False, "regex not matching for cl = %i and sequence \"%s\"" %(cl, seq)
-
-
-################################################################################
-
 def head_file_to_new(in_file, out_file, head_c):
     """
     Select top head_c rows from in_file and copy to out_file via head.
@@ -4586,76 +4459,6 @@ def bed_overlap_with_genomic_features(in_bed, feat_bed,
 
 ################################################################################
 
-def get_uc_lc_sequence_segment(seq, cp,
-                               vp_ext=20,
-                               con_ext=0):
-    """
-    Given a sequence, a center position inside the sequence, a viewpoint
-    extension value, and a context extension value: get the lowercase-
-    uppercase-lowercase sequence segment.
-
-    cp:
-    1-based position that marks the center of the sequence.
-
-    >>> seq = "ACGTacgtXYZ"
-    >>> cp = 7
-    >>> vp_ext = 3
-    >>> con_ext = 2
-    >>> get_uc_lc_sequence_segment(seq, cp, vp_ext=vp_ext, con_ext=con_ext)
-    'cgTACGTXYz'
-    >>> cp = 7
-    >>> vp_ext = 20
-    >>> con_ext = 20
-    >>> get_uc_lc_sequence_segment(seq, cp, vp_ext=vp_ext, con_ext=con_ext)
-    'ACGTACGTXYZ'
-    >>> cp = 5
-    >>> vp_ext = 0
-    >>> con_ext = 0
-    >>> get_uc_lc_sequence_segment(seq, cp, vp_ext=vp_ext, con_ext=con_ext)
-    'A'
-    >>> cp = 5
-    >>> vp_ext = 0
-    >>> con_ext = 2
-    >>> get_uc_lc_sequence_segment(seq, cp, vp_ext=vp_ext, con_ext=con_ext)
-    'gtAcg'
-    >>> cp = 5
-    >>> vp_ext = 2
-    >>> con_ext = 0
-    >>> get_uc_lc_sequence_segment(seq, cp, vp_ext=vp_ext, con_ext=con_ext)
-    'GTACG'
-
-    """
-    # Checks.
-    lseq = len(seq)
-    assert lseq, "lseq evaluated to False"
-    assert cp <= lseq, "given cp > lseq"
-    assert cp > 0, "given cp < 1"
-
-    # Upstream extensions.
-    usucs = cp - vp_ext - 1
-    usuce = cp - 1
-    uslcs = cp - vp_ext - con_ext - 1
-    uslce = usucs
-    # Downstream extensions.
-    dsucs = cp
-    dsuce = cp + vp_ext
-    dslcs = dsuce
-    dslce = cp + vp_ext + con_ext
-
-    # Extract segments.
-    usucseg = seq[usucs:usuce].upper()
-    uslcseg = seq[uslcs:uslce].lower()
-    dsucseg = seq[dsucs:dsuce].upper()
-    dslcseg = seq[dslcs:dslce].lower()
-    cpseg = seq[cp-1:cp].upper()
-
-    # Give it to me.
-    final_seg = uslcseg + usucseg + cpseg + dsucseg + dslcseg
-    return final_seg
-
-
-################################################################################
-
 def gtf_extract_most_prominent_transcripts(in_gtf, out_file,
                                            strict=False,
                                            min_len=False,
@@ -4976,12 +4779,14 @@ def shuffle_sequences(seqs_dic,
 
 def shuffle_difreq(seq):
     """
-    Does di-nucleotide shuffling of sequences, preserving the frequences.
+    Does di-nucleotide shuffling of sequences, preserving the frequencies.
     Code found here:
     https://www.biostars.org/p/66004/
 
     """
+    # Need more li(m)bs.
     from collections import Counter
+
     weighted_choice = lambda s : random.choice(sum(([v]*wt for v,wt in s),[]))
 
     # Get di-nucleotide frequencies.
@@ -7736,36 +7541,6 @@ def create_eval_model_comp_scatter_plot(model1_scores, model2_scores, out_plot,
 
 ################################################################################
 
-def get_jaccard_index(list1, list2):
-    """
-    Given two lists of string/numbers, calculate Jaccard index (similarity)
-    between the two sets.
-    J(A,B) = intersection(A,B) / union(A,B)
-    0 <= J(A,B) <= 1
-    1 if sets are identical
-    0 if intersection = 0
-
-    >>> list1 = [1,1,2,3]
-    >>> list2 = [2,3,4]
-    >>> get_jaccard_index(list1,list2)
-    0.5
-    >>> list2 = [1,2,3]
-    >>> get_jaccard_index(list1,list2)
-    1.0
-    >>> list2 = [4]
-    >>> get_jaccard_index(list1,list2)
-    0.0
-
-    """
-    assert list1, "list1 empty"
-    assert list2, "list2 empty"
-    s1 = set(list1)
-    s2 = set(list2)
-    return float(len(s1.intersection(s2)) / len(s1.union(s2)))
-
-
-################################################################################
-
 def create_eval_rank_vs_sc_plot(ws_scores, out_plot,
                                 x_label="site rank",
                                 y_label="whole-site score",
@@ -8323,144 +8098,6 @@ def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
     plot.layout.template = 'seaborn'
     plot.update_layout(hoverlabel=dict(font_size=11))
     plot.update_traces(marker=dict(size=3))
-    plot.write_html(out_html,
-                    full_html=False,
-                    include_plotlyjs=plotly_js)
-
-
-################################################################################
-
-def make_worst_win_kmer_pca_plot(seqs_dic,
-                                 worst_win_pos_dic, worst_win_id2sc_dic,
-                                 out_html, plotly_js,
-                                 win_extlr=5,
-                                 norm_counts=True,
-                                 k_kmer=4):
-    """
-    Take a closer look at worst scoring mutation windows. Take the windows,
-    get their k-mer content, and use for each site this vector to reduce
-    with PCA to 2 dimensions.
-    Then plot with score as third dimension added as plotly graph.
-
-    PCA usually done before applying clustering algorithm (e.g. k-means).
-    Sources:
-    https://jakevdp.github.io/PythonDataScienceHandbook/05.09-principal-component-analysis.html
-    https://en.wikipedia.org/wiki/Silhouette_(clustering)
-
-    """
-    # Need more li(m)bs.
-    from sklearn.cluster import KMeans
-    from sklearn.metrics import  silhouette_score
-    from sklearn.decomposition import PCA
-
-    n_pca_dim = 2
-    # k-means cluster numbers to try.
-    n_clusters = [2,3,4,5,6]
-
-    # Site ID list.
-    site_id_list = []
-    # Count vectors list.
-    kmer_cv_ll = []
-    win_seq_list = []
-
-    print("len(worst_win_pos_dic):", len(worst_win_pos_dic))
-
-    for seq_id, win_pos in sorted(worst_win_pos_dic.items()):
-
-        seq = seqs_dic[seq_id]
-        l_seq = len(seqs_dic[seq_id])
-        count_dic = get_kmer_dic(k_kmer, rna=True)
-        total_c = 0
-
-        win_seq = seq[win_pos-win_extlr:win_pos+win_extlr+1]
-        win_seq_list.append(win_seq)
-        kmer_cv_list = []
-
-        for i in range(len(win_seq)-k_kmer+1):
-            kmer = seq[i:i+k_kmer]
-            count_dic[kmer] += 1
-            total_c += 1
-            if kmer in count_dic:
-                count_dic[kmer] += 1
-                total_c += 1
-
-        for kmer,c in sorted(count_dic.items()):
-            new_c = c
-            if norm_counts:
-                if c:
-                    new_c = c / total_c
-                else:
-                    new_c = 0.0
-            kmer_cv_list.append(new_c)
-
-        site_id_list.append(seq_id)
-        kmer_cv_ll.append(kmer_cv_list)
-
-    print("kmer_cv_ll[0]:", kmer_cv_ll[0])
-
-    # PCA.
-    # Shape should be: #sites x #kmers (e.g. 100 sites and k=3, so 100x64).
-    kmer_cv_ll = np.array(kmer_cv_ll)
-
-    # Project from 4^k to n_pca_dim dimensions.
-    pca = PCA(n_pca_dim)
-    projected = pca.fit_transform(kmer_cv_ll)
-
-    # k-means.
-    # Make feature list for k-means.
-    kmeans_X = []
-    for idx, x_val in enumerate(projected[:, 0]):
-        kmeans_X.append([x_val, projected[:, 1][idx]])
-
-    kmeans_X = np.array(kmeans_X)
-
-    best_sil = -1000
-    best_nc = 0
-    # best_labels list length = number of sites.
-    best_labels = 0
-
-    for nc in n_clusters:
-        kmeans_clustering = KMeans(n_clusters=nc, random_state=0).fit(kmeans_X)
-        labels = list(kmeans_clustering.labels_)
-        sil_sc = silhouette_score(kmeans_X, labels)
-        print("nc:", nc)
-        print("sil_sc:", sil_sc)
-        if sil_sc > best_sil:
-            best_sil = sil_sc
-            best_nc = nc
-            best_labels = labels
-
-    print("len(best_labels):", len(best_labels))
-
-    # Make dataframe for plotting.
-    pca1_val = "pca1_val"
-    pca2_val = "pca2_val"
-    win_sc = "win_sc"
-    site_id = "site_id"
-    class_label = "class_label"
-    win_seq = "win_seq"
-    data = {pca1_val : [], pca2_val : [], win_sc : [], site_id : [], class_label : [], win_seq : []}
-    for idx, seq_id in enumerate(site_id_list):
-        data[pca1_val].append(projected[:, 0][idx])
-        data[pca2_val].append(projected[:, 1][idx])
-        data[win_sc].append(abs(worst_win_id2sc_dic[seq_id]))
-        data[site_id].append(seq_id)
-        data[class_label].append(str(best_labels[idx]))
-        data[win_seq].append(win_seq_list[idx])
-    df = pd.DataFrame(data, columns = [pca1_val, pca2_val, win_sc, site_id, class_label, win_seq])
-
-    # Now plot 3d plot, with PCA dimensions 1,2 + window score as 3rd dim.
-    hover_data_dic = {win_seq : True, win_sc : True,
-                      class_label : False, pca1_val : False, pca2_val : False}
-
-    plot = px.scatter_3d(df, x=pca1_val, y=pca2_val, z=win_sc,
-                         hover_name=site_id,
-                         size_max=5,
-                         hover_data=hover_data_dic,
-                         color=class_label)
-
-    plot.layout.template = 'seaborn'
-    plot.update_layout(hoverlabel=dict(font_size=11))
     plot.write_html(out_html,
                     full_html=False,
                     include_plotlyjs=plotly_js)
@@ -10073,60 +9710,6 @@ def get_kmer_dic(k,
             idx += 1
             mer2c_dic[kmer] = idx
     return mer2c_dic
-
-
-################################################################################
-
-def get_min_hit_end_distance(l1, l2):
-    """
-    Given two lists of kmer hit ends on a sequence (from get_kmer_hit_ends()),
-    return the minimum distance between two hit ends in the two lists.
-    In other words, the closest positions in both lists.
-
-    >>> l1 = [2,10,20]
-    >>> l2 = [12,15,30]
-    >>> get_min_hit_end_distance(l1,l2)
-    2
-
-    """
-    assert l1, "l1 empty"
-    assert l2, "l2 empty"
-    min_dist = 1000000
-    for e1 in l1:
-        for e2 in l2:
-            dist_e1e2 = abs(e1-e2)
-            if dist_e1e2 < min_dist:
-                min_dist = dist_e1e2
-    assert min_dist != 1000000, "no min_dist extracted"
-    return min_dist
-
-
-################################################################################
-
-def get_kmer_hit_ends(seq, kmer):
-    """
-    Given a sequence and a k-mer, return match end positions (1-based) of k-mer
-    in sequence. If not hits, return empty list.
-
-    >>> seq = "AACGAAACG"
-    >>> kmer = "ACG"
-    >>> get_kmer_hit_ends(seq, kmer)
-    [4, 9]
-    >>> kmer = "ACC"
-    >>> get_kmer_hit_ends(seq, kmer)
-    []
-
-    """
-    assert seq, "seq empty"
-    assert kmer, "kmer empty"
-    k = len(kmer)
-    hit_list = []
-    for i in range(len(seq)-k+1):
-        end = i+k
-        check_kmer = seq[i:end]
-        if check_kmer == kmer:
-            hit_list.append(end)
-    return hit_list
 
 
 ################################################################################
@@ -13033,9 +12616,9 @@ def add_label_plot(df, fig, gs, i,
                 x_tick_labels.append('%d'%x)
 
         print("x_tick_start:", x_tick_start)
-        print("first_tick:", first_tick)
-        print("anchor:", anchor)
-        print("x_tick_labels:", x_tick_labels)
+        #print("first_tick:", first_tick)
+        #print("anchor:", anchor)
+        #print("x_tick_labels:", x_tick_labels)
 
         #del x_tick_labels[0]
         logo.ax.set_xticklabels(tuple(x_tick_labels))
@@ -13282,15 +12865,6 @@ def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
     import matplotlib.gridspec as gridspec
     import logomaker
 
-remove:
-profile_scores
-seq_label_plot
-
-perturb_sc_list to single_pert_list
-
-avg_perturb_sc_list worst_win_pert_list
-
-best_win_pert_list
     """
 
     # Checks.
@@ -13504,176 +13078,6 @@ best_win_pert_list
 
 ################################################################################
 
-def make_feature_attribution_plot_old(seq, profile_scores, plot_out_file,
-                                  seq_alphabet=["A","C","G","U"],
-                                  eia_alphabet=["E", "I"],
-                                  rra_alphabet=["N", "R"],
-                                  tra_alphabet=["C", "F", "T"],
-                                  seq_label_plot=False,
-                                  exon_intron_labels=False,
-                                  repeat_region_labels=False,
-                                  transcript_region_labels=False,
-                                  phastcons_scores=False,
-                                  phylop_scores=False):
-    """
-    Make a feature attribution plot, showing for each sequence position
-    the importance score, as well as additional features in subplots.
-    logomaker (pip install logomaker) is used for plotting.
-
-    Dependencies:
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gridspec
-    import logomaker
-
-    seq:
-        Binding site RNA sequence.
-    profile_scores:
-        List with importance scores (profile scores produced by model
-        for each sequence position).
-    plot_out_file:
-        Plot output file. E.g. "results_out/site1_plot.png"
-    seq_alphabet:
-        Sequence alphabet, by default == RNA alphabet (ACGU).
-    eia_alphabet:
-        Exon-intron labels alphabet.
-    rra_alphabet:
-        Repeat region labels alphabet.
-    tra_alphabet:
-        Transcript region labels alphabet.
-    seq_label_plot:
-        Make RNA sequence label plot.
-    exon_intron_labels:
-        List of exon-intron labels for the binding site.
-    repeat_region_labels:
-        List of repeat region labels for the binding site.
-    transcript_region_labels:
-        List of transcript region labels for the binding site.
-    phastcons_scores:
-        List of phastCons scores for the binding site.
-    phylop_scores:
-        List of phyloP scores for the binding site.
-
-    Original colors:
-    'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000',
-
-    Different greys:
-    'A' : '#616161', 'C': '#7f7f7f',  'G': '#a0a0a0',  'U': '#d2d2d2'
-    'a' : '#616161', 'c': '#7f7f7f',  'g': '#a0a0a0',  'u': '#d2d2d2'
-
-    """
-
-    assert seq, "given seq empty"
-    assert profile_scores, "given profile_scores list empty"
-    assert plot_out_file, "given plot_out_file empty"
-
-    # Dataframe for importance scores.
-    is_df = seq_to_plot_df(seq, seq_alphabet, scores=profile_scores)
-    # Number of plots.
-    n_subplots = 1
-    height_ratios = [2]
-
-    # Dataframes for additional subplots.
-    if seq_label_plot:
-        sl_df = seq_to_plot_df(seq, seq_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    if exon_intron_labels:
-        assert len(exon_intron_labels) == len(seq), "length exon_intron_labels list != length seq"
-        ei_seq = "".join(exon_intron_labels)
-        ei_df = seq_to_plot_df(ei_seq, eia_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    if repeat_region_labels:
-        assert len(repeat_region_labels) == len(seq), "length repeat_region_labels list != length seq"
-        rra_seq = "".join(repeat_region_labels)
-        rra_df = seq_to_plot_df(rra_seq, rra_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    if transcript_region_labels:
-        assert len(transcript_region_labels) == len(seq), "length transcript_region_labels list != length seq"
-        tra_seq = "".join(transcript_region_labels)
-        tra_df = seq_to_plot_df(tra_seq, tra_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    if phastcons_scores:
-        assert len(phastcons_scores) == len(seq), "length phastcons_scores list != length seq"
-        pc_con_df = scores_to_plot_df(phastcons_scores)
-        n_subplots += 1
-        height_ratios.append(1)
-    if phylop_scores:
-        assert len(phylop_scores) == len(seq), "length phylop_scores list != length seq"
-        pp_con_df = scores_to_plot_df(phylop_scores)
-        n_subplots += 1
-        height_ratios.append(1)
-
-    # Init plot.
-    fig_width = 8
-    fig_height = 0.8 * n_subplots
-    fig = plt.figure(figsize=(fig_width, fig_height))
-    gs = gridspec.GridSpec(nrows=n_subplots, ncols=1, height_ratios=height_ratios)
-
-    # Plot subplots.
-    i = 0
-    color_dict = False
-    if seq_alphabet == ["A","C","G","U"]:
-        color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
-    elif seq_alphabet == ["A","C","G","U","a","c","g","u"]:
-        color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000', 'a' : '#008000', 'c': '#0000ff',  'g': '#ffa600',  'u': '#ff0000'}
-    else:
-        assert False, "invalid seq_alphabet given"
-    add_importance_scores_plot(is_df, fig, gs, i,
-                               color_dict=color_dict,
-                               y_label_size=5.5)
-    if seq_label_plot:
-        i += 1
-        color_dict = False
-        if seq_alphabet == ["A","C","G","U"]:
-            color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
-        elif seq_alphabet == ["A","C","G","U","a","c","g","u"]:
-            color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000', 'a' : '#008000', 'c': '#0000ff',  'g': '#ffa600',  'u': '#ff0000'}
-        else:
-            assert False, "invalid seq_alphabet given"
-        add_label_plot(sl_df, fig, gs, i, color_dict=color_dict, y_label="sequence",
-                       y_label_size=4)
-    if exon_intron_labels:
-        i += 1
-        color_dict = False
-        if eia_alphabet == ["E", "I"]:
-            color_dict = {'E' : 'grey', 'I': 'lightgrey'}
-        add_label_plot(ei_df, fig, gs, i, color_dict=color_dict,
-                       y_label_size=4)
-    if repeat_region_labels:
-        i += 1
-        color_dict = False
-        if rra_alphabet == ["N", "R"]:
-            color_dict = {'N' : 'grey', 'R': 'lightgrey'}
-        add_label_plot(rra_df, fig, gs, i, color_dict=color_dict,
-                       y_label_size=4)
-    if transcript_region_labels:
-        i += 1
-        color_dict = False
-        if tra_alphabet == ["C", "F", "T"]:
-            color_dict = {'C' : '#616161', 'F': '#7f7f7f',  'T': '#a0a0a0'}
-        add_label_plot(tra_df, fig, gs, i, color_dict=color_dict,
-                       y_label_size=4)
-    if phastcons_scores:
-        i += 1
-        add_phastcons_scores_plot(pc_con_df, fig, gs, i,
-                                  y_label_size=4)
-    if phylop_scores:
-        i += 1
-        add_phylop_scores_plot(pp_con_df, fig, gs, i,
-                               y_label_size=4)
-
-    # Store plot.
-    fig.savefig(plot_out_file, dpi=150, transparent=False)
-    plt.close(fig)
-
-
-################################################################################
-
 def motif_seqs_to_plot_df(motif_seqs_ll, alphabet=['A', 'C', 'G', 'U']):
     """
     Given a list of sequence character lists (same lengths), make
@@ -13875,242 +13279,6 @@ def make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
     # Store plot.
     fig.savefig(motif_out_file, dpi=150, transparent=False)
     plt.close(fig)
-
-
-################################################################################
-
-def make_motif_plot_old(motif_seqs_ll, motif_out_file,
-                    motif_eia_ll=False,
-                    motif_rra_ll=False,
-                    motif_tra_ll=False,
-                    motif_pc_ll=False,
-                    motif_pp_ll=False,
-                    seq_alphabet=['A', 'C', 'G', 'U'],
-                    eia_alphabet=['E', 'I'],
-                    rra_alphabet=['N', 'R'],
-                    tra_alphabet=['C', 'F', 'T']):
-    """
-    Plot motifs.
-    Apart from sequence motif (motif_seqs_ll), optionally create motif for
-    exon-intron feature (motif_eia_ll)
-    phastCons scores (motif_pc_ll)
-    phyloP scores (motif_pp_ll)
-
-    motif_seqs_ll:
-        List of sequence character lists (same lengths)
-    motif_eia_ll:
-        List of exon-intron character lists (same lengths)
-    motif_rra_ll:
-        List of repeat region character lists (same lengths)
-    motif_tra_ll:
-        List of transcript region character lists (same lengths)
-    motif_pc_ll:
-        List of phastCons score lists (same lengths)
-    motif_pp_ll:
-        List of phyloP score lists (same lengths)
-    seq_alphabet:
-        Sequence alphabet, by default == RNA alphabet (ACGU).
-    eia_alphabet:
-        Exon-intron labels alphabet.
-    rra_alphabet:
-        Repeat region labels alphabet.
-    tra_alphabet:
-        Transcript region labels alphabet.
-
-    """
-    # Get motif size from data.
-    motif_size = len(motif_seqs_ll[0])
-
-    # Sequence motif dataframe.
-    seq_df = motif_seqs_to_plot_df(motif_seqs_ll, alphabet=seq_alphabet)
-    # Number of plots.
-    n_subplots = 1
-    height_ratios = [2.5]
-    # Exon-intron motif dataframe.
-    if motif_eia_ll:
-        eia_df = motif_seqs_to_plot_df(motif_eia_ll, alphabet=eia_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    # Repeat region motif dataframe.
-    if motif_rra_ll:
-        rra_df = motif_seqs_to_plot_df(motif_rra_ll, alphabet=rra_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    # Transcript region motif dataframe.
-    if motif_tra_ll:
-        tra_df = motif_seqs_to_plot_df(motif_tra_ll, alphabet=tra_alphabet)
-        n_subplots += 1
-        height_ratios.append(1)
-    # phastCons scores dataframe.
-    if motif_pc_ll:
-        pc_df = motif_scores_to_plot_df(motif_pc_ll)
-        n_subplots += 1
-        height_ratios.append(1)
-    # phyloP scores dataframe.
-    if motif_pp_ll:
-        pp_df = motif_scores_to_plot_df(motif_pp_ll)
-        n_subplots += 1
-        height_ratios.append(1)
-
-    # Init plot.
-    fig_width = 4.5
-    fig_height = 1.5 * n_subplots
-    if n_subplots == 1:
-        fig_height = 2.5
-    fig = plt.figure(figsize=(fig_width, fig_height))
-    gs = gridspec.GridSpec(nrows=n_subplots, ncols=1, height_ratios=height_ratios)
-
-    # Plot subplots.
-    i = 0
-    # Sequence motif.
-    color_dict = False
-    if seq_alphabet == ["A","C","G","U"]:
-        color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000'}
-    elif seq_alphabet == ["A","C","G","U","a","c","g","u"]:
-        color_dict = {'A' : '#008000', 'C': '#0000ff',  'G': '#ffa600',  'U': '#ff0000', 'a' : '#008000', 'c': '#0000ff',  'g': '#ffa600',  'u': '#ff0000'}
-    else:
-        assert False, "invalid seq_alphabet given"
-    add_motif_label_plot(seq_df, fig, gs, i, color_dict=color_dict, y_label="sequence")
-    # Exon-intron motif.
-    if motif_eia_ll:
-        i += 1
-        color_dict = False
-        if eia_alphabet == ['E', 'I']:
-            color_dict = {'E' : 'grey', 'I': 'lightgrey'}
-        add_motif_label_plot(eia_df, fig, gs, i,
-                             y_label="exon-intron",
-                             y_label_size=7,
-                             color_dict=color_dict)
-    # Repeat region motif.
-    if motif_rra_ll:
-        i += 1
-        color_dict = False
-        if rra_alphabet == ['N', 'R']:
-            color_dict = {'N' : 'grey', 'R': 'lightgrey'}
-        add_motif_label_plot(rra_df, fig, gs, i,
-                             y_label="repeat region",
-                             y_label_size=7,
-                             color_dict=color_dict)
-    # Transcript region motif.
-    if motif_tra_ll:
-        i += 1
-        color_dict = False
-        if tra_alphabet == ["C", "F", "T"]:
-            color_dict = {'C' : '#616161', 'F': '#7f7f7f',  'T': '#a0a0a0'}
-        add_motif_label_plot(tra_df, fig, gs, i,
-                             y_label="transcript region",
-                             y_label_size=7,
-                             color_dict=color_dict)
-    # phastCons motif.
-    if motif_pc_ll:
-        i += 1
-        add_phastcons_scores_plot(pc_df, fig, gs, i,
-                                  y_label_size=7,
-                                  stdev=True)
-    # phyloP motif.
-    if motif_pp_ll:
-        i += 1
-        add_phylop_scores_plot(pp_df, fig, gs, i,
-                               y_label_size=7,
-                               stdev=True)
-
-    # Store plot.
-    fig.savefig(motif_out_file, dpi=150, transparent=False)
-
-
-################################################################################
-
-def process_custom_bp_file(bpp_file, bpp_out, seq_dic,
-                           stats_dic=None):
-    """
-    Sanity check custom base pair information file, process and output to
-    bpp_out.
-
-    """
-
-    bpp_dic = {}
-    seq_id = ""
-    seq_id_max_dic = {}
-    seq_id_min_dic = {}
-    # Go through base pairs file, extract sequences.
-    with open(bpp_file) as f:
-        for line in f:
-            if re.search(">.+", line):
-                m = re.search(">(.+)", line)
-                seq_id = m.group(1)
-                seq_id_max_dic[seq_id] = 0
-                seq_id_min_dic[seq_id] = 100000
-                bpp_dic[seq_id] = []
-            else:
-                cols = line.strip().split("\t")
-                s = int(cols[0])
-                e = int(cols[1])
-                bpp = "1"
-                if len(cols) == 3:
-                    bpp = cols[2]
-                assert s < e, "--bp-in base pair start coordinate >= end coordinate encountered (%i >= %i)" %(s, e)
-                if s < seq_id_min_dic[seq_id]:
-                    seq_id_min_dic[seq_id] = s
-                if e > seq_id_max_dic[seq_id]:
-                    seq_id_max_dic[seq_id] = e
-                bpp_dic[seq_id].append([s, e, bpp])
-    f.closed
-    assert bpp_dic, "no base pairs read in from --bp-in"
-    # Pairing rules.
-    bp_nts_dic = {
-        "A" : ["U"],
-        "C" : ["G"],
-        "G" : ["C","U"],
-        "U" : ["A","G"]
-    }
-
-    # Statistics dictionary.
-    if stats_dic is not None:
-        stats_dic["bp_c"] = 0
-        stats_dic["nobpsites_c"] = 0
-        stats_dic["seqlen_sum"] = 0
-        pbp_list = []
-
-    # Check for lengths.
-    for seq_id in seq_dic:
-        assert seq_id in bpp_dic, "--in ID \"%s\" missing in --bp-in file" %(seq_id)
-        seq = seq_dic[seq_id]
-        seq_l = len(seq_dic[seq_id])
-        min_s = seq_id_min_dic[seq_id]
-        max_e = seq_id_max_dic[seq_id]
-        assert min_s >= 1, "--bp-in ID \"%s\" minimum start index < 1"
-        assert max_e <= seq_l, "--bp-in ID \"%s\" maximum end index > --in sequence length (%i > %i)" %(max_e, seq_l)
-        # Check for valid base pairs.
-        seq = seq.upper()
-        seq_list = list(seq)
-        for row in bpp_dic[seq_id]:
-            s = row[0] - 1
-            e = row[1] - 1
-            nt1 = seq_list[s]
-            nt2 = seq_list[e]
-            nt2_list = bp_nts_dic[nt1]
-            assert nt2 in nt2_list, "--bp-in contains incompatible base pair indices  (%s cannot pair with %s)" %(nt1, nt2)
-        stats_dic["seqlen_sum"] += seq_l
-
-    # Output bpp file.
-    BPPOUT = open(bpp_out, "w")
-    for seq_id in bpp_dic:
-        bpp_list = bpp_dic[seq_id]
-        if not bpp_list:
-            if stats_dic is not None:
-                stats_dic["nobpsites_c"] += 1
-        BPPOUT.write(">%s\n" %(seq_id))
-        for row in bpp_list:
-            if stats_dic is not None:
-                pbp_list.append(float(row[2]))
-                stats_dic["bp_c"] += 1
-            BPPOUT.write("%i\t%i\t%s\n" %(row[0], row[1], row[2]))
-    BPPOUT.close()
-
-    # Average base pair probability and stdev.
-    if stats_dic is not None:
-        stats_dic["bp_p"] = [statistics.mean(pbp_list)]
-        stats_dic["bp_p"] += [statistics.stdev(pbp_list)]
 
 
 ################################################################################
@@ -15630,41 +14798,6 @@ def polish_fasta_seqs(in_fa, len_dic,
                 assert vp_seq1 == vp_seq2, "vp_seq1 != vp_seq2 for ID %s (\"%s\" != \"%s\")" %(seq_id, vp_seq1, vp_seq2)
         FAOUT.write(">%s\n%s\n" %(seq_id,new_seq))
     FAOUT.close()
-
-
-################################################################################
-
-def get_major_lc_len_from_seqs_dic(seqs_dic):
-    """
-    Go through sequences dictionary (sequence iD -> sequence) and extract
-    longest lowercase part for each sequence. Count how many times each
-    length appears and return most frequent length.
-
-    >>> seqs_dic = {'id1': 'acgACGUac', 'id2': 'ACGU', 'id3': 'GUacguaa', 'id4': 'cguACGU'}
-    >>> get_major_lc_len_from_seqs_dic(seqs_dic)
-    3
-    >>> seqs_dic = {'id1': 'CCAA', 'id2': 'ACGU'}
-    >>> get_major_lc_len_from_seqs_dic(seqs_dic)
-    False
-
-    """
-    assert seqs_dic, "given seqs_dic empty"
-    # Lowercase part length counts dictionary.
-    lcl_dic = {}
-    for seq_id in seqs_dic:
-        m = re.search("([acgtun]+)", seqs_dic[seq_id])
-        if m:
-            lc_len = len(m.group(1))
-            if lc_len not in lcl_dic:
-                lcl_dic[lc_len] = 1
-            else:
-                lcl_dic[lc_len] += 1
-    major_len = False
-    if lcl_dic:
-        for lcl, lcc in sorted(lcl_dic.items(), key=lambda item: item[1], reverse=True):
-            major_len = lcl
-            break
-    return major_len
 
 
 ################################################################################

@@ -14,10 +14,10 @@ import shutil
 import torch
 import torch.nn as nn
 import uuid
-import copy
 import sys
 import os
 import re
+
 
 __version__ = "0.1"
 
@@ -2529,6 +2529,7 @@ def main_predict(args):
     # Model and model parameter file.
     params_file = args.in_train_folder + "/final.params"
     model_file = args.in_train_folder + "/final.model"
+    pos_ws_sc_file = args.in_train_folder + "/pos_ws_scores.out"
     assert os.path.isfile(params_file), "missing model training parameter file %s" %(params_file)
     assert os.path.isfile(params_file), "missing model file %s" %(model_file)
     # Read in and check model parameters.
@@ -2567,6 +2568,14 @@ def main_predict(args):
     pos_ws_sc_perc50 = float(params_dic["pos_ws_sc_perc50"])
     pos_ws_sc_perc75 = float(params_dic["pos_ws_sc_perc75"])
     pos_seq_len_median = int(params_dic["pos_seq_len_median"])
+
+    p_values = False
+    pos_ws_scores = []
+    if os.path.isfile(pos_ws_sc_file):
+        pos_ws_scores = rplib.read_scores_into_list(pos_ws_sc_file)
+        assert pos_ws_scores, "whole-site scores file %s present but no scores read in" %(pos_ws_sc_file)
+        from statsmodels.distributions.empirical_distribution import ECDF
+        ecdf = ECDF(pos_ws_scores)
 
     # Store model parameters in args.
     args.rnn_type = int(params_dic["rnn_type"])
@@ -2779,7 +2788,7 @@ def main_predict(args):
     """
 
     # Whole-site predictions output files.
-    ws_scores_out = out_folder + "/" + "whole_site_scores.out"
+    ws_scores_out = out_folder + "/" + "whole_site_scores.tsv"
     ws_scores_bed = out_folder + "/" + "whole_site_scores.bed"
 
     # Whole-site predictions.
@@ -2801,9 +2810,14 @@ def main_predict(args):
 
         # Output whole-site scores.
         WSOUT = open(ws_scores_out, "w")
+        WSOUT.write("site_id\tsite_score\tscore_p_val\n")
         for i,sc in enumerate(ws_scores):
             seq_id = idx2id_dic[i]
-            WSOUT.write("%s\t%f\n" %(seq_id, sc))
+            p_val = "."
+            if p_values:
+                p_val = 1 - ecdf(sc)
+            WSOUT.write("%s\t%s\t%s\n" %(seq_id, str(sc), str(p_val)))
+
         WSOUT.close()
         # Output BED too with scores.
         if not only_seq:
@@ -2819,120 +2833,6 @@ def main_predict(args):
 
     """
     CASE 2: window profile + peak predictions.
-
-    - Predict position-wise scoring profiles in sliding window fashion,
-      with window size args.win_ext * 2 + 1 (truncated at borders)
-    - Based on position-wise scores extract peak regions from profiles,
-      defined as regions with scores >= args.sc_thr
-    - Optionally control merging of nearby peak regions (and extended
-      top position sites) by --max-merge-dist
-    - If genomic or transcript regions given as input, map peak regions
-      and top-scoring sites to reference (update coordinates).
-Sliding window:
-1+20
- 1+1+20
-  2+1+20
-
-and make sliding window with mean/median length of positives, good idea!
-This way, the positive whole-site scores can be better compared to the
-sliding window scores.
-
-Maybe one short sliding window too ? to detect local motifs ... ?
-
-long_slide_extlr = 20
-short_slide_extlr = 4
-sal_win = 40
-Or by default use the median / mean length of positive seqs
-
-
-win_extlr = 20
-
-sal_win = 40
-
-
-Sliding saliency:
-40
- 40
-  40
-   40
-Add scores to vector.
-[0]
-[0,0]
-[0,0,0] ...
-
-For both long_slide, short_slide, and sal_slide we get position-wise scores
-bedgraph format ? to display in IGV would be goode
-
-
-
-
-generate windows:
-
-            for feat_list in all_feat_tens:
-                # For each position in feat_list.
-                l_feat = len(feat_list)
-                for wi in range(l_feat):
-                    reg_s = wi
-                    reg_e = wi + args.kmer_size
-                    if reg_e > l_feat:
-                        break
-                    kmer_feat.append(feat_list[reg_s:reg_e])
-
-window mutations:
-
-        if worst_stats:
-            # Get worst scoring window perturbation scores.
-            worst_win_pert_list = rnn_util.get_window_perturb_scores(args,
-                                            all_features[si], worst_sc_win,
-                                            model, device,
-                                            avg_win_extlr=3,
-                                            load_model=False)
-
-            worst_win_pert_dic[seq_id] = worst_win_pert_list
-            # Get worst score position in site (with padding).
-            worst_pos, worst_sc = rplib.get_top_sc_list_pos(worst_win_pert_list,
-                                                    get_lowest=True,
-                                                    padding=win_extlr)
-            worst_win_pos_dic[seq_id] = worst_pos
-            worst_win_si2sc_dic[si] = worst_sc
-            worst_win_id2sc_dic[seq_id] = worst_sc
-
-        if get_sal:
-            # Get mean saliency profile for site.
-            sal_list = rnn_util.get_saliency_from_feat_list(all_feat_tens[si],
-                                        model, device,
-                                        got_tensors=True,
-                                        sal_type=1)
-            best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
-                                                    get_lowest=False,
-                                                    padding=win_extlr)
-            sal_peak_pos_dic[seq_id] = best_pos
-            sal_lists_dic[seq_id] = sal_list
-
-- create windows (step_size)
-- predict windows
-- for windows > thr_score, do get_window_perturb_scores
-- collect all peaks, with coordinates
-- merge overlapping / nearby ones by score
-
-First predict over all windows, then for the ones over certain score:
-do the worst win mut predictions
-keep track of coordinates (each window with genomic/transcript start end ?)
-
-
-Test with 3UTR and CDE structure model
-
-
-    pos_ws_sc_perc25 = float(params_dic["pos_ws_sc_perc25"])
-    pos_ws_sc_perc50 = float(params_dic["pos_ws_sc_perc50"])
-    pos_ws_sc_perc75 = float(params_dic["pos_ws_sc_perc75"])
-    pos_seq_len_median = int(params_dic["pos_seq_len_median"])
-
-
-
-seqs_dic, idx2id_dic, all_features
-
-
 
     """
 
@@ -2962,35 +2862,8 @@ seqs_dic, idx2id_dic, all_features
         assert len(profile_scores_ll) == len(all_features), "len(profile_scores_ll) != len(all_features)"
 
 
-
-
-
         """
-        Extract peak regions, and store peak regions and top scoring positions
-        in various output files (if not only_seq also regions mapped to reference).
-
-
-    # Profile predictions output files.
-    # score_profiles_out = out_folder + "/" + "profiles.winext%i.out" %(args.win_ext)
-    # peak_regions_bed = out_folder + "/" + "profiles.winext%i.peak_regions.bed" %(args.win_ext)
-    # peak_regions_ref_bed = out_folder + "/" + "profiles.winext%i.peak_regions.ref.bed" %(args.win_ext)
-    # peak_pos_bed = out_folder + "/" + "profiles.winext%i.peak_positions.bed" %(args.win_ext)
-    # peak_pos_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ref.bed" %(args.win_ext)
-    # peak_pos_ext_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.bed" %(args.win_ext)
-    # peak_pos_ext_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.ref.bed" %(args.win_ext)
-    # peak_pos_ext_merged_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.bed" %(args.win_ext)
-    # peak_pos_ext_merged_ref_bed = out_folder + "/" + "profiles.winext%i.peak_pos.ext.merged.ref.bed" %(args.win_ext)
-
-
-        WINPEAKREGOUT
-        WINPEAKOUT
-        PEAKREGOUT
-        PEAKWINOUT
-        PROFOUT
-        PEAKREGOUT
-        PEAKWINOUT
-
-        alamo
+        Extract top scoring windows and peak regions inside.
 
         """
 
@@ -3010,15 +2883,15 @@ seqs_dic, idx2id_dic, all_features
             peak_reg_sc_thr = pos_ws_sc_perc50
             peak_win_sc_thr = pos_ws_sc_perc75
 
-        score_profiles_out = out_folder + "/" + "profiles.out"
-        peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
-        peak_win_bed = out_folder + "/" + "profiles.peak_windows.bed"
-        peak_win_merged_bed = out_folder + "/" + "profiles.peak_windows.merged.bed"
-        peak_reg_ref_bed = out_folder + "/" + "profiles.peak_regions.ref.bed"
-        peak_win_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.bed"
-        peak_win_merged_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.merged.bed"
+        # score_profiles_out = out_folder + "/" + "profiles.out"
+        # peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
+        # peak_win_bed = out_folder + "/" + "profiles.peak_windows.bed"
+        # peak_win_merged_bed = out_folder + "/" + "profiles.peak_windows.merged.bed"
+        # peak_reg_ref_bed = out_folder + "/" + "profiles.peak_regions.ref.bed"
+        # peak_win_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.bed"
+        # peak_win_merged_ref_bed = out_folder + "/" + "profiles.peak_windows.ref.merged.bed"
         win_peak_reg_bed = out_folder + "/" + "peak_regions.bed"
-        win_peak_reg_out = out_folder + "/" + "peak_regions.out"
+        win_peak_reg_out = out_folder + "/" + "peak_regions.tsv"
 
         #PROFOUT = open(score_profiles_out, "w")
         #PEAKREGOUT = open(peak_reg_bed, "w")
@@ -3027,6 +2900,7 @@ seqs_dic, idx2id_dic, all_features
         WINPEAKOUT = open(win_peak_reg_out, "w")
         WINPEAKBED = open(win_peak_reg_bed, "w")
 
+        WINPEAKOUT.write("ref_id\tpeak_region_s\tpeak_region_e\tstrand\twindow_s\twindow_e\tpeak_id\twindow_score\twin_sc_p_val\ttop_peak_score\ttop_peak_pos\ttop_peak_seq\n"
 
         # Reference BED files.
         # if not only_seq:
@@ -3147,8 +3021,13 @@ seqs_dic, idx2id_dic, all_features
                     tp_ext_ref_l = top_pos_ext_e - top_pos_ext_s
                     assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i) for site ID %s" %(tp_ext_ref_l, tp_ext_l, seq_id)
 
-                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol))
-                WINPEAKOUT.write("%s\t%i\t%i\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, top_pos_ext_s, top_pos_ext_e, ref_pol, peak_id, str(top_sc), str(best_sc), sal_peak_pos, sal_peak_seq))
+                # p-value of whole-site score.
+                p_val = "."
+                if p_values:
+                    p_val = 1 - ecdf(top_sc)
+
+                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, win_peak_reg_s, win_peak_reg_e, str(p_val), str(best_sc)))
+                WINPEAKOUT.write("%s\t%i\t%i\t%s\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, ref_pol, top_pos_ext_s, top_pos_ext_e, peak_id, str(top_sc), str(p_val), str(best_sc), sal_peak_pos, sal_peak_seq))
 
                 # If plot windows, also calculate single mutations.
                 if args.plot_top_win_profiles:
@@ -3161,13 +3040,11 @@ seqs_dic, idx2id_dic, all_features
                                                 model, device,
                                                 load_model=False)
 
-
                     plot_file_name =  peak_id + "_" + seq_id + "_" + str(top_pos_ext_s_1b) + "-" + str(top_pos_ext_e) + "_sc" + str(top_sc) + "." + plot_format
                     plot_out_file = top_win_prof_folder + "/" + plot_file_name
                     print("Plotting peak window %s ... " %(peak_id))
 
                     print("Top saliency pos:", peak_pos_best)
-
 
                     rplib.make_feature_attribution_plot(win_seq, win_feat_list,
                                                 ch_info_dic, plot_out_file,
@@ -3237,13 +3114,15 @@ seqs_dic, idx2id_dic, all_features
         print("")
         print("WHOLE-SITE PREDICTION OUTPUT FILES")
         print("==================================")
-        print("Whole site predictions output file:\n%s" %(ws_scores_out))
         if not only_seq:
             print("Whole site predictions BED file:\n%s" %(ws_scores_bed))
+        print("Whole site predictions output table file:\n%s" %(ws_scores_out))
     if args.mode == 2:
         print("")
-        print("PROFILE PREDICTION OUTPUT FILES")
-        print("===============================")
+        print("WINDOW PROFILE PREDICTION OUTPUT FILES")
+        print("======================================")
+        print("Peak regions BED (10-column) file:\n%s" %(win_peak_reg_bed))
+        print("Peak regions output table file:\n%s" %(win_peak_reg_out))
         # print("Profiles output file:\n%s" %(score_profiles_out))
         # print("Peak regions:\n%s" %(peak_reg_bed))
         # if not only_seq:
