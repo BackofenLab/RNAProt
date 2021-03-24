@@ -2571,11 +2571,13 @@ def main_predict(args):
 
     p_values = False
     pos_ws_scores = []
-    if os.path.isfile(pos_ws_sc_file):
+    if os.path.exists(pos_ws_sc_file):
+        print("Get ECDF from positive sites scores ... ")
         pos_ws_scores = rplib.read_scores_into_list(pos_ws_sc_file)
         assert pos_ws_scores, "whole-site scores file %s present but no scores read in" %(pos_ws_sc_file)
         from statsmodels.distributions.empirical_distribution import ECDF
         ecdf = ECDF(pos_ws_scores)
+        p_values = True
 
     # Store model parameters in args.
     args.rnn_type = int(params_dic["rnn_type"])
@@ -2810,13 +2812,14 @@ def main_predict(args):
 
         # Output whole-site scores.
         WSOUT = open(ws_scores_out, "w")
-        WSOUT.write("site_id\tsite_score\tscore_p_val\n")
+        WSOUT.write("site_id\tsite_len\tsite_score\tscore_p_val\n")
         for i,sc in enumerate(ws_scores):
             seq_id = idx2id_dic[i]
+            l_seq = len(seqs_dic[seq_id])
             p_val = "."
             if p_values:
                 p_val = 1 - ecdf(sc)
-            WSOUT.write("%s\t%s\t%s\n" %(seq_id, str(sc), str(p_val)))
+            WSOUT.write("%s\t%i\t%s\t%s\n" %(seq_id, l_seq, str(sc), str(p_val)))
 
         WSOUT.close()
         # Output BED too with scores.
@@ -2900,7 +2903,7 @@ def main_predict(args):
         WINPEAKOUT = open(win_peak_reg_out, "w")
         WINPEAKBED = open(win_peak_reg_bed, "w")
 
-        WINPEAKOUT.write("ref_id\tpeak_region_s\tpeak_region_e\tstrand\twindow_s\twindow_e\tpeak_id\twindow_score\twin_sc_p_val\ttop_peak_score\ttop_peak_pos\ttop_peak_seq\n"
+        WINPEAKOUT.write("ref_id\tpeak_region_s\tpeak_region_e\tstrand\twindow_s\twindow_e\tpeak_id\twindow_score\twin_sc_p_val\ttop_peak_score\ttop_peak_pos\ttop_peak_seq\n")
 
         # Reference BED files.
         # if not only_seq:
@@ -3026,7 +3029,7 @@ def main_predict(args):
                 if p_values:
                     p_val = 1 - ecdf(top_sc)
 
-                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, win_peak_reg_s, win_peak_reg_e, str(p_val), str(best_sc)))
+                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, top_pos_ext_s, top_pos_ext_e, str(p_val), str(best_sc)))
                 WINPEAKOUT.write("%s\t%i\t%i\t%s\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, ref_pol, top_pos_ext_s, top_pos_ext_e, peak_id, str(top_sc), str(p_val), str(best_sc), sal_peak_pos, sal_peak_seq))
 
                 # If plot windows, also calculate single mutations.
@@ -3226,6 +3229,9 @@ def main_gt(args):
     # Write generated feature infos to table.
     FEATOUT = open(feat_table_out, "w")
 
+    # Minimum number of sites.
+    min_n_sites = 100
+
     """
     CASE 1: sequences provided as input (--in FASTA)
     ================================================
@@ -3243,7 +3249,12 @@ def main_gt(args):
     # Check if --in file is FASTA file.
     if rplib.fasta_check_fasta_file(args.in_sites):
         # Read in sequences (this also checks for unique headers + converts to RNA).
-        pos_seqs_dic = rplib.read_fasta_into_dic(args.in_sites)
+        pos_seqs_dic = rplib.read_fasta_into_dic(args.in_sites,
+                                                 all_uc=True)
+        c_pos_seqs = len(pos_seqs_dic)
+        assert c_pos_seqs > min_n_sites, "use reasonable numbers of --in training sites (found %i, best to use > 1000)" %(c_pos_seqs)
+        if c_pos_seqs < 1000:
+            print("WARNING: < 1,000 (%i) --in sites provided for training ... ") %(c_pos_seqs)
         # Sequence character counts.
         seq_cc_dic = rplib.seqs_dic_count_chars(pos_seqs_dic)
         # Allowed sequence characters.
@@ -3260,6 +3271,10 @@ def main_gt(args):
             print("Generating training set from --in and --neg-in ... ")
             neg_seqs_dic = rplib.read_fasta_into_dic(args.in_neg_sites,
                                                      all_uc=True)
+            c_neg_seqs = len(neg_seqs_dic)
+            assert c_neg_seqs > min_n_sites, "use reasonable numbers of --neg-in training sites (found %i, best to use > 1000)" %(c_neg_seqs)
+            if c_neg_seqs < 1000:
+                print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... ") %(c_neg_seqs)
         else:
             print("Generating training set from --in (shuffling positives to get negatives) ... ")
             print("Set shuffling method: %i-nucleotide shuffling" %(args.shuffle_k))
@@ -3389,6 +3404,9 @@ def main_gt(args):
     --seq-ext, if --mode 1)
 
     """
+
+
+
     # If --in are BED, require --gtf and --gen.
     if not args.in_gtf:
         print("ERROR: --gtf GTF file is required if --in receives BED file")
@@ -3418,6 +3436,10 @@ def main_gt(args):
     assert os.path.exists(args.in_sites), "--in BED file \"%s\" not found" %(args.in_sites)
     assert os.path.exists(args.in_gtf), "--gtf GTF file \"%s\" not found" %(args.in_gtf)
     assert os.path.exists(args.in_2bit), "--gen .2bit file \"%s\" not found" %(args.in_2bit)
+    c_pos_sites = rplib.count_file_rows(args.in_sites)
+    assert c_pos_sites > min_n_sites, "use reasonable numbers of --in training sites (found %i, best to use > 1000)" %(c_pos_sites)
+    if c_pos_sites < 1000:
+        print("WARNING: < 1,000 (%i) --in sites provided for training ... ") %(c_pos_sites)
     assert rplib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
     if args.mask_bed:
         assert os.path.exists(args.mask_bed), "--mask-bed BED file \"%s\" not found" %(args.mask_bed)
@@ -3479,6 +3501,10 @@ def main_gt(args):
         assert os.path.exists(args.in_neg_sites), "--neg-in file \"%s\" not found" %(args.in_neg_sites)
         assert not rplib.fasta_check_fasta_file(args.in_neg_sites), "--neg-in seems to be in FASTA format, but BED format expected"
         assert rplib.bed_check_six_col_format(args.in_neg_sites), "--neg-in BED file appears to be not in 6-column BED format"
+        c_neg_sites = rplib.count_file_rows(args.in_neg_sites)
+        assert c_neg_sites > min_n_sites, "use reasonable numbers of --neg-in training sites (found %i, best to use > 1000)" %(c_neg_sites)
+        if c_neg_sites < 1000:
+            print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... ") %(c_neg_sites)
 
     # Mode settings output file.
     SETOUT = open(settings_file, "w")
@@ -4960,6 +4986,9 @@ def main_gp(args):
             if nt not in allowed_nt_dic:
                 assert False, "--in sequences contain \"%s\" character (allowed characters: A C G U)" %(nt)
         FEATOUT.write("fa\tC\tA,C,G,U\t-\n")
+
+        # Secondary structure stats dictionaries.
+        test_str_stats_dic = None
 
         # If structure features should be computed.
         if args.add_str:

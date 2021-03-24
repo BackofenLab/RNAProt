@@ -12615,7 +12615,7 @@ def add_label_plot(df, fig, gs, i,
             else:
                 x_tick_labels.append('%d'%x)
 
-        print("x_tick_start:", x_tick_start)
+        #print("x_tick_start:", x_tick_start)
         #print("first_tick:", first_tick)
         #print("anchor:", anchor)
         #print("x_tick_labels:", x_tick_labels)
