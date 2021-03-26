@@ -201,21 +201,21 @@ Now we can take a look at the predicted peak regions (BED, TSV), or observe the 
 
 #### Test example with genomic regions as input
 
-To create datasets based on genomic or transcript regions, we first need to download two additional files. Specifically, we need a GTF file (containing genomic annotations), as well as a .2bit file (containing the genomic sequences). Note that we used Ensembl GTF files to test RNAProt, and therefore recommend using these. You can find them [here](http://www.ensembl.org/info/data/ftp/index.html) for all major model organisms. The .2bit genome file we will download from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips). For this example, we choose the human genome + annotations (hg38 assembly):
+To create datasets based on genomic or transcript regions, we first need to download two additional files. Specifically, we need a GTF file (containing genomic annotations), as well as a .2bit file (containing the genomic sequences). Note that we used Ensembl GTF files to test RNAProt, and therefore recommend using these. You can find them [here](http://www.ensembl.org/info/data/ftp/index.html) for many major model organisms. The .2bit genome file we will download from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips). For this example, we choose the human genome + annotations (hg38 assembly):
 
 ```
 wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
 wget http://ftp.ensembl.org/pub/release-103/gtf/homo_sapiens/Homo_sapiens.GRCh38.103.gtf.gz
 ```
 
-Next we download some genomic RBP binding sites from [ENCODE](https://www.encodeproject.org/). The ENCODE website contains a huge collection of eCLIP datasets for various RBPs. For this example, we again download PUM2 binding sites, choosing the IDR peaks identified by ENCODE's CLIPper pipeline (PUM2 K562 eCLIP dataset ID: ENCFF880MWQ, PUM2 K562 IDR peaks ID: ENCFF880MWQ). We unzip it and change the format to 6-column BED which RNAProt likes best:
+Next we download some genomic RBP binding regions identified by eCLIP from [ENCODE](https://www.encodeproject.org/). The ENCODE website contains a huge collection of eCLIP datasets for various RBPs. For this example, we again download PUM2 binding sites, choosing the IDR peaks identified by ENCODE's CLIPper pipeline (PUM2 K562 eCLIP dataset ID: ENCFF880MWQ, PUM2 K562 IDR peaks ID: ENCFF880MWQ). We unzip it and change the format to 6-column BED which RNAProt likes best:
 
 ```
 wget https://www.encodeproject.org/files/ENCFF880MWQ/@@download/ENCFF880MWQ.bed.gz
 gunzip -c ENCFF880MWQ.bed.gz | awk '{print $1"\t"$2"\t"$3"\t"$4"\t"$7"\t"$6}' > PUM2_K562_IDR_peaks.bed
 ```
 
-Note that we move the log2 fold change from column 7 (original file) to column 5, which is used by RNAProt to filter and select sites in case of overlaps. By default, `rnaprot gt` removes overlapping sites by selecting only the highest-scoring site from a set of overlapping sites. To disable this, set `--allow-overlaps`. Also, all sites will be kept if there are no column 5 scores given (or all the same).
+Note that we move the log2 fold change value from column 7 (original file) to column 5, which is used by RNAProt to filter and select sites in case of overlaps. By default, `rnaprot gt` removes overlapping sites by selecting only the highest-scoring site from a set of overlapping sites. To disable this, set `--allow-overlaps`. Also, all sites will be kept if there are no column 5 scores given (or all the same).
 
 Next we create a training dataset, by supplying the downloaded GTF and .2bit file:
 
@@ -241,7 +241,7 @@ gtf_extract_gene_regions.py --ids ENSG00000260032 --gtf Homo_sapiens.GRCh38.103.
 gtf_extract_transcript_regions.py --ids ENST00000565493 --gtf Homo_sapiens.GRCh38.103.gtf.gz --out ENST00000565493.bed
 ```
 
-In the case of *NORAD*, both transcript and gene region have the same length, since *NORAD* contains no introns and only one annotated isoform:
+Of course the scripts also accept > 1 ID (either on the command line or more practically given as a file with one ID per row). In the case of *NORAD*, both transcript and gene region have the same length, since *NORAD* contains no introns and only one annotated isoform:
 
 ```
 $ cat ENSG00000260032.bed
@@ -250,8 +250,7 @@ $ cat ENST00000565493.bed
 ENST00000565493	0	5401	ENST00000565493	0	+
 ```
 
-We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). For now we will use the gene region, to get genomic peak regions returned by `rnaprot predict`:
-
+We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (always excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). For now we will use the gene region, on which `rnaprot predict` will then predict and return peak regions with directly with genomic coordinates (also contained inside the profiles for easier orientation):
 
 ```
 rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --train-in PUM2_K562_IDR_train_out
