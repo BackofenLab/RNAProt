@@ -123,7 +123,6 @@ conda install -c bioconda ushuffle=1.2.2
 conda install -c bioconda ucsc-twobitinfo
 conda install -c bioconda ucsc-twobittofa
 conda install -c bioconda ucsc-bigwigaverageoverbed
-
 ```
 
 
@@ -146,7 +145,7 @@ rnaprot -h
 Once installed, we can do some small test runs. 
 
 
-#### Test example with FASTA as input
+#### Test example with FASTA sequences as input
 
 We first train a sequence model, using a provided set of positive and negative FASTA sequences sampled from the PARCLIP PUM2 dataset (3,000 positives, 3,000 negatives, all sequences with length 81 nt). In the following we will mainly use default parameters, but note that there are many options available for each program mode. To learn more about the mode options, refer to the [Documentation](#documentation), or simply list all mode options, e.g. for "rnaprot train", by typing:
 
@@ -154,31 +153,28 @@ We first train a sequence model, using a provided set of positive and negative F
 rnaprot train -h
 ```
 
-Before training a model, we need to generate an RNAProt training dataset. For this we use the supplied FASTA sequences in the cloned repository folder. We thus enter
-
-Once you are inside the folder, To get training set statistics, we also enable --report:
+Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the test/ folder as training data. To get training set statistics, we also enable --report:
 
 
+```
+rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out PUM2_PARCLIP_gt_out --report
+```
 
-
-First we need to generate an RNAProt training set. 
-
-
-For this we go to the cloned repository folder. 
-
-rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out test_gt_out --report
-
-We can then take a look at the report.rnaprot_gt.html inside test_gt_out to inform us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. --str, ...), and the input type given to rnaprot gt (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set (see Sequence complexity distribution).
+We can then take a look at the report.rnaprot_gt.html inside test_gt_out, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. --str, ...), and the input type given to "rnaprot gt" (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set (see Sequence complexity distribution).
 
 Next we train a model on the created dataset, using default parameters. For this we simply run rnaprot train with the rnaprot gt output folder as --in folder. We also enable --verbose-train, to see the learning progress over the number of epochs:
 
+```
 rnaprot train --in test_gt_out --out test_train_out --verbose-train
+```
 
 In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters.
 
 To visualize what our just trained model has learned, we next run "rnaprot eval", which needs both the rnaprot gt and rnaprot train output folders:
 
+```
 rnaprot eval --gt-in test_gt_out --train-in test_train_out --out test_eval_out
+```
 
 This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites. The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. --report for additional statistics, comparing two models, specifying motif sizes and profiles to plot).
 
