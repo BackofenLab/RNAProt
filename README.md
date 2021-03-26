@@ -164,31 +164,35 @@ We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, in
 Next we train a model on the created dataset, using default parameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
 
 ```
-rnaprot train --in test_gt_out --out test_train_out --verbose-train
+rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_train_out --verbose-train
 ```
 
 In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. To visualize what our just-trained model has learned, we next run `rnaprot eval`, which requires both the `rnaprot gt` and `rnaprot train` output folders:
 
 ```
-rnaprot eval --gt-in test_gt_out --train-in test_train_out --out test_eval_out
+rnaprot eval --gt-in PUM2_PARCLIP_gt_out --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_eval_out
 ```
 
 This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
 
-Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA NORAD for window prediction. NORAD was shown to act as a [decoy](https://www.sciencedirect.com/science/article/pii/S0092867415016414) for PUMILIO proteins (PUM1/PUM2). We therefore use its FASTA sequence as input:
+Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. NORAD was shown to act as a [decoy for PUMILIO proteins](https://www.sciencedirect.com/science/article/pii/S0092867415016414) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
 
+```
 rnaprot gp --in test/NORAD_lncRNA.fa --train-in test_train_out --out test_gp_out --report
+```
 
-Note that the input can be any number of sequences, genomic regions, or transcript regions.
+Note that the input can be any number of sequences, genomic regions, or transcript regions (also see examples below).
 
 By default, rnaprot predicts whole sites, i.e., we would get one score returned for the whole lncRNA. To run the window prediction, we use --mode 2, and also plot the top window profiles containing the reported peak regions:
 
+```
 rnaprot predict --in test_gp_out --train-in test_train_out/ --out test_predict_out --mode 2 --plot-top-profiles
+```
 
 Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for rnaprot eval. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the Documentation.
 
 
-
+``
 
 
 
