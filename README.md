@@ -10,9 +10,7 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
     - [Conda](#conda)
     - [Conda package installation](#conda-package-installation)
     - [Manual installation](#manual-installation)
-    
     - [Nvidia driver and CUDA](#nvidia-driver-and-cuda)
-
     - [PyTorch and PyTorch geometric](#pytorch-and-pytorch-geometric)
     - [Additional libraries](#additional-libraries)
     - [Tool installation](#tool-installation)
@@ -147,7 +145,7 @@ Once installed, we can do some small test runs.
 
 #### Test example with FASTA sequences as input
 
-We first train a sequence model, using a provided set of positive and negative FASTA sequences sampled from the PARCLIP PUM2 dataset (3,000 positives, 3,000 negatives, all sequences with length 81 nt). In the following we will mainly use default parameters, but note that there are many options available for each program mode. To learn more about the mode options, refer to the [Documentation](#documentation), or simply list all mode options, e.g. for "rnaprot train", by typing:
+We first train a sequence model, using a provided set of positive and negative FASTA sequences sampled from the PARCLIP PUM2 dataset (3,000 positives, 3,000 negatives, all sequences with length 81 nt). In the following we will mainly use default parameters, but note that there are many options available for each program mode. To learn more about the mode options, refer to the [Documentation](#documentation), or simply list all mode options, e.g. for `rnaprot train`, by typing:
 
 ```
 rnaprot train -h
