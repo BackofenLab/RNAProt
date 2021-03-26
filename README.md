@@ -10,11 +10,7 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
     - [Conda](#conda)
     - [Conda package installation](#conda-package-installation)
     - [Manual installation](#manual-installation)
-    - [Nvidia driver and CUDA](#nvidia-driver-and-cuda)
-    - [PyTorch and PyTorch geometric](#pytorch-and-pytorch-geometric)
-    - [Additional libraries](#additional-libraries)
-    - [Tool installation](#tool-installation)
-    - [Test run](#test-run)
+- [Test runs](#test-runs)
 - [GraphProt2 documentation](#documentation)
     - [Program modes](#program-modes)
     - [Supported features](#supported-features)
@@ -144,12 +140,13 @@ Now we can run RNAProt from any given folder (just remember to re-activate the e
 rnaprot -h
 ```
 
-### Test runs
+
+## Test runs
 
 Once installed, we can do some small test runs. 
 
 
-#### Test example with FASTA sequences as input
+### Test example with FASTA sequences as input
 
 We first train a sequence model, using a provided set of positive and negative FASTA sequences sampled from the PARCLIP PUM2 dataset (3,000 positives, 3,000 negatives, all sequences with length 81 nt). In the following we will mainly use default parameters, but note that there are many options available for each program mode. To learn more about the mode options, refer to the [Documentation](#documentation), or simply list all mode options, e.g. for `rnaprot train`, by typing:
 
@@ -199,7 +196,7 @@ Now we can take a look at the predicted peak regions (BED, TSV), or observe the 
 
 
 
-#### Test example with genomic regions as input
+### Test example with genomic regions as input
 
 To create datasets based on genomic or transcript regions, we first need to download two additional files. Specifically, we need a GTF file (containing genomic annotations), as well as a .2bit file (containing the genomic sequences). Note that we used Ensembl GTF files to test RNAProt, and therefore recommend using these. You can find them [here](http://www.ensembl.org/info/data/ftp/index.html) for many major model organisms. The .2bit genome file we will download from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips). For this example, we choose the human genome + annotations (hg38 assembly):
 
@@ -259,7 +256,7 @@ rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out
 ```
 
 
-#### Test example with additional features
+### Test example with additional features
 
 CDE sites with structure prediction
 add to test folder
