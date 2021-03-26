@@ -43,7 +43,7 @@ Additional inputs are available, depending on the binding site input type as wel
 
 ## Installation
 
-RNAProt was tested on Ubuntu (18.04 LTS), with Nvidia driver >=440, CUDA >=10, and various Nvidia graphics cards (RTX 2080 Ti, RTX 2070, GTX 1060, GTX 1030). We thus assume that you have a similar system available and running. While RNAProt runs fine without a dedicated GPU, we definitely recommend having an Nvidia graphics card with CUDA support for speeding up model training (specifically we recommend a >= GTX 1060 or a similar newer model, with >= 4 GB RAM).
+RNAProt was tested on Ubuntu (18.04 LTS), with Nvidia driver >=440, CUDA >=10, and various Nvidia graphics cards (RTX 2080 Ti, RTX 2070, GTX 1060, GTX 1030). We thus assume that you have a similar system available and running. While RNAProt runs fine without a dedicated GPU, we definitely recommend having an Nvidia graphics card with CUDA support for speeding up model training (specifically we recommend a >= GTX 1060 or a similar newer model, with >= 4 GB RAM). Regarding main memory, we recommend at least 8 GB RAM.
 In the following we show how to install RNAProt via Conda package (easiest way + recommended), or alternatively manually (not too difficult either). In any case, you first need Conda running on your computer.
 
 ### Conda
@@ -105,7 +105,7 @@ This is great news, meaning that we can RNAProt with GPU support.
 
 ### Manual installation
 
-To manually install RNAProt, we first create a Conda environment (as described in [Conda](#conda)). Once inside the environment, we need to install the following dependencies:
+To manually install RNAProt, we first create a Conda environment (as described in [above](#conda)). Once inside the environment, we need to install the following dependencies:
 
 ```
 conda install -c conda-forge pytorch=1.7.1=cuda102py38h9f8c3ab_1 cudatoolkit=10.2
@@ -127,7 +127,7 @@ conda install -c bioconda ucsc-bigwigaverageoverbed
 Finally, to install RNAProt, we simply clone the repository and execute the installation script inside the folder:
 
 ```
-git clone https://github.com/BackofenLab/CLIPcontext.git
+git clone https://github.com/BackofenLab/RNAProt.git
 cd CLIPcontext
 python -m pip install . --ignore-installed --no-deps -vv
 ```
@@ -158,7 +158,7 @@ Before training a model, we need to generate an RNAProt training dataset. For th
 rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out PUM2_PARCLIP_gt_out --report
 ```
 
-We can then take a look at the report.rnaprot_gt.html inside test_gt_out, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. --str, ...), and the input type given to "rnaprot gt" (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set (see Sequence complexity distribution).
+We can then take a look at the <em>report.rnaprot_gt.html</em> inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. --str, ...), and the input type given to "rnaprot gt" (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set (see Sequence complexity distribution).
 
 Next we train a model on the created dataset, using default parameters. For this we simply run rnaprot train with the rnaprot gt output folder as --in folder. We also enable --verbose-train, to see the learning progress over the number of epochs:
 
