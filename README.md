@@ -250,7 +250,7 @@ $ cat ENST00000565493.bed
 ENST00000565493	0	5401	ENST00000565493	0	+
 ```
 
-We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (always excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). For now we will use the gene region, on which `rnaprot predict` will then predict and return peak regions directly with genomic coordinates (also contained inside the profiles for easier orientation):
+We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (always excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). In general, we can specify any genomic or transcript (sub)region for prediction, as long as it is annotated in the GTF file. For now we will use the gene region, on which `rnaprot predict` will then predict and return peak regions directly with genomic coordinates (also contained inside the profiles for easier orientation):
 
 ```
 rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --train-in PUM2_K562_IDR_train_out
@@ -261,6 +261,8 @@ rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out
 
 #### Test example with additional features
 
+CDE sites with structure prediction
+add to test folder
 
 
 
