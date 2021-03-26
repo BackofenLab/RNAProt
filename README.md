@@ -208,6 +208,42 @@ wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
 wget http://ftp.ensembl.org/pub/release-103/gtf/homo_sapiens/Homo_sapiens.GRCh38.103.gtf.gz
 ```
 
+Next we download some genomic RBP binding sites from [ENCODE](https://www.encodeproject.org/). The ENCODE website contains a huge collection of eCLIP datasets for various RBPs. For this example, we again download PUM2 binding sites, choosing the IDR peaks identified by ENCODE's CLIPper pipeline (PUM2 K562 eCLIP dataset ID: ENCFF880MWQ, PUM2 K562 IDR peaks ID: ENCFF880MWQ). We unzip it and change the format to 6-column BED to be compatible with RNAProt:
+
+```
+wget https://www.encodeproject.org/files/ENCFF880MWQ/@@download/ENCFF880MWQ.bed.gz
+gunzip -c ENCFF880MWQ.bed.gz | awk '{print $1"\t"$2"\t"$3"\t"$4"\t"$7"\t"$6}' > PUM2_K562_IDR_peaks.bed
+```
+
+ Note that we move the log2 fold change from column 7 (original file) to column 5, which is used by RNAProt to filter and select sites in case of overlaps. By default, `rnaprot gt` removes overlapping sites by selecting only the highest-scoring site from a set of overlapping sites. To disable this, you can use `--allow-overlaps`. Also, all sites will be kept if there are no column 5 scores given (or all the same).
+
+Next we create the dataset, by supplying the downloaded GTF and .2bit file:
+
+```
+rnaprot gt --in PUM2_K562_IDR_peaks.bed --out PUM2_K562_IDR_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --report
+```
+
+Note that by default, `rnaprot gt` centers the input BED regions, and extends them on both sides by the set `--seq-ext` (by default 40). If you want to keep the original region lengths, set `--mode 2 --seq-ext 0`. Alternatively, you can set `--mode 3` to use the region upstream ends and extend by `--seq-ext`.
+
+Now we can train a model and evaluate it just like in the example above:
+
+```
+rnaprot train --in PUM2_K562_IDR_gt_out --out PUM2_K562_IDR_train_out --verbose-train
+
+rnaprot eval --gt-in PUM2_K562_IDR_gt_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_IDR_eval_out --report
+
+```
+
+
+
+rnaprot predict --in test_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_IDR_predict_out --mode 2 --plot-top-profiles
+
+
+rnaprot gt --in test/PUM2_K562_IDR_peaks.bed --out PUM2_K562_IDR_gt2_out  --seq-ext 40 --gtf /home/malong/Data/Ensembl_gtf/Homo_sapiens.GRCh38.101.gtf.gz --gen /home/malong/Data/genome_2bit/hg38.2bit --report --allow-overlaps
+
+rnaprot train --in PUM2_K562_IDR_gt2_out --out PUM2_K562_IDR_train2_out --verbose-train
+
+
 
 
 
