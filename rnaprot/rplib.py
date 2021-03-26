@@ -509,6 +509,7 @@ WXd;;;;;::cclllloooddddxxxxxxxxxxxdkXWNWWWWWO:'',,;:ccllllooodddxxkkkkkOOOOOOOKW
 ################################################################################
 
 def read_ids_into_dic(ids_file,
+                      check_dic=True,
                       ids_dic=False):
     """
     Read in IDs file, where each line stores one ID.
@@ -527,7 +528,8 @@ def read_ids_into_dic(ids_file,
             row_id = line.strip()
             ids_dic[row_id] = 1
     f.closed
-    assert ids_dic, "IDs dictionary ids_dic empty"
+    if check_dic:
+        assert ids_dic, "IDs dictionary ids_dic empty"
     return ids_dic
 
 
@@ -2123,7 +2125,8 @@ def filter_bed_row_dic_output(id2row_dic, keep_ids_dic, out_bed):
 
 ################################################################################
 
-def bed_get_region_ids(bed_file):
+def bed_get_region_ids(bed_file,
+                       check_dic=True):
     """
     Read in .bed file, return region/site IDs (column 5 IDs).
 
@@ -2141,7 +2144,8 @@ def bed_get_region_ids(bed_file):
             assert site_id not in ids_dic, "column 4 IDs not unique in given .bed file \"%s\"" %(bed_file)
             ids_dic[site_id] = 1
     f.closed
-    assert ids_dic, "No IDs read into dictionary (input file \"%s\" empty or malformatted?)" % (bed_file)
+    if check_dic:
+        assert ids_dic, "No IDs read into dictionary (input file \"%s\" empty or malformatted?)" % (bed_file)
     return ids_dic
 
 
@@ -10685,6 +10689,7 @@ def load_eval_data(args,
 
 def load_predict_data(args,
                       kmer2idx_dic=False,
+                      list_site_ids=False,
                       store_tensors=True):
 
     """
@@ -10923,24 +10928,45 @@ def load_predict_data(args,
     # Construct features list.
     all_features = []
 
+    select_ids_dic = {}
+    if list_site_ids:
+        for site_id in list_site_ids:
+            assert site_id in test_seqs_dic, "provided --site-id %s not part of --in set" %(site_id)
+            select_ids_dic[site_id] = 1
+
+    new_idx2id_dic = {}
+    new_seqs_dic = {}
+    new_idx_c = 0
     for idx, label in enumerate(label_list):
         seq_id = seq_ids_list[idx]
         seq = test_seqs_dic[seq_id]
         l_seq = len(seq)
-
         # Checks.
         check_num_feat = len(feat_dic[seq_id][0])
         assert model_num_feat == check_num_feat, "# features (num_features) from model parameter file != loaded number of node features (%i != %i)" %(model_num_feat, check_num_feat)
 
-        # Gimme a choice.
-        if store_tensors:
-            all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+        if select_ids_dic:
+            if seq_id in select_ids_dic:
+                new_seqs_dic[seq_id] = seq
+                new_idx2id_dic[new_idx_c] = seq_id
+                new_idx_c += 1
+                if store_tensors:
+                    all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+                else:
+                    all_features.append(feat_dic[seq_id])
         else:
-            all_features.append(feat_dic[seq_id])
+            if store_tensors:
+                all_features.append(torch.tensor(feat_dic[seq_id], dtype=torch.float))
+            else:
+                all_features.append(feat_dic[seq_id])
+
     assert all_features, "no features stored in all_features (all_features empty)"
 
     # Return some double talking jive data.
-    return test_seqs_dic, idx2id_dic, all_features, ch_info_dic
+    if select_ids_dic:
+        return new_seqs_dic, new_idx2id_dic, all_features, ch_info_dic
+    else:
+        return test_seqs_dic, idx2id_dic, all_features, ch_info_dic
 
 
 ################################################################################

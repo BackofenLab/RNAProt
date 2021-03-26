@@ -21,7 +21,7 @@ setup(
     author_email='uhlm@informatik.uni-freiburg.de',
     url='https://github.com/BackofenLab/RNAProt',
     license='MIT',
-    scripts=['bin/rnaprot'],
+    scripts=['bin/rnaprot', 'bin/gtf_extract_gene_regions.py', 'bin/gtf_extract_transcript_regions.py'],
     packages=['rnaprot'],
     package_data={'rnaprot': ['content/*']},
     zip_safe=False,

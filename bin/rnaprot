@@ -409,12 +409,6 @@ def setup_argument_parser():
                    default = 1,
                    choices = [1,2],
                    help = "Define prediction mode. (1) predict whole sites, (2) predict binding sites on longer sequences using moving window predictions (default: 1)")
-    p_pr.add_argument("--max-merge-dist",
-                   dest = "max_merge_dist",
-                   type = int,
-                   metavar='int',
-                   default = 0,
-                   help = "Maximum distance between two peaks for merging. Two peaks get merged to one if they are <= --max-merge-dist away from each other (default: 0)")
     p_pr.add_argument("--plot-top-profiles",
                    dest="plot_top_win_profiles",
                    default = False,
@@ -432,6 +426,12 @@ def setup_argument_parser():
                    default = 2,
                    choices = [1,2,3],
                    help = "Define site score threshold setting for reporting peak regions in --mode 2 (window prediction). 1: relaxed, 2: standard, 3: strict (default: 2)")
+    p_pr.add_argument("--site-id",
+                   dest="list_site_ids",
+                   type=str,
+                   nargs='+',
+                   default=False,
+                   help = "Provide site ID(s) on which to predict  (e.g. --site-id site_id1 site_id2). By default predict on all --in sites")
 
     """
     Training set generation mode.
@@ -549,7 +549,7 @@ def setup_argument_parser():
                    type = int,
                    default = 2,
                    choices = [1,2,3],
-                   help = "Supply k for k-nucleotide shuffling of --in sequences to generate negative sequences (if no --neg-fa supplied) (default: 2)")
+                   help = "Supply k for k-nucleotide shuffling of --in sequences to generate negative sequences (if no --neg-in supplied) (default: 2)")
     p_gt.add_argument("--report",
                    dest="report",
                    default = False,
@@ -2762,6 +2762,7 @@ def main_predict(args):
     print("Load prediction data ... ")
     seqs_dic, idx2id_dic, all_features, ch_info_dic = rplib.load_predict_data(args,
                                                         kmer2idx_dic=kmer2idx_dic,
+                                                        list_site_ids=args.list_site_ids,
                                                         store_tensors=store_tensors)
     # Number of features (feature vector length).
     check_n_feat = len(all_features[0][0])
@@ -2890,6 +2891,9 @@ def main_predict(args):
             peak_reg_sc_thr = pos_ws_sc_perc50
             peak_win_sc_thr = pos_ws_sc_perc75
 
+        # Disable.
+        args.max_merge_dist = 0
+
         score_profiles_out = out_folder + "/" + "profiles.out"
         peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
         # peak_win_bed = out_folder + "/" + "profiles.peak_windows.bed"
@@ -2918,6 +2922,7 @@ def main_predict(args):
         #     PEAKWINMRGREFOUT = open(peak_win_merged_ref_bed, "w")
 
         peaks_found = 0
+        c_sites = 0
 
         for idx in idx2id_dic:
             seq_id = idx2id_dic[idx]
@@ -2929,13 +2934,19 @@ def main_predict(args):
             # Reference coords info.
             chr_id = seq_id
             ref_pol = "+"
-            if not only_seq:
+            ref_s = False
+
+            if only_seq:
+                print("Scanning %s (%i nt) ... " %(seq_id, seq_l))
+            else:
                 chr_id = id2chr_dic[seq_id]
                 ref_s = id2s_dic[seq_id]
                 ref_e = id2e_dic[seq_id]
                 ref_pol = id2pol_dic[seq_id]
+                print("Scanning %s (%i nt, %s,%i-%i,%s) ... " %(seq_id, seq_l, chr_id, ref_s, ref_e, ref_pol))
 
             seq_list = list(seq)
+            c_sites += 1
 
             if output_more_files:
                 PROFOUT.write(">%s\n" %(seq_id))
@@ -3026,13 +3037,13 @@ def main_predict(args):
                     tp_ext_ref_l = top_pos_ext_e - top_pos_ext_s
                     assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i) for site ID %s" %(tp_ext_ref_l, tp_ext_l, seq_id)
 
+                # Window sequence.
+                win_seq = seq[seq_win_s:seq_win_e]
 
                 # If plot windows, also calculate single mutations.
                 if args.plot_top_win_profiles:
 
-                    win_seq = seq[seq_win_s:seq_win_e]
                     top_pos_ext_s_1b = top_pos_ext_s + 1
-
                     single_pert_list = rnn_util.get_single_nt_perturb_scores(args,
                                                 win_seq, win_feat_list,
                                                 model, device,
@@ -3057,7 +3068,7 @@ def main_predict(args):
                 if p_values:
                     p_val = 1 - ecdf(top_sc)
 
-                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, top_pos_ext_s, top_pos_ext_e, str(p_val), str(best_sc)))
+                WINPEAKBED.write("%s\t%i\t%i\t%s\t%s\t%s\t%i\t%i\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, str(top_sc), ref_pol, top_pos_ext_s, top_pos_ext_e, str(p_val), sal_peak_pos, str(best_sc)))
 
                 # Make starts 1-based for table.
                 win_peak_reg_s += 1
@@ -3103,6 +3114,9 @@ def main_predict(args):
             print("WARNING: no peak regions extracted for any input sequence!")
             print("         Try to lower --thr to obtain peak regions for the given sequences")
             sys.exit()
+        else:
+            print("# of scanned regions:         %i" %(c_sites))
+            print("# of predicted peak regions:  %i" %(peaks_found))
 
         # # Merge extended peaks.
         # rplib.bed_sort_merge_output_top_entries(peak_win_bed, peak_win_merged_bed)
@@ -3115,6 +3129,7 @@ def main_predict(args):
         #         os.remove(peak_win_merged_ref_bed)
         # else:
         #     rplib.bed_sort_merge_output_top_entries(peak_win_ref_bed, peak_win_merged_ref_bed)
+
 
     """
     Output file summary.
@@ -3132,7 +3147,7 @@ def main_predict(args):
         print("")
         print("WINDOW PROFILE PREDICTION OUTPUT FILES")
         print("======================================")
-        print("Peak regions BED (10-column) file:\n%s" %(win_peak_reg_bed))
+        print("Peak regions BED (11-column) file:\n%s" %(win_peak_reg_bed))
         print("Peak regions output table file:\n%s" %(win_peak_reg_out))
         # print("Profiles output file:\n%s" %(score_profiles_out))
         # print("Peak regions:\n%s" %(peak_reg_bed))
@@ -3244,10 +3259,10 @@ def main_gt(args):
     CASE 1: sequences provided as input (--in FASTA)
     ================================================
 
-    --in FASTA and optionally --neg-fa are set.
+    --in FASTA and optionally --neg-in are set.
 
     If --in FASTA is set, create negative sequences by shuffling
-    Use --neg-fa FASTA to provide negative sequences (instead of
+    Use --neg-in FASTA to provide negative sequences (instead of
     shuffling positives to generate negatives)
     Supported additional features if --in FASTA:
     --str (secondary structure features)
