@@ -123,6 +123,12 @@ conda install -c bioconda ucsc-twobittofa
 conda install -c bioconda ucsc-bigwigaverageoverbed
 ```
 
+If you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU libraries. To install pyTorch without GPU support, simply exchange the above call with:
+
+```
+conda install -c conda-forge pytorch=1.7.1 cudatoolkit=10.2
+```
+
 
 Finally, to install RNAProt, we simply clone the repository and execute the installation script inside the folder:
 
@@ -175,21 +181,67 @@ rnaprot eval --gt-in PUM2_PARCLIP_gt_out --train-in PUM2_PARCLIP_train_out --out
 
 This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
 
-Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. NORAD was shown to act as a [decoy for PUMILIO proteins](https://www.sciencedirect.com/science/article/pii/S0092867415016414) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
+Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. *NORAD* was shown to act as a [decoy for PUMILIO proteins](https://www.sciencedirect.com/science/article/pii/S0092867415016414) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
 
 ```
-rnaprot gp --in test/NORAD_lncRNA.fa --train-in test_train_out --out test_gp_out --report
+rnaprot gp --in test/NORAD_lncRNA.fa --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_gp_out --report
 ```
 
 Note that the input can be any number of sequences, genomic regions, or transcript regions (also see examples below).
 
-By default, rnaprot predicts whole sites, i.e., we would get one score returned for the whole lncRNA. To run the window prediction, we use --mode 2, and also plot the top window profiles containing the reported peak regions:
+By default, RNAProt predicts whole sites, i.e., we would get one score returned for the whole lncRNA. To run the window prediction, we use `--mode 2`, and also plot the top window profiles containing the reported peak regions:
 
 ```
 rnaprot predict --in test_gp_out --train-in test_train_out/ --out test_predict_out --mode 2 --plot-top-profiles
 ```
 
-Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for rnaprot eval. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the Documentation.
+Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for `rnaprot eval`. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the [Documentation](#documentation).
+
+
+
+#### Test example with genomic regions as input
+
+To create datasets based on genomic or transcript regions, we first need to download two additional files. Specifically, we need a GTF file (containing genomic annotations), as well as a .2bit file (containing the genomic sequences). Note that we used Ensembl GTF files to test RNAProt, and therefore recommend using these. You can find them [here](http://www.ensembl.org/info/data/ftp/index.html) for all major model organisms. The .2bit genome file we will download from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips). For this example, we choose the human genome + annotations (hg38 assembly):
+
+```
+wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
+wget http://ftp.ensembl.org/pub/release-103/gtf/homo_sapiens/Homo_sapiens.GRCh38.103.gtf.gz
+```
+
+
+
+
+
+
+### Test run
+
+A small BED file of genomic RBP binding regions as well as a list of transcript IDs is already provided in the test/ subfolder. First we download and store all the remaining necessary datasets in the same folder:
+```
+cd test/
+wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
+wget ftp://ftp.ensembl.org/pub/release-98/gtf/homo_sapiens/Homo_sapiens.GRCh38.98.gtf.gz
+```
+
+
+
+for human hg38 assembly here).
+
+
+  You can download the GTF file for all major
+
+
+
+ of these.
+
+
+
+
+- A GTF file with genomic annotations from Ensembl (see [download page](http://www.ensembl.org/info/data/ftp/index.html))
+
+(for hg38 assembly click [here](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit))
+
+
+
 
 
 ``
