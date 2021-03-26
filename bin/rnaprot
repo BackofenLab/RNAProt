@@ -2781,6 +2781,10 @@ def main_predict(args):
                                   opt_dic=False)
     model.load_state_dict(torch.load(model_file))
 
+    print("25th percentile score: ", pos_ws_sc_perc25)
+    print("50th percentile score: ", pos_ws_sc_perc50)
+    print("75th percentile score: ", pos_ws_sc_perc75)
+
     """
     CASE 1: whole site predictions.
 
@@ -2886,8 +2890,8 @@ def main_predict(args):
             peak_reg_sc_thr = pos_ws_sc_perc50
             peak_win_sc_thr = pos_ws_sc_perc75
 
-        # score_profiles_out = out_folder + "/" + "profiles.out"
-        # peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
+        score_profiles_out = out_folder + "/" + "profiles.out"
+        peak_reg_bed = out_folder + "/" + "profiles.peak_regions.bed"
         # peak_win_bed = out_folder + "/" + "profiles.peak_windows.bed"
         # peak_win_merged_bed = out_folder + "/" + "profiles.peak_windows.merged.bed"
         # peak_reg_ref_bed = out_folder + "/" + "profiles.peak_regions.ref.bed"
@@ -2896,14 +2900,16 @@ def main_predict(args):
         win_peak_reg_bed = out_folder + "/" + "peak_regions.bed"
         win_peak_reg_out = out_folder + "/" + "peak_regions.tsv"
 
-        #PROFOUT = open(score_profiles_out, "w")
-        #PEAKREGOUT = open(peak_reg_bed, "w")
+        output_more_files = False
+        if output_more_files:
+            PROFOUT = open(score_profiles_out, "w")
+            PEAKREGOUT = open(peak_reg_bed, "w")
         #PEAKWINOUT = open(peak_win_bed, "w")
         #PEAKWINMRGOUT = open(peak_win_merged_bed, "w")
         WINPEAKOUT = open(win_peak_reg_out, "w")
         WINPEAKBED = open(win_peak_reg_bed, "w")
 
-        WINPEAKOUT.write("ref_id\tpeak_region_s\tpeak_region_e\tstrand\twindow_s\twindow_e\tpeak_id\twindow_score\twin_sc_p_val\ttop_peak_score\ttop_peak_pos\ttop_peak_seq\n")
+        WINPEAKOUT.write("ref_id\tpeak_region_s\tpeak_region_e\tstrand\twindow_s\twindow_e\tpeak_id\twindow_score\twin_sc_p_val\ttop_peak_score\ttop_peak_pos\ttop_peak_seq\twindow_seq\n")
 
         # Reference BED files.
         # if not only_seq:
@@ -2931,11 +2937,12 @@ def main_predict(args):
 
             seq_list = list(seq)
 
-            # PROFOUT.write(">%s\n" %(seq_id))
-            # for i,sc in enumerate(profile_scores_ll[idx]):
-            #     nt = seq_list[i]
-            #     pos = i + 1
-            #     PROFOUT.write("%i\t%s\t%f\n" %(pos, nt, sc))
+            if output_more_files:
+                PROFOUT.write(">%s\n" %(seq_id))
+                for i,sc in enumerate(profile_scores_ll[idx]):
+                    nt = seq_list[i]
+                    pos = i + 1
+                    PROFOUT.write("%i\t%s\t%f\n" %(pos, nt, sc))
 
             # Get peak regions + positions.
             peak_list = rplib.list_extract_peaks(profile_scores_ll[idx],
@@ -2976,12 +2983,6 @@ def main_predict(args):
                                             got_tensors=False,
                                             sal_type=1)
 
-                best_pos, best_sc = rplib.get_top_sc_list_pos(sal_list,
-                                                        get_lowest=False,
-                                                        padding=3)
-
-                peak_pos_best = best_pos + top_pos_ext_s + 1
-
                 # Get peak region of window from average saliency profile.
                 avg_sal_list = rnn_util.list_moving_win_avg_values(sal_list,
                                                         win_extlr=5)
@@ -3014,6 +3015,7 @@ def main_predict(args):
                 seq_win_e = top_pos_ext_e
 
                 if not only_seq:
+
                     # Full window coords on ref.
                     top_pos_ext_s, top_pos_ext_e = rplib.bed_convert_coords(top_pos_ext_s, top_pos_ext_e, ref_s, ref_e, ref_pol)
                     # Peak region inside window coords on ref.
@@ -3024,13 +3026,6 @@ def main_predict(args):
                     tp_ext_ref_l = top_pos_ext_e - top_pos_ext_s
                     assert tp_ext_ref_l == tp_ext_l, "tp_ext_l != tp_ext_ref_l (%i != %i) for site ID %s" %(tp_ext_ref_l, tp_ext_l, seq_id)
 
-                # p-value of whole-site score.
-                p_val = "."
-                if p_values:
-                    p_val = 1 - ecdf(top_sc)
-
-                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, top_pos_ext_s, top_pos_ext_e, str(p_val), str(best_sc)))
-                WINPEAKOUT.write("%s\t%i\t%i\t%s\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, ref_pol, top_pos_ext_s, top_pos_ext_e, peak_id, str(top_sc), str(p_val), str(best_sc), sal_peak_pos, sal_peak_seq))
 
                 # If plot windows, also calculate single mutations.
                 if args.plot_top_win_profiles:
@@ -3045,9 +3040,7 @@ def main_predict(args):
 
                     plot_file_name =  peak_id + "_" + seq_id + "_" + str(top_pos_ext_s_1b) + "-" + str(top_pos_ext_e) + "_sc" + str(top_sc) + "." + plot_format
                     plot_out_file = top_win_prof_folder + "/" + plot_file_name
-                    print("Plotting peak window %s ... " %(peak_id))
-
-                    print("Top saliency pos:", peak_pos_best)
+                    print("Plotting peak window %s (%s,%i-%i,%s) ... " %(peak_id, chr_id, top_pos_ext_s_1b, top_pos_ext_e, ref_pol))
 
                     rplib.make_feature_attribution_plot(win_seq, win_feat_list,
                                                 ch_info_dic, plot_out_file,
@@ -3055,10 +3048,24 @@ def main_predict(args):
                                                 koma_sepp_1000=True,
                                                 sal_list=sal_list,
                                                 avg_sal_list=False,
+                                                ref_pol=ref_pol,
                                                 single_pert_list=single_pert_list,
                                                 worst_win_pert_list=False)
 
-                # PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
+                # p-value of whole-site score.
+                p_val = "."
+                if p_values:
+                    p_val = 1 - ecdf(top_sc)
+
+                WINPEAKBED.write("%s\t%i\t%i\t%s,%i,%s\t%s\t%s\t%i\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, peak_id, sal_peak_pos, str(best_sc), str(top_sc), ref_pol, top_pos_ext_s, top_pos_ext_e, str(p_val), str(best_sc)))
+
+                # Make starts 1-based for table.
+                win_peak_reg_s += 1
+                top_pos_ext_s += 1
+                WINPEAKOUT.write("%s\t%i\t%i\t%s\t%i\t%i\t%s\t%s\t%s\t%s\t%i\t%s\t%s\n" %(chr_id, win_peak_reg_s, win_peak_reg_e, ref_pol, top_pos_ext_s, top_pos_ext_e, peak_id, str(top_sc), str(p_val), str(best_sc), sal_peak_pos, sal_peak_seq, win_seq))
+
+                if output_more_files:
+                    PEAKREGOUT.write("%s\t%i\t%i\t%s,%i,%f\t0\t+\n" %(seq_id, peak_s, peak_e, peak_id, top_pos, top_sc))
                 # #PEAKPOSOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_s, top_pos, peak_id, top_pos, top_sc))
                 # PEAKWINOUT.write("%s\t%i\t%i\t%s,%i\t%f\t+\n" %(seq_id, top_pos_ext_s, top_pos_ext_e, peak_id, top_pos, top_sc))
                 # # Reference coordinates.
@@ -3084,8 +3091,9 @@ def main_predict(args):
         WINPEAKBED.close()
         WINPEAKOUT.close()
 
-        # PROFOUT.close()
-        # PEAKREGOUT.close()
+        if output_more_files:
+            PROFOUT.close()
+            PEAKREGOUT.close()
         # PEAKWINOUT.close()
         # if not only_seq:
         #     PEAKREGREFOUT.close()
@@ -3254,7 +3262,7 @@ def main_gt(args):
         c_pos_seqs = len(pos_seqs_dic)
         assert c_pos_seqs > min_n_sites, "use reasonable numbers of --in training sites (found %i, best to use > 1000)" %(c_pos_seqs)
         if c_pos_seqs < 1000:
-            print("WARNING: < 1,000 (%i) --in sites provided for training ... ") %(c_pos_seqs)
+            print("WARNING: < 1,000 (%i) --in sites provided for training ... " %(c_pos_seqs))
         # Sequence character counts.
         seq_cc_dic = rplib.seqs_dic_count_chars(pos_seqs_dic)
         # Allowed sequence characters.
@@ -3274,7 +3282,7 @@ def main_gt(args):
             c_neg_seqs = len(neg_seqs_dic)
             assert c_neg_seqs > min_n_sites, "use reasonable numbers of --neg-in training sites (found %i, best to use > 1000)" %(c_neg_seqs)
             if c_neg_seqs < 1000:
-                print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... ") %(c_neg_seqs)
+                print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... " %(c_neg_seqs))
         else:
             print("Generating training set from --in (shuffling positives to get negatives) ... ")
             print("Set shuffling method: %i-nucleotide shuffling" %(args.shuffle_k))
@@ -3439,7 +3447,7 @@ def main_gt(args):
     c_pos_sites = rplib.count_file_rows(args.in_sites)
     assert c_pos_sites > min_n_sites, "use reasonable numbers of --in training sites (found %i, best to use > 1000)" %(c_pos_sites)
     if c_pos_sites < 1000:
-        print("WARNING: < 1,000 (%i) --in sites provided for training ... ") %(c_pos_sites)
+        print("WARNING: < 1,000 (%i) --in sites provided for training ... " %(c_pos_sites))
     assert rplib.bed_check_six_col_format(args.in_sites), "--in BED file appears to be not in 6-column BED format"
     if args.mask_bed:
         assert os.path.exists(args.mask_bed), "--mask-bed BED file \"%s\" not found" %(args.mask_bed)
@@ -3504,7 +3512,7 @@ def main_gt(args):
         c_neg_sites = rplib.count_file_rows(args.in_neg_sites)
         assert c_neg_sites > min_n_sites, "use reasonable numbers of --neg-in training sites (found %i, best to use > 1000)" %(c_neg_sites)
         if c_neg_sites < 1000:
-            print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... ") %(c_neg_sites)
+            print("WARNING: < 1,000 (%i) --neg-in sites provided for training ... " %(c_neg_sites))
 
     # Mode settings output file.
     SETOUT = open(settings_file, "w")

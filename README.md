@@ -1,14 +1,18 @@
 # RNAProt
 
-RNAProt is a computational RBP binding site prediction framework based on recurrent neural networks (RNNs). Conceived as an end-to-end method, the RNAProt framework includes all necessary functionalities, from dataset generation over model training to the evaluation of binding preferences and binding site prediction. Various input types and features are supported, accompanied by comprehensive statistics and visualizations to inform the user about datatset characteristics and learned model properties.
+RNAProt is a computational RBP binding site prediction framework based on recurrent neural networks (RNNs). Conceived as an end-to-end method, RNAProt includes all necessary functionalities, from dataset generation over model training to the evaluation of binding preferences and binding site prediction. Various input types and features are supported, accompanied by comprehensive statistics and visualizations to inform the user about datatset characteristics and learned model properties.
 
 
 ## Table of contents
 
 - [RNAProt framework introduction](#the-rnaprot-framework)
 - [RNAProt installation](#installation)
+    - [Installation via Conda](#conda)
+    - [Manual installation](#conda)
+    
+    
     - [Nvidia driver and CUDA](#nvidia-driver-and-cuda)
-    - [Conda](#conda)
+
     - [PyTorch and PyTorch geometric](#pytorch-and-pytorch-geometric)
     - [Additional libraries](#additional-libraries)
     - [Tool installation](#tool-installation)
@@ -23,22 +27,148 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
 ## The RNAProt framework
 
 
-GraphProt2 utilizes RBP binding sites identified by CLIP-seq and related protocols to train a graph convolutional neural network (GCN) based model. The model is then used to predict new binding sites on given input RNA sequences. The following figure illustrates the GraphProt2 framework and its general workflow:
+RNAProt utilizes RBP binding sites identified by CLIP-seq and related protocols to train an RNN-based model. The model is then used to predict new binding sites on given input RNA sequences. The following figure illustrates the RNAProt framework and its general workflow:
 
 
-<img src="docs/framework_overview.png" alt="GraphProt2 framework overview"
-	title="GraphProt2 framework overview" width="550" />
+<img src="docs/framework_overview.png" alt="RNAProt framework overview"
+	title="RNAProt framework overview" width="550" />
 
 
-Yellow boxes mark necessary framework inputs, blue boxes the five program modes of GraphProt2, and green boxes the framework outputs. Arrows show the dependencies between inputs, modes, and outputs. GraphProt2 requires at least three inputs: a set of RBP binding sites (either in BED or FASTA format), a genomic sequence file (.2bit format), and a genomic annotations file (GTF format). Binding sites can be supplied either as sequences, genomic regions, or as transcript regions (GTF file with corresponding transcript annotation required). Additional inputs are available, depending on the binding site input type as well as the selected features.
-For more details on inputs, modes, supported features, and outputs, see the documentation below.
+Yellow boxes mark necessary framework inputs, blue boxes the five program modes of RNAProt, and green boxes the framework outputs. Arrows show the dependencies between inputs, modes, and outputs. RNAProt accepts RBP binding sites in FASTA or BED format. The latter one also requires a genomic sequence file (.2bit format) and a genomic annotations file (GTF format).
 
+
+RNAProt requires at least three inputs: a set of RBP binding sites (either in BED or FASTA format), a genomic sequence file (.2bit format), and a genomic annotations file (GTF format). 
+Binding sites can be supplied either as sequences, genomic regions, or as transcript regions (GTF file with corresponding transcript annotation required). 
+Additional inputs are available, depending on the binding site input type as well as the selected features. For more details on inputs, modes, supported features, and outputs, see the documentation below.
 
 
 
 ## Installation
 
-GraphProt2 was tested on Ubuntu (18.04 LTS), with Nvidia driver 440, CUDA Toolkit 10.0, and various Nvidia graphics cards (RTX 2080 Ti, RTX 2070, GTX 1060, GTX 1030). The following installation instructions worked on all tested Ubuntu (18.04 LTS) systems so far, and should therefore also be reproducible on other Linux distributions (minor differences aside).
+RNAProt was tested on Ubuntu (18.04 LTS), with Nvidia driver >=440, CUDA >=10, and various Nvidia graphics cards (RTX 2080 Ti, RTX 2070, GTX 1060, GTX 1030). We thus assume that you have a similar system available and running. While RNAProt runs fine without a dedicated GPU, we definitely recommend having an Nvidia graphics card with CUDA support for speeding up model training (specifically we recommend a >= GTX 1060 or a similar newer model, with >= 4 GB RAM).
+In the following we show how to install RNAProt via Conda package (easiest way + recommended), or alternatively manually (not too difficult either). In any case, you first need Conda running on your computer.
+
+### Conda
+
+If you do not have Conda yet, you can e.g. install miniconda, a free + lightweight Conda installer. Get miniconda [here](https://docs.conda.io/en/latest/miniconda.html), choose the Python 3.8 Miniconda3 Linux 64-bit installer and follow the installation instructions. In the end, Conda should be evocable on the command line via (possibly in a different version):
+
+```
+$ conda --version
+conda 4.9.2
+```
+
+### Conda package installation
+
+RNAProt is available as Conda package [here](https://anaconda.org/bioconda/rnaprot). This is the most convenient way to install RNAProt, since Conda takes care of all the dependencies. Note however that the Conda package version might not always be the latest release (but we work hard to not let this happen).
+
+We recommend to create a Conda environment inside which we will then install RNAProt:
+
+```
+conda create -n rnaprotenv python=3.8 -c conda-forge bioconda
+conda activate rnaprotenv
+ conda install -c bioconda rnaprot
+```
+
+Now RNAProt should be available inside the environment:
+
+
+```
+rnaprot -h
+```
+
+Finally, if you have a compatible GPU, we want to check whether the GPU (CUDA and Nvidia CUDA Compiler nvcc) is available for RNAProt:
+
+```
+python -c "import torch; print(torch.__version__)"
+python -c "import torch; print(torch.cuda.is_available())"
+python -c "import torch; print(torch.version.cuda)"
+nvcc --version
+```
+
+In our test case this delivered:
+
+```
+$ python -c "import torch; print(torch.__version__)"
+1.7.1
+$ python -c "import torch; print(torch.cuda.is_available())"
+True
+$ python -c "import torch; print(torch.version.cuda)"
+10.2
+$ nvcc --version
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2018 NVIDIA Corporation
+Built on Sat_Aug_25_21:08:01_CDT_2018
+Cuda compilation tools, release 10.0, V10.0.130
+```
+
+This is great news, meaning that we can RNAProt with GPU support.
+
+
+
+### Manual installation
+
+
+
+
+
+
+Finally, we want to check whether the GPU (CUDA and Nvidia CUDA Compiler nvcc) i
+
+
+Finally, to check whether pyTorch, CUDA and the GPU is available for computing:
+
+
+Nvidia CUDA Compiler
+
+
+```
+python -c "import torch; print(torch.__version__)"
+python -c "import torch; print(torch.cuda.is_available())"
+python -c "import torch; print(torch.version.cuda)"
+nvcc --version
+```
+
+
+If you do have a compatible GPU, you ca
+
+
+
+
+Once installed, we create an environment named gp2env and activate it:
+
+
+If you do not have conda yet, you can e.g. install miniconda, a free + lightweight conda installer. Get miniconda [here](https://docs.conda.io/en/latest/miniconda.html), choose the Python 3.8 Miniconda3 Linux 64-bit installer and follow the installation instructions. In the end, conda should be evocable via (possibly in a different version):
+
+```
+$ conda --version
+conda 4.9.2
+```
+
+
+
+
+
+
+### Manual installation
+
+
+To install CLIPcontext, simply clone the repository and use the Python script within the folder:
+
+```
+git clone https://github.com/BackofenLab/CLIPcontext.git
+cd CLIPcontext
+python -m pip install . --ignore-installed --no-deps -vv
+```
+
+CLIPcontext can also be installed via [conda](https://anaconda.org/bioconda/clipcontext). This is the most convenient way to install CLIPcontext, since conda takes care of all the dependencies. Note however that the conda version might not always be the latest release.
+
+
+
+
+CLIPcontext can also be installed via conda. This is the most convenient way to install CLIPcontext, since conda takes care of all the dependencies. Note however that the conda version might not always be the latest release.
+
+
+
 
 
 ### Nvidia driver and CUDA

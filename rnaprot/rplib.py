@@ -1259,18 +1259,18 @@ def fasta_check_fasta_file(fasta_file):
     lines = output.split("\n")
     c_headers = 0
     c_seqs = 0
+    c_other = 0
     for line in lines:
         if re.search(">.+", line):
             c_headers += 1
         elif re.search("[ACGTUN]+", line, re.I):
             c_seqs += 1
         else:
-            return False
+            c_other += 1
     if c_headers and c_seqs:
-        if c_headers == c_seqs:
-            return True
-        else:
-            return False
+        return True
+    else:
+        return False
 
 
 ################################################################################
@@ -12573,6 +12573,7 @@ def add_label_plot(df, fig, gs, i,
                    add_x_ticks=False,
                    x_tick_spacing=10,
                    x_tick_start=1,
+                   ref_pol="+",
                    koma_sepp_1000=True,
                    y_label="exon-intron"):
     """
@@ -12597,10 +12598,12 @@ def add_label_plot(df, fig, gs, i,
     logo.style_spines(spines=['bottom'], visible=False)
     #logo.style_xticks(rotation=90, fmt='%d', anchor=0)
     if add_x_ticks:
-
+        l_seq = len(df)
         first_tick = round10up(x_tick_start)
         anchor = round10down(x_tick_start) - x_tick_start
-        l_seq = len(df)
+        if ref_pol == "-":
+            x_tick_end = x_tick_start + l_seq - 1
+            anchor = x_tick_end - round10up(x_tick_end)
 
         end_range = first_tick-x_tick_spacing+l_seq-anchor
         if not anchor:
@@ -12608,8 +12611,13 @@ def add_label_plot(df, fig, gs, i,
 
         # Fix xticks.
         logo.style_xticks(rotation=0, fmt='%d', anchor=anchor, spacing=10)
-        x_tick_labels = []
+        x_tick_numbers = []
         for x in range(first_tick, end_range, x_tick_spacing):
+            x_tick_numbers.append(x)
+        if ref_pol == "-":
+            x_tick_numbers.reverse()
+        x_tick_labels = []
+        for x in x_tick_numbers:
             if koma_sepp_1000:
                 x_tick_labels.append('{:,}'.format(x))
             else:
@@ -12848,6 +12856,7 @@ def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
                                   plot_out_file,
                                   x_tick_start=1,
                                   koma_sepp_1000=False,
+                                  ref_pol="+",
                                   sal_list=False,
                                   avg_sal_list=False,
                                   single_pert_list=False,
@@ -12938,6 +12947,7 @@ def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
                    y_label="sequence",
                    add_x_ticks=True,
                    koma_sepp_1000=koma_sepp_1000,
+                   ref_pol=ref_pol,
                    x_tick_start=x_tick_start,
                    y_label_size=4)
     # add_importance_scores_plot(is_df, fig, gs, i_plot,
