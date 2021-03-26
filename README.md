@@ -151,32 +151,31 @@ We first train a sequence model, using a provided set of positive and negative F
 rnaprot train -h
 ```
 
-Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the test/ folder as training data. To get training set statistics, we also enable --report:
+Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the test/ folder as training data. To get training set statistics, we also enable `--report`:
 
 
 ```
 rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out PUM2_PARCLIP_gt_out --report
 ```
 
-We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. `--str`), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set (see Sequence complexity distribution).
+We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. structure, conservation scores, region annotations), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity shown for the postive set.
 
-Next we train a model on the created dataset, using default parameters. For this we simply run rnaprot train with the rnaprot gt output folder as --in folder. We also enable --verbose-train, to see the learning progress over the number of epochs:
+
+Next we train a model on the created dataset, using default parameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
 
 ```
 rnaprot train --in test_gt_out --out test_train_out --verbose-train
 ```
 
-In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters.
-
-To visualize what our just trained model has learned, we next run "rnaprot eval", which needs both the rnaprot gt and rnaprot train output folders:
+In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. To visualize what our just-trained model has learned, we next run `rnaprot eval`, which requires both the `rnaprot gt` and `rnaprot train` output folders:
 
 ```
 rnaprot eval --gt-in test_gt_out --train-in test_train_out --out test_eval_out
 ```
 
-This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites. The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. --report for additional statistics, comparing two models, specifying motif sizes and profiles to plot).
+This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
 
-Now that we have model for prediction, we next create a prediction dataset, choosing the lncRNA NORAD for window prediction. NORAD was shown to act as a decoy for PUMILIO proteins (PUM1/PUM2). We therefore use its FASTA sequence as input:
+Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA NORAD for window prediction. NORAD was shown to act as a [decoy](https://www.sciencedirect.com/science/article/pii/S0092867415016414) for PUMILIO proteins (PUM1/PUM2). We therefore use its FASTA sequence as input:
 
 rnaprot gp --in test/NORAD_lncRNA.fa --train-in test_train_out --out test_gp_out --report
 
