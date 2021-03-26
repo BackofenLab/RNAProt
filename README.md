@@ -64,7 +64,7 @@ We recommend to create a Conda environment inside which we will then install RNA
 ```
 conda create -n rnaprotenv python=3.8 -c conda-forge bioconda
 conda activate rnaprotenv
- conda install -c bioconda rnaprot
+conda install -c bioconda rnaprot
 ```
 
 Now RNAProt should be available inside the environment:
@@ -83,7 +83,7 @@ python -c "import torch; print(torch.version.cuda)"
 nvcc --version
 ```
 
-In our test case this delivered:
+In our test case this delivers:
 
 ```
 $ python -c "import torch; print(torch.__version__)"
@@ -105,7 +105,7 @@ This is great news, meaning that we can RNAProt with GPU support.
 
 ### Manual installation
 
-To manually install RNAProt, we first create a Conda environment (as described in [above](#conda)). Once inside the environment, we need to install the following dependencies:
+To manually install RNAProt, we first create a Conda environment (as described [above](#conda)). Once inside the environment, we need to install the following dependencies:
 
 ```
 conda install -c conda-forge pytorch=1.7.1=cuda102py38h9f8c3ab_1 cudatoolkit=10.2
@@ -134,11 +134,11 @@ Finally, to install RNAProt, we simply clone the repository and execute the inst
 
 ```
 git clone https://github.com/BackofenLab/RNAProt.git
-cd CLIPcontext
+cd RNAProt
 python -m pip install . --ignore-installed --no-deps -vv
 ```
 
-Now we can run rnaprot from any given folder (just remember to re-activate the environment once you open a new shell):
+Now we can run RNAProt from any given folder (just remember to re-activate the environment once you open a new shell):
 
 ```
 rnaprot -h
@@ -157,14 +157,14 @@ We first train a sequence model, using a provided set of positive and negative F
 rnaprot train -h
 ```
 
-Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the test/ folder as training data. To get training set statistics, we also enable `--report`:
+Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the `test` folder as training data. To get training set statistics, we also enable `--report`:
 
 
 ```
 rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out PUM2_PARCLIP_gt_out --report
 ```
 
-We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. structure, conservation scores, region annotations), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity shown for the postive set.
+We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. structure, conservation scores, region annotations), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set.
 
 
 Next we train a model on the created dataset, using default parameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
@@ -179,7 +179,7 @@ In the end we get a summary for the trained model, e.g. reporting the model vali
 rnaprot eval --gt-in PUM2_PARCLIP_gt_out --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_eval_out
 ```
 
-This will plot a sequence logo informing about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
+This will plot a sequence logo informing us about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
 
 Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. *NORAD* was shown to act as a [decoy for PUMILIO proteins](https://www.sciencedirect.com/science/article/pii/S0092867415016414) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
 
@@ -192,7 +192,7 @@ Note that the input can be any number of sequences, genomic regions, or transcri
 By default, RNAProt predicts whole sites, i.e., we would get one score returned for the whole lncRNA. To run the window prediction, we use `--mode 2`, and also plot the top window profiles containing the reported peak regions:
 
 ```
-rnaprot predict --in test_gp_out --train-in test_train_out/ --out test_predict_out --mode 2 --plot-top-profiles
+rnaprot predict --in PUM2_PARCLIP_gp_out --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_NORAD_predict_out --mode 2 --plot-top-profiles
 ```
 
 Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for `rnaprot eval`. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the [Documentation](#documentation).
@@ -250,138 +250,21 @@ $ cat ENST00000565493.bed
 ENST00000565493	0	5401	ENST00000565493	0	+
 ```
 
-We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (always excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). For now we will use the gene region, on which `rnaprot predict` will then predict and return peak regions with directly with genomic coordinates (also contained inside the profiles for easier orientation):
+We can now use any of the two as input to `rnaprot gp`. As one would expect, extracting and providing the transcript region will result in predictions only on the transcript sequence (always excluding introns), while providing the gene region will result in predictions on the whole gene region (usually including introns). For now we will use the gene region, on which `rnaprot predict` will then predict and return peak regions directly with genomic coordinates (also contained inside the profiles for easier orientation):
 
 ```
 rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --train-in PUM2_K562_IDR_train_out
 
 rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_NORAD_predict_out --mode 2 --plot-top-profiles
-
 ```
 
 
+#### Test example with additional features
 
 
 
 
 
-
-
-
-
-### Test run
-
-A small BED file of genomic RBP binding regions as well as a list of transcript IDs is already provided in the test/ subfolder. First we download and store all the remaining necessary datasets in the same folder:
-```
-cd test/
-wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
-wget ftp://ftp.ensembl.org/pub/release-98/gtf/homo_sapiens/Homo_sapiens.GRCh38.98.gtf.gz
-```
-
-
-
-for human hg38 assembly here).
-
-
-  You can download the GTF file for all major
-
-
-
- of these.
-
-
-
-
-- A GTF file with genomic annotations from Ensembl (see [download page](http://www.ensembl.org/info/data/ftp/index.html))
-
-(for hg38 assembly click [here](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit))
-
-
-
-
-
-``
-
-
-
-
-
-We will first train and apply a sequence model using a provided set of FASTA sequences, and in the second example 
-
- inside the RNAProt folder, with the datasets provided in the `test/` subfolder. First we generate a training dataset and the corresponding HTML report by:
-
-
-
-
-
-
-
-
-
-Again with only conda now on i7:
-
-conda create -n rnaprotenv2 python=3.8  -c conda-forge # 32.4 MB
-conda activate rnaprotenv2
-#conda install -c conda-forge pytorch=1.7.1 cudatoolkit=10.2 # 512.0 MB (incl. numpy 1.19.2 !)
-
-# Do this instead:
-conda install -c conda-forge pytorch=1.7.1=cuda102py38h9f8c3ab_1 cudatoolkit=10.2
-
-
-conda install -c conda-forge seaborn=0.11.1 # 50.3 MB (incl pandas 1.2.3, statsmodels 0.12.2 matplotlib base 3.3.4 (!) ).
-
-#conda install -c conda-forge numpy=1.19.2
-#conda install -c conda-forge statsmodels=0.12.2
-
-conda install -c bioconda viennarna=2.4.17
-conda install -c bioconda bedtools=2.29.2
-conda install -c bioconda logomaker=0.8 # 182.2 MB ! (this also includes matplotlib 3.3.4 )
-
-conda install -c conda-forge hpbandster=0.7.4 # 3.2 MB
-conda install -c conda-forge markdown=3.2.2
-conda install -c conda-forge plotly=4.14.3  # 5.9 MB
-conda install -c bioconda ushuffle=1.1.2  (no 1.1.2), try 1.2.2
-conda install -c bioconda ushuffle=1.2.2 # 25 KB
-
-
-conda install -c bioconda ucsc-twobitinfo # 3.0 MB
-conda install -c bioconda ucsc-twobittofa # 442 KB
-conda install -c bioconda ucsc-bigwigaverageoverbed # 443 KB
-
-conda install -c conda-forge scikit-learn=0.24.1 # 8.1 MB
-
-
-Finally, we want to check whether the GPU (CUDA and Nvidia CUDA Compiler nvcc) i
-
-
-Finally, to check whether pyTorch, CUDA and the GPU is available for computing:
-
-
-Nvidia CUDA Compiler
-
-
-```
-python -c "import torch; print(torch.__version__)"
-python -c "import torch; print(torch.cuda.is_available())"
-python -c "import torch; print(torch.version.cuda)"
-nvcc --version
-```
-
-
-If you do have a compatible GPU, you ca
-
-
-
-
-Once installed, we create an environment named gp2env and activate it:
-
-
-If you do not have conda yet, you can e.g. install miniconda, a free + lightweight conda installer. Get miniconda [here](https://docs.conda.io/en/latest/miniconda.html), choose the Python 3.8 Miniconda3 Linux 64-bit installer and follow the installation instructions. In the end, conda should be evocable via (possibly in a different version):
-
-```
-$ conda --version
-conda 4.9.2
-```
 
 
 
