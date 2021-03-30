@@ -258,6 +258,25 @@ rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out
 
 ### Test example with additional features
 
+RNAProt supports various additional position(nucleotide)-wise features to learn from, such as secondary structure, region annotations (including user-defined ones), or conservation scores (see [Documentation](#documentation) for details). For this we have to specify what features to include in `rnaprot gt` and `rnaprot gp`, and depending on the feature also provide additional files. For model training (`rnaprot train`) we can then specify what features to use for training, from the features included in `rnaprot gt`. This has the advantage that features need to be extracted or computed only once, and that various feature combinations can be tested in training. For this example, we want to include secondary structure.
+
+
+
+
+
+
+all included features, or select an
+
+
+the necessary input data and parameters
+
+
+
+
+
+
+)
+
 CDE sites with structure prediction
 add to test folder
 
