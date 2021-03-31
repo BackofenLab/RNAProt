@@ -169,7 +169,7 @@ rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negati
 We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. structure, conservation scores, region annotations), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set.
 
 
-Next we train a model on the created dataset, using default parameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
+Next we train a model on the created dataset, using the default hyperparameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
 
 ```
 rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_train_out --verbose-train
