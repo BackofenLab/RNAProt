@@ -14,7 +14,7 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
     - [Test example with FASTA sequences as input](#test-example-with-fasta-sequences-as-input)
     - [Test example with genomic regions as input](#test-example-with-genomic-regions-as-input)
     - [Test example with additional features](#test-example-with-additional-features)
-- [GraphProt2 documentation](#documentation)
+- [RNAProt documentation](#documentation)
     - [Program modes](#program-modes)
     - [Supported features](#supported-features)
     - [Inputs](#inputs)
