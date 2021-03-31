@@ -276,6 +276,15 @@ rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sa
 rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_NORAD_predict_out --mode 2 --plot-top-profiles
 ```
 
+Note that in this example we did not filter out sites that overlap with the NORAD gene region from `PUM2_K562_IDR_peaks.bed` prior to training. To filter out the overlapping sites, we can use intersectBed (from bedtools) for BED file intersection calculation, and again run `rnaprot gt`, `rnaprot train`, and `rnaprot predict`:
+
+```
+intersectBed -a PUM2_K562_IDR_peaks.bed -b ENSG00000260032.bed -v -s > PUM2_K562_IDR_peaks_no2norad.bed 
+rnaprot gt --in PUM2_K562_IDR_peaks_no2norad.bed --out PUM2_K562_IDR_no2norad_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --report
+rnaprot train --in PUM2_K562_IDR_no2norad_gt_out --out PUM2_K562_IDR_no2norad_train_out --verbose-train
+rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_no2norad_train_out --out PUM2_K562_IDR_no2norad_predict_out --mode 2 --plot-top-profiles
+```
+
 
 ### Test example with additional features
 
