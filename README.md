@@ -340,10 +340,7 @@ zip my_cde_model.zip CDE_sites_str_train_out/*
 ```
 
 
-Note however that predictions between two models can vary, since negative sites generation is random. Moreover, even models trained on the same positive and negative sites are slightly different from another and thus can lead to slightly different predictions. This is because model training incorporates stochastic processes, like the random initialization of network weights, or the application of dropout.
-
-
-
+Note however that predictions between two models can vary, since negative sites generation is random. Moreover, even models trained on the same positive and negative sites are slightly different from one another and thus can lead to slightly different predictions. This is because model training incorporates stochastic processes, like the random initialization of network weights, or the application of dropout.
 
 
 ## Documentation
@@ -354,7 +351,7 @@ This documentation provides details on all the RNAProt (version 0.1) framework p
 
 ### Program modes
 
-GraphProt2 is divided into five different program modes: training set generation, prediction set generation, model training, model evaluation, and model prediction.
+RNAProt is divided into five different program modes: training set generation (`rnaprot gt`), prediction set generation (`rnaprot gp`), model training (`rnaprot train`), model evaluation (`rnaprot eval`), and model prediction (`rnaprot predict`).
 
 
 An overview of the modes can be obtained by:
@@ -386,127 +383,69 @@ The following sections describe each mode in more detail.
 
 #### Training set generation
 
-The following command line arguments are available in `graphprot2 gt` mode:
+The following command line arguments are available in `rnaprot gt` mode:
 
 ```
-graphprot2 gt -h
-usage: graphprot2 gt [-h] --in str --out str [--gtf str] [--gen str]
-                     [--mode {1,2,3}] [--mask-bed str] [--seq-ext int]
-                     [--con-ext int] [--thr float] [--rev-filter]
-                     [--max-len int] [--min-len int] [--keep-ids]
-                     [--allow-overlaps] [--no-gene-filter] [--con-ext-pre]
-                     [--neg-comp-thr float] [--neg-factor {2,3,4,5}]
-                     [--keep-add-neg] [--neg-in str] [--shuffle-k {1,2,3}]
-                     [--report] [--theme {1,2}] [--eia] [--eia-ib] [--eia-n]
-                     [--tr-list str] [--phastcons str] [--phylop str] [--tra]
-                     [--tra-codons] [--tra-borders] [--rra] [--str] [--bp-in]
-                     [--plfold-u int] [--plfold-l int] [--plfold-w int]
+$ rnaprot gt -h
+usage: rnaprot gt [-h] --in str --out str [--gtf str] [--gen str] [--mode {1,2,3}] [--mask-bed str] [--seq-ext int] [--thr float] [--rev-filter] [--max-len int]
+                  [--min-len int] [--keep-ids] [--allow-overlaps] [--no-gene-filter] [--neg-comp-thr float] [--neg-factor {2,3,4,5}] [--keep-add-neg] [--neg-in str]
+                  [--shuffle-k {1,2,3}] [--report] [--theme {1,2}] [--eia] [--eia-ib] [--eia-n] [--eia-all-ex] [--tr-list str] [--phastcons str] [--phylop str] [--tra]
+                  [--tra-codons] [--tra-borders] [--rra] [--str] [--plfold-u int] [--plfold-l int] [--plfold-w int] [--feat-in str] [--feat-in-1h] [--feat-in-norm]
 
 optional arguments:
   -h, --help            show this help message and exit
   --gtf str             Genomic annotations GTF file (.gtf or .gtf.gz)
   --gen str             Genomic sequences .2bit file
-  --mode {1,2,3}        Define mode for --in BED site extraction. (1) Take the
-                        center of each site, (2) Take the complete site, (3)
-                        Take the upstream end for each site. Note that --min-
-                        len applies only for --mode 2 (default: 1)
-  --mask-bed str        Additional BED regions file (6-column format) for
-                        masking negatives (e.g. all positive RBP CLIP sites)
-  --seq-ext int         Up- and downstream sequence extension of sites (site
-                        definition by --mode) with uppercase characters
-                        (default: 30)
-  --con-ext int         Up- and downstream context sequence extension of sites
-                        (site definition by --mode) with lowercase characters.
-                        Note that statistics (--report) are produced only for
-                        uppercase sequence parts (defined by --seq-ext)
-                        (default: False)
-  --thr float           Minimum site score (--in BED column 5) for filtering
-                        (assuming higher score == better site) (default: None)
-  --rev-filter          Reverse --thr filtering (i.e. the lower the better,
-                        e.g. for p-values) (default: False)
+  --mode {1,2,3}        Define mode for --in BED site extraction. (1) Take the center of each site, (2) Take the complete site, (3) Take the upstream end for each site.
+                        Note that --min-len applies only for --mode 2 (default: 1)
+  --mask-bed str        Additional BED regions file (6-column format) for masking negatives (e.g. all positive RBP CLIP sites)
+  --seq-ext int         Up- and downstream sequence extension length of sites (site definition by --mode) (default: 40)
+  --thr float           Minimum site score (--in BED column 5) for filtering (assuming higher score == better site) (default: None)
+  --rev-filter          Reverse --thr filtering (i.e. the lower the better, e.g. for p-values) (default: False)
   --max-len int         Maximum length of --in sites (default: 300)
-  --min-len int         Minimum length of --in sites (only effective for
-                        --mode 2). If length < --min-len, take center and
-                        extend to --min-len. Use uneven numbers for equal up-
-                        and downstream extension (default: 21)
-  --keep-ids            Keep --in BED column 4 site IDs. Note that site IDs
-                        have to be unique (default: False)
-  --allow-overlaps      Do not select for highest-scoring sites in case of
-                        overlapping sites (default: False)
-  --no-gene-filter      Do not filter positives based on gene coverage (gene
-                        annotations from --gtf) (default: False)
-  --con-ext-pre         Add --con-ext extension before selecting for highest-
-                        scoring sites in case of overlaps (not afterwards)
-                        (default: False)
-  --neg-comp-thr float  Sequence complexity (Shannon entropy) threshold for
-                        filtering random negative regions (default: 0.5)
+  --min-len int         Minimum length of --in sites (only effective for --mode 2). If length < --min-len, take center and extend to --min-len. Use uneven numbers for
+                        equal up- and downstream extension (default: 21)
+  --keep-ids            Keep --in BED column 4 site IDs. Note that site IDs have to be unique (default: False)
+  --allow-overlaps      Do not select for highest-scoring sites in case of overlapping sites (default: False)
+  --no-gene-filter      Do not filter positives based on gene coverage (gene annotations from --gtf) (default: False)
+  --neg-comp-thr float  Sequence complexity (Shannon entropy) threshold for filtering random negative regions (default: 0.5)
   --neg-factor {2,3,4,5}
-                        Determines number of initial random negatives to be
-                        extracted (== --neg-factor n times # positives)
-                        (default: 2)
-  --keep-add-neg        Keep additional negatives (# controlled by --neg-
-                        factor) instead of outputting same numbers of positive
-                        and negative sites (default: False)
-  --neg-in str          Negative genomic or transcript sites in BED (6-column
-                        format) or FASTA format (unique IDs required). Use
-                        with --in BED/FASTA. If not set, negatives are
-                        generated by shuffling --in sequences (if --in FASTA)
-                        or random selection of genomic or transcript sites (if
-                        --in BED)
-  --shuffle-k {1,2,3}   Supply k for k-nucleotide shuffling of --in sequences
-                        to generate negative sequences (if no --neg-fa
-                        supplied) (default: 2)
-  --report              Output an .html report providing various training set
-                        statistics and plots (default: False)
-  --theme {1,2}         Set theme for .html report (1: default, 2: midnight
-                        blue) (default: 1)
+                        Determines number of initial random negatives to be extracted (== --neg-factor n times # positives) (default: 2)
+  --keep-add-neg        Keep additional negatives (# controlled by --neg-factor) instead of outputting same numbers of positive and negative sites (default: False)
+  --neg-in str          Negative genomic or transcript sites in BED (6-column format) or FASTA format (unique IDs required). Use with --in BED/FASTA. If not set,
+                        negatives are generated by shuffling --in sequences (if --in FASTA) or random selection of genomic or transcript sites (if --in BED)
+  --shuffle-k {1,2,3}   Supply k for k-nucleotide shuffling of --in sequences to generate negative sequences (if no --neg-in supplied) (default: 2)
+  --report              Output an .html report providing various training set statistics and plots (default: False)
+  --theme {1,2}         Set theme for .html report (1: palm beach, 2: midnight sunset) (default: 1)
 
 required arguments:
-  --in str              Genomic or transcript RBP binding sites file in BED
-                        (6-column format) or FASTA format. If --in FASTA, only
-                        --str is supported as additional feature. If --in BED,
-                        --gtf and --gen become mandatory
-  --out str             Output training data folder (== input folder to
-                        graphprot2 train)
+  --in str              Genomic or transcript RBP binding sites file in BED (6-column format) or FASTA format. If --in FASTA, only --str is supported as additional
+                        feature. If --in BED, --gtf and --gen become mandatory
+  --out str             Output training data folder (== input folder to rnaprot train)
 
 additional annotation arguments:
-  --eia                 Add exon-intron annotations to genomic regions
-                        (default: False)
-  --eia-ib              Add intron border annotations to genomic regions (in
-                        combination with --exon-intron) (default: False)
-  --eia-n               Label regions not covered by intron or exon regions as
-                        N instead of labelling them as introns (I) (in
-                        combination with --exon-intron) (default: False)
-  --tr-list str         Supply file with transcript IDs (one ID per row) for
-                        exon intron labeling (using the corresponding exon
-                        regions from --gtf). By default, exon regions of the
-                        most prominent transcripts (automatically selected
-                        from --gtf) are used (default: False)
-  --phastcons str       Genomic .bigWig file with phastCons conservation
-                        scores to add as annotations
-  --phylop str          Genomic .bigWig file with phyloP conservation scores
-                        to add as annotations
-  --tra                 Add transcript region annotations (5'UTR, CDS, 3'UTR,
-                        None) to genomic and transcript regions (default:
-                        False)
-  --tra-codons          Add start and stop codon annotations to genomic or
-                        transcript regions (in combination with --tra)
-                        (default: False)
-  --tra-borders         Add transcript and exon border annotations to
-                        transcript regions (in combination with --tra)
-                        (default: False)
-  --rra                 Add repeat region annotations for genomic or
-                        transcript regions retrieved from --gen .2bit
-                        (default: False)
-  --str                 Add base pairs and position-wise structural elements
-                        probabilities features (calculate with RNAplfold)
-                        (default: False)
-  --bp-in               Supply a custom base pair annotation file for all --in
-                        sites. This disables base pair calculation for the
-                        positive set (default: False)
+  --eia                 Add exon-intron annotations to genomic regions (default: False)
+  --eia-ib              Add intron border annotations to genomic regions (in combination with --eia) (default: False)
+  --eia-n               Label regions not covered by intron or exon regions as N instead of labelling them as introns (I) (in combination with --eia) (default: False)
+  --eia-all-ex          Use all annotated exons in --gtf file, instead of exons of most prominent transcripts or exon defined by --tr-list. Set this and --tr-list will
+                        be effective only for --tra (default: False)
+  --tr-list str         Supply file with transcript IDs (one ID per row) for exon-intron labeling (using the corresponding exon regions from --gtf). By default, exon
+                        regions of the most prominent transcripts (automatically selected from --gtf) are used (default: False)
+  --phastcons str       Genomic .bigWig file with phastCons conservation scores to add as annotations
+  --phylop str          Genomic .bigWig file with phyloP conservation scores to add as annotations
+  --tra                 Add transcript region annotations (5'UTR, CDS, 3'UTR, None) to genomic and transcript regions (default: False)
+  --tra-codons          Add start and stop codon annotations to genomic or transcript regions (in combination with --tra) (default: False)
+  --tra-borders         Add transcript and exon border annotations to transcript regions (in combination with --tra) (default: False)
+  --rra                 Add repeat region annotations for genomic or transcript regions retrieved from --gen .2bit (default: False)
+  --str                 Add secondary structure probabilities features (calculate with RNAplfold) (default: False)
   --plfold-u int        RNAplfold -u parameter value (default: 3)
-  --plfold-l int        RNAplfold -L parameter value (default: 100)
-  --plfold-w int        RNAplfold -W parameter value (default: 150)
+  --plfold-l int        RNAplfold -L parameter value (default: 50)
+  --plfold-w int        RNAplfold -W parameter value (default: 70)
+  --feat-in str         Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add
+  --feat-in-1h          Use one-hot encoding for all additional position-wise features from --feat-in table, ignoring type definitions in --feat-in table (default:
+                        False)
+  --feat-in-norm        Normalize feature values (min-max normalization (0..1) of --feat-in features. --feat-in table column 3 information further controls feature
+                        normalization (default: False)
 
 ```
 
