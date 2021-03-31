@@ -282,10 +282,10 @@ rnaprot train --in CDE_sites_gt_out --out CDE_sites_onlyseq_train_out --only-seq
 To create a prediction set for the structure model, we use the UCP3 gene (transcript ID ENST00000314032), for which the authors validated two CDE sites in its 3'UTR (see [Fig.2A](https://doi.org/10.1093/nar/gky908) blue and red hairpin).
 
 ```
-rnaprot gp --in test/ENST00000314032.fa --train-in CDE_sites_str_train_out --out CDE_sites_str_gp_out --report
+rnaprot gp --in test/ENST00000314032.fa --train-in CDE_sites_str_train_out --out CDE_sites_str_gp_out
 ```
 
-Note that `rnaprot gp` automatically detects what features were used for training the model, enabling structure prediction with set parameters for the prediction set generation. Depending on the additional feature, we thus might have to supply additional input files for extracting the respective feature information. This would be the case for conservation scores (`--phastcons`, `--phylop`), or user-defined features (`--feat-in`). After creating the prediction set we do a window prediction on the transcript:
+Note that `rnaprot gp` automatically detects what features were used for training the model, enabling structure prediction with set parameters for the prediction set generation. Depending on the additional feature, we thus might have to supply additional input files for extracting the respective feature information. This would be the case for conservation scores (`--phastcons`, `--phylop`), or user-defined features (`--feat-in`). After creating the prediction set we run a window prediction on the transcript:
 
 
 ```
@@ -293,7 +293,7 @@ rnaprot predict --in CDE_sites_str_gp_out --train-in CDE_sites_str_train_out --o
 
 ```
 
-In our case we could successfully predict the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406 (see profile positions for comparison), with the second hairpin having a higher folding probability and score. The `test/` folder also includes the model we used to predict, which you can easily use yourself to compare:
+In our case the model successfully predicted the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406 (see plotted profile positions for comparison), with the second hairpin having a higher folding probability and score. The `test/` folder also includes the model we used to predict, which you can easily apply yourself to compare:
 
 ```
 unzip test/cde_sites_str_model_folder.zip
