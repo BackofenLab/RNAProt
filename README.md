@@ -528,6 +528,21 @@ additional annotation arguments:
 
 ```
 
+Note that if genomic or transcript regions are supplied, 
+
+
+
+
+
+
+
+
+--in
+
+
+
+
+
 #### Model training
 
 The following command line arguments are available in `graphprot2 train` mode:
