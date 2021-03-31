@@ -491,7 +491,7 @@ additional annotation arguments:
   --rra                 Add repeat region annotations for genomic or
                         transcript regions retrieved from --gen .2bit
                         (default: False)
-  --str                 Add secondary structure probabilities features
+  --str                 Add secondary structure probabilities feature
                         (calculate with RNAplfold) (default: False)
   --plfold-u int        RNAplfold -u parameter value (default: 3)
   --plfold-l int        RNAplfold -L parameter value (default: 50)
@@ -600,7 +600,7 @@ model definition arguments:
                         performance over epochs (default: False)
   --force-cpu           Run on CPU regardless of CUDA available or not
                         (default: False)
-  --epochs int          Number of training epochs (default: 200)
+  --epochs int          Maximum number of training epochs (default: 200)
   --patience int        Number of epochs to wait for further improvement on
                         validation set before stopping (default: 30)
   --batch-size int      Gradient descent batch size (default: 50)
@@ -623,7 +623,7 @@ model definition arguments:
                         trains the final model with the found best
                         hyperparameter setting. ALSO NOTE that this will take
                         some time (!) (default: False)
-  --bohb-n int          Number of BOHB iterations (default: 50)
+  --bohb-n int          Number of BOHB iterations (default: 80)
   --bohb-min-budget int
                         BOHB minimum budget (default: 5)
   --bohb-max-budget int
@@ -666,7 +666,7 @@ optional arguments:
                         be in positive set from --gt-in
   --bottom-up           Plot bottom profiles as well (default: False)
   --nr-top-sites LIST_NR_TOP_SITES [LIST_NR_TOP_SITES ...]
-                        Specify number(s) of top predicted sites used for
+                        Specify number(s) of top-predicted sites used for
                         motif extraction. Provide multiple numbers (e.g. --nr-
                         top-sites 100 200 500) to extract one motif plot from
                         each site set (default: 200)
@@ -742,7 +742,7 @@ additional annotation arguments:
                    transcripts (automatically selected from --gtf) are used
                    (default: False)
   --eia-all-ex     Use all annotated exons in --gtf file, instead of exons of
-                   most prominent transcripts or exon defined by --tr-list.
+                   most prominent transcripts defined by --tr-list.
                    Set this and --tr-list will be effective only for --tra.
                    NOTE that by default --eia-all-ex is disabled, even if
                    --train-in model was trained with --eia-all-ex (default:
@@ -779,7 +779,7 @@ optional arguments:
   --plot-top-profiles   Plot top window profiles (default: False)
   --plot-format {1,2}   Plotting format of top window profiles. 1: png, 2: pdf
                         (default: 1)
-  --thr {1,2,3}         Define site score threshold setting for reporting peak
+  --thr {1,2,3}         Define site score threshold level for reporting peak
                         regions in --mode 2 (window prediction). 1: relaxed,
                         2: standard, 3: strict (default: 2)
   --site-id LIST_SITE_IDS [LIST_SITE_IDS ...]

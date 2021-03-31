@@ -194,7 +194,7 @@ def setup_argument_parser():
                    type = int,
                    metavar='int',
                    default = 200,
-                   help = "Number of training epochs (default: 200)")
+                   help = "Maximum number of training epochs (default: 200)")
     p_tra.add_argument("--patience",
                    dest="patience",
                    type = int,
@@ -269,8 +269,8 @@ def setup_argument_parser():
                    dest="bohb_n_iter",
                    type = int,
                    metavar='int',
-                   default=50,
-                   help = "Number of BOHB iterations (default: 50)")
+                   default=80,
+                   help = "Number of BOHB iterations (default: 80)")
     p_tra.add_argument("--bohb-min-budget",
                    dest="bohb_min_budget",
                    type = int,
@@ -344,7 +344,7 @@ def setup_argument_parser():
                    type = int,
                    nargs='+',
                    default = [200],
-                   help = "Specify number(s) of top predicted sites used for motif extraction. Provide multiple numbers (e.g. --nr-top-sites 100 200 500) to extract one motif plot from each site set (default: 200)")
+                   help = "Specify number(s) of top-predicted sites used for motif extraction. Provide multiple numbers (e.g. --nr-top-sites 100 200 500) to extract one motif plot from each site set (default: 200)")
     p_ev.add_argument("--motif-size",
                    dest="list_motif_sizes",
                    type = int,
@@ -425,7 +425,7 @@ def setup_argument_parser():
                    type = int,
                    default = 2,
                    choices = [1,2,3],
-                   help = "Define site score threshold setting for reporting peak regions in --mode 2 (window prediction). 1: relaxed, 2: standard, 3: strict (default: 2)")
+                   help = "Define site score threshold level for reporting peak regions in --mode 2 (window prediction). 1: relaxed, 2: standard, 3: strict (default: 2)")
     p_pr.add_argument("--site-id",
                    dest="list_site_ids",
                    type=str,
@@ -583,7 +583,7 @@ def setup_argument_parser():
                    dest="eia_all_ex",
                    default = False,
                    action = "store_true",
-                   help = "Use all annotated exons in --gtf file, instead of exons of most prominent transcripts or exon defined by --tr-list. Set this and --tr-list will be effective only for --tra (default: False)")
+                   help = "Use all annotated exons in --gtf file, instead of exons of most prominent transcripts defined by --tr-list. Set this and --tr-list will be effective only for --tra (default: False)")
     p_gta.add_argument("--tr-list",
                    dest="tr_list",
                    type=str,
@@ -623,7 +623,7 @@ def setup_argument_parser():
                    dest="add_str",
                    default = False,
                    action = "store_true",
-                   help = "Add secondary structure probabilities features (calculate with RNAplfold) (default: False)")
+                   help = "Add secondary structure probabilities feature (calculate with RNAplfold) (default: False)")
     p_gta.add_argument("--plfold-u",
                    dest="plfold_u",
                    type = int,
