@@ -146,7 +146,7 @@ rnaprot -h
 
 ## Test runs
 
-Once installed, we can do some small test runs. 
+Once installed, we can do some quick test runs. 
 
 
 ### Test example with FASTA sequences as input
@@ -157,7 +157,7 @@ We first train a sequence model, using a provided set of positive and negative F
 rnaprot train -h
 ```
 
-Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder, and use the FASTA sequences supplied in the `test` folder as training data. To get training set statistics, we also enable `--report`:
+Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder (clone + enter if not already there from first example), and use the FASTA sequences supplied in the `test` folder as training data. To get training set statistics, we also enable `--report`:
 
 
 ```
@@ -277,7 +277,7 @@ rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sa
 rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_NORAD_predict_out --mode 2 --plot-top-profiles
 ```
 
-Note that in this example we did not filter out sites from `PUM2_K562_IDR_peaks.bed` that overlap with the NORAD gene region prior to training. These sites indeed exist, as we can see in the `rnaprot gt` HTML report (Target region overlap statistics), so for an unbiased prediction we need remove them first. For this we use bedtools intersectBed, and again run `rnaprot gt`, `rnaprot train`, and `rnaprot predict`:
+Note that in this example we did not filter out sites from `PUM2_K562_IDR_peaks.bed` that overlap with the *NORAD* gene region prior to training. These sites indeed exist, as we can see in the `rnaprot gt` HTML report (Target region overlap statistics), so for an unbiased prediction we need remove them first. For this we use bedtools intersectBed, and again run `rnaprot gt`, `rnaprot train`, and `rnaprot predict`:
 
 ```
 intersectBed -a PUM2_K562_IDR_peaks.bed -b ENSG00000260032.bed -v -s > PUM2_K562_IDR_peaks_no2norad.bed 
