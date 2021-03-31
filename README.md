@@ -210,7 +210,23 @@ wget https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit
 wget http://ftp.ensembl.org/pub/release-103/gtf/homo_sapiens/Homo_sapiens.GRCh38.103.gtf.gz
 ```
 
-Next we download some genomic RBP binding regions identified by eCLIP from [ENCODE](https://www.encodeproject.org/). The ENCODE website contains a huge collection of eCLIP datasets for various RBPs. For this example, we again download PUM2 binding sites, choosing the IDR peaks identified by ENCODE's CLIPper pipeline (PUM2 K562 eCLIP dataset ID: ENCFF880MWQ, PUM2 K562 IDR peaks ID: ENCFF880MWQ). We unzip it and change the format to 6-column BED which RNAProt likes best:
+Unfortunately, we sometimes experienced cases where the GTF file was not fully downloaded. You can check this by browsing the file with:
+
+```
+less Homo_sapiens.GRCh38.103.gtf.gz
+```
+
+We would expect something like this appearing as first rows:
+
+```
+#!genome-build GRCh38.p13
+#!genome-version GRCh38
+#!genome-date 2013-12
+#!genome-build-accession NCBI:GCA_000001405.28
+#!genebuild-last-updated 2020-08
+```
+
+If the output is cryptic instead, you need to try again. Next we download some genomic RBP binding regions identified by eCLIP from [ENCODE](https://www.encodeproject.org/). The ENCODE website contains a huge collection of eCLIP datasets for various RBPs. For this example, we again download PUM2 binding sites, choosing the IDR peaks identified by ENCODE's CLIPper pipeline (PUM2 K562 eCLIP dataset ID: ENCFF880MWQ, PUM2 K562 IDR peaks ID: ENCFF880MWQ). We unzip it and change the format to 6-column BED which RNAProt likes best:
 
 ```
 wget https://www.encodeproject.org/files/ENCFF880MWQ/@@download/ENCFF880MWQ.bed.gz
@@ -298,7 +314,8 @@ rnaprot predict --in CDE_sites_str_gp_out --train-in CDE_sites_str_train_out --o
 
 ```
 
-In our case the model successfully predicted the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406 (see plotted profile positions for comparison), with the second hairpin having a higher folding probability and score. The `test/` folder also includes the model we used to predict, which you can easily apply yourself to compare:
+In our case the model successfully predicted the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406, with the second hairpin having a higher folding probability and score. To check we take a look at the reported peak_regions.bed/tsv, or have a look at the plotted profiles, which conveniently includes the transcript coordinates (or genomic in case of genomic sites as input) to quickly identify regions of interest. 
+The `test/` folder also includes the model we used to predict, which you can easily apply yourself to compare:
 
 ```
 unzip test/cde_sites_str_model_folder.zip
