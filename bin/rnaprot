@@ -299,7 +299,7 @@ def setup_argument_parser():
     Model evaluation mode.
     """
     p_ev = subparsers.add_parser('eval',
-                                  help='Evaluate properties learned from positive sites')
+                                  help='Evaluate properties learned from training set')
     p_ev.set_defaults(which='eval')
 
     # Add required arguments group.

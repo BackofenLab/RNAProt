@@ -367,7 +367,7 @@ positional arguments:
   {train,eval,predict,gt,gp}
                         Program modes
     train               Train a binding site prediction model
-    eval                Evaluate properties learned from positive sites
+    eval                Evaluate properties learned from training set
     predict             Predict binding sites (whole sites or profiles)
     gt                  Generate training data set
     gp                  Generate prediction data set
@@ -509,7 +509,7 @@ additional annotation arguments:
 
 ```
 
-Note that if genomic or transcript regions are supplied via `--in`, `--gen` and `--gtf` become mandatory.
+Note that if genomic or transcript regions are supplied via `--in`, `--gen` and `--gtf` become required arguments.
 
 
 
