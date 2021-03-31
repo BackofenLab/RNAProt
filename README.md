@@ -175,13 +175,20 @@ Next we train a model on the created dataset, using the default hyperparameters.
 rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_train_out --verbose-train
 ```
 
-In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. To visualize what our just-trained model has learned, we next run `rnaprot eval`, which requires both the `rnaprot gt` and `rnaprot train` output folders:
+In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. Note that if you want to obtain the generalization peformance of the model on the given dataset, you need to run `rnaprot train` in cross validation mode (10-fold by default) by adding `--cv`:
+
+```
+rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_cv_train_out --cv --verbose-train
+```
+
+To visualize what our just-trained model has learned, we next run `rnaprot eval`, which requires both the `rnaprot gt` and `rnaprot train` output folders:
 
 ```
 rnaprot eval --gt-in PUM2_PARCLIP_gt_out --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_eval_out
 ```
 
 This will plot a sequence logo informing us about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
+
 
 Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. *NORAD* was shown to act as a [decoy for PUMILIO proteins](https://doi.org/10.1016/j.cell.2015.12.017) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
 
@@ -798,7 +805,7 @@ required arguments:
 
 ### Supported features
 
-RNAProt currently supports the following position-wise features which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, repeat region annotation, and user-defined region annotations. The following table lists the features available for each of the three input types (FASTA sequences, genomic regions BED, transcript regions BED):
+RNAProt supports the following position-wise features, which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, repeat region annotation, and user-defined region annotations. The following table lists the features available for each of the three input types (FASTA sequences, genomic regions BED, transcript regions BED):
 
 
 |   Feature       | Sequences | Genomic regions | Transcript regions |
@@ -840,7 +847,7 @@ Repeat region annotation (`--rra` option) can also be added to the binding regio
 
 #### User-defined region annotations
 
-User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, BED file path, feature type) provided via `--feat-in`. The table format is described in the [Inputs](#inputs) section below. `rnaprot gt` also offers two additional options for one-hot encoding and feature normalization (see mode options `--feat-in-1h` and `--feat-in-norm`).
+User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, BED file path, feature type) provided via `--feat-in`. The table format is described in the [Inputs](#inputs) section below. `rnaprot gt` also offers two more options for one-hot encoding and feature normalization (see mode options `--feat-in-1h` and `--feat-in-norm`).
 
 
 
