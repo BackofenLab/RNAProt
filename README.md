@@ -157,7 +157,7 @@ We first train a sequence model, using a provided set of positive and negative F
 rnaprot train -h
 ```
 
-Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder (clone + enter if not already there from first example), and use the FASTA sequences supplied in the `test` folder as training data. To get training set statistics, we also enable `--report`:
+Before training a model, we need to generate an RNAProt training dataset. For this we go to the cloned repository folder (clone + enter if not already there), and use the FASTA sequences supplied in the `test` folder as training data. To get training set statistics, we also enable `--report`:
 
 
 ```
