@@ -197,7 +197,7 @@ By default, RNAProt predicts whole sites, i.e., we would get one score returned 
 rnaprot predict --in PUM2_PARCLIP_gp_out --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_NORAD_predict_out --mode 2 --plot-top-profiles
 ```
 
-Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for `rnaprot eval`. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the [Documentation](#documentation). Note that while model prediction itself is very fast, plotting (especially getting the single mutation infos) takes some time for each peak region. So if you predict on a large set of input sites or sequences, you might want to disable plotting (or just exercise patience and wait). You can also predict only on certain input sites or a small subset (e.g. site_id1, site_id2), by specifying `--site-id site_id1 site_id2`.
+Now we can take a look at the predicted peak regions (BED, TSV), or observe the profiles just like for `rnaprot eval`. The predicted peak regions are stored in BED format, as well as in a table file with additional information (.tsv). For details on output formats, see the [Documentation](#documentation). Note that while model prediction itself is very fast, plotting (especially getting the single mutation infos) takes some time for each peak region. So if you predict on a large set of input sites or sequences, you might want to disable plotting (or just exercise patience and wait). Knowing this, you can also predict only on certain input sites or a small subset (e.g. site_id1, site_id2), by adding `--site-id site_id1 site_id2`.
 
 
 ### Test example with genomic regions as input
