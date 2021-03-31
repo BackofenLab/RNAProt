@@ -161,6 +161,8 @@ Before training a model, we need to generate an RNAProt training dataset. For th
 
 
 ```
+git clone https://github.com/BackofenLab/RNAProt.git
+cd RNAProt
 rnaprot gt --in test/PUM2_PARCLIP.positives.fa --neg-in test/PUM2_PARCLIP.negatives.fa --out PUM2_PARCLIP_gt_out --report
 ```
 
