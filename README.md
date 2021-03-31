@@ -258,26 +258,19 @@ rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out
 
 ### Test example with additional features
 
-RNAProt supports various additional position(nucleotide)-wise features to learn from, such as secondary structure, region annotations (including user-defined ones), or conservation scores (see [Documentation](#documentation) for details). For this we have to specify what features to include in `rnaprot gt` and `rnaprot gp`, and depending on the feature also provide additional files. For model training (`rnaprot train`) we can then specify what features to use for training, from the features included in `rnaprot gt`. This has the advantage that features need to be extracted or computed only once, and that various feature combinations can be tested in training.
+RNAProt supports various additional position(nucleotide)-wise features to learn from, such as secondary structure, region annotations (including user-defined ones), or conservation scores (see [Documentation](#documentation) for details). For this we have to specify what features to include in `rnaprot gt` and `rnaprot gp`, and depending on the feature also provide additional files. For model training (`rnaprot train`) we can then specify what features to use for training, from the features included in `rnaprot gt`. This has the advantage that features need to be extracted or computed only once, and that various feature combinations and parameter settings can be tested in training.
 
-For the test example, we want to include secondary structure on top of the sequence information. We will again use a provided dataset, containing 2,274 potential Roquin binding sites (also termed CDEs for constitutive decay elements) from [Braun et al. 2018](https://doi.org/10.1093/nar/gky908). 
-The CDEs were predicted using a biologically verified consensus structure consisting of a 6-8 bp long stem capped with a YRN (Y: C or U, R: A or G, N: any base) tri-nucleotide loop. We also note that the sequence conservation is rather low (specifically for the stem portion), making it an ideal test case for the benefits of including secondary structure information. We thus first generate a training set, by enabling structure calculation (`--str`) and using the CDE sites provided in the cloned repository folder:
+In this example, we want to include secondary structure on top of the sequence information. We will again use a provided dataset, containing 2,274 potential Roquin binding sites (also termed CDEs for constitutive decay elements) from [Braun et al. 2018](https://doi.org/10.1093/nar/gky908). 
+The CDEs were predicted using a biologically verified consensus structure consisting of a 6-8 bp long stem capped with a YRN (Y: C or U, R: A or G, N: any base) tri-nucleotide loop. We also note that the sequence conservation is rather low (specifically for the stem portion), making it an ideal test case for the benefits of including secondary structure information. We first generate a training set, by enabling structure calculation (`--str`) and using the CDE sites provided in the cloned repository folder:
 
 ```
 rnaprot gt --in test/CDE_sites.bed --out CDE_sites_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --allow-overlaps --no-gene-filter --str --report
-
-
-rnaprot gt --in test/CDE_sites.bed --neg-in test/negatives.bed --out CDE_sites_gt2_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --allow-overlaps --no-gene-filter --str
-
 ```
 
 Structure calculation can be further customized by changing the RNAplfold parameters (`--plfold-u 3 --plfold-l 50 --plfold-w 70` by default). Regarding the type of structure information, RNAplfold calculates the probabilities of structural elements for each site position, which are then used as feature channels for training and prediction. Whether to use the probabilities or a one-hot encoding can be further specified in training (`--str-mode`, four options). Note that we use `--allow-overlaps` and `--no-gene-filter`, disabling the filtering of sites based on no gene overlap or overlap with other sites. These two options guarantee that all `--in` sites will be part of the generated training set. Now we want to train a model on the generated dataset:
 
 ```
 rnaprot train --in CDE_sites_gt_out --out CDE_sites_str_train_out --verbose-train --epochs 300
-
-rnaprot train --in CDE_sites_gt2_out --out CDE_sites_str_train2_out --verbose-train --epochs 300
-
 ```
 
 Here we increased the maximum number of epochs to 300, since for smaller datasets model performance can sometimes still improve beyond the default 200 epochs (can be easily monitored with `--verbose-train` enabled). Also note that if we do not specify what features to use, RNAProt will use all features present in `CDE_sites_gt_out` for training. Thus, to train a sequence-only model, we would need to specify:
