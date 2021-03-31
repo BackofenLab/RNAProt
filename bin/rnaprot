@@ -634,14 +634,14 @@ def setup_argument_parser():
                    dest="plfold_l",
                    type = int,
                    metavar='int',
-                   default = 100,
-                   help = "RNAplfold -L parameter value (default: 100)")
+                   default = 50,
+                   help = "RNAplfold -L parameter value (default: 50)")
     p_gta.add_argument("--plfold-w",
                    dest="plfold_w",
                    type = int,
                    metavar='int',
-                   default = 150,
-                   help = "RNAplfold -W parameter value (default: 150)")
+                   default = 70,
+                   help = "RNAplfold -W parameter value (default: 70)")
     p_gta.add_argument("--feat-in",
                    dest="feat_in",
                    type=str,
