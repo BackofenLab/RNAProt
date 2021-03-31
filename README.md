@@ -351,7 +351,7 @@ This documentation provides details on all the RNAProt (version 0.1) framework p
 
 ### Program modes
 
-RNAProt is divided into five different program modes: training set generation (`rnaprot gt`), prediction set generation (`rnaprot gp`), model training (`rnaprot train`), model evaluation (`rnaprot eval`), and model prediction (`rnaprot predict`).
+RNAProt is divided into five different program modes: training set generation (`rnaprot gt`), model training (`rnaprot train`), model evaluation (`rnaprot eval`), prediction set generation (`rnaprot gp`), and model prediction (`rnaprot predict`).
 
 
 An overview of the modes can be obtained by:
@@ -509,289 +509,296 @@ additional annotation arguments:
 
 ```
 
-
-
 Note that if genomic or transcript regions are supplied via `--in`, `--gen` and `--gtf` become mandatory.
 
 
 
+#### Model training
+
+The following command line arguments are available in `rnaprot train` mode:
+
+```
+$ rnaprot train -h
+usage: rnaprot train [-h] --in IN_FOLDER --out OUT_FOLDER [--only-seq]
+                     [--use-phastcons] [--use-phylop] [--use-eia] [--use-tra]
+                     [--use-rra] [--use-str] [--str-mode {1,2,3,4}]
+                     [--use-add-feat] [--cv] [--cv-k {5,10}]
+                     [--val-size float] [--add-test] [--test-ids str]
+                     [--keep-order] [--plot-lc] [--verbose-train]
+                     [--force-cpu] [--epochs int] [--patience int]
+                     [--batch-size int] [--lr float] [--weight-decay float]
+                     [--n-rnn-layers int] [--n-hidden-dim int] [--dr float]
+                     [--n-fc-layers {1,2}] [--model-type {1,2,3,4}] [--embed]
+                     [--embed-dim int] [--run-bohb] [--bohb-n int]
+                     [--bohb-min-budget int] [--bohb-max-budget int]
+                     [--bohb-workers int] [--verbose-bohb]
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+required arguments:
+  --in IN_FOLDER        Input training data folder (output of rnaprot gt)
+  --out OUT_FOLDER      Model training results output folder
+
+feature definition arguments:
+  --only-seq            Use only sequence feature. By default all features
+                        present in --in are used (default: False)
+  --use-phastcons       Add phastCons conservation scores. Set --use-xxx to
+                        define which features to add on top of sequence
+                        feature (by default all --in features are used)
+  --use-phylop          Add phyloP conservation scores. Set --use-xxx to
+                        define which features to add on top of sequence
+                        feature (by default all --in features are used)
+  --use-eia             Add exon-intron annotations. Set --use-xxx to define
+                        which features to add on top of sequence feature (by
+                        default all --in features are used)
+  --use-tra             Add transcript region annotations. Set --use-xxx to
+                        define which features to add on top of sequence
+                        feature (by default all --in features are used)
+  --use-rra             Add repeat region annotations. Set --use-xxx to define
+                        which features to add on top of sequence feature (by
+                        default all --in features are used)
+  --use-str             Add secondary structure features (type defined by
+                        --str-mode). Set --use-xxx to define which features to
+                        add on top of sequence feature (by default all --in
+                        features are used)
+  --str-mode {1,2,3,4}  Define secondary structure feature representation: 1)
+                        use probabilities of five structural elements
+                        (E,I,H,M,S) 2) same as 1) but encoded as one-hot
+                        (element with highest probability gets 1, others 0) 3)
+                        use unpaired probabilities 4) same as 3) but encoded
+                        as one-hot (default: 1)
+  --use-add-feat        Add additional feature annotations. Set --use-xxx to
+                        define which features to add on top of sequence
+                        feature (by default all --in features are used)
+
+model definition arguments:
+  --cv                  Run cross validation in combination with set
+                        hyperparameters to evaluate model generalization
+                        performance (default: False)
+  --cv-k {5,10}         Cross validation k for evaluating generalization
+                        performance (use together with --cv) (default: 10)
+  --val-size float      Validation set size for training final model as
+                        percentage of all training sites. NOTE that if --add-
+                        test is set, the test set will have the same size (so
+                        if --val-size 0.2, train on 60 percent, validate on 20
+                        percent, and test on 20 percent) (default: 0.2)
+  --add-test            Use a part of the training set as a test set to
+                        evaluate final model. Test set size is controlled by
+                        --val-size (default: False)
+  --test-ids str        Provide file with test IDs to be used as a test set
+                        for testing final model. Test IDs need to be part of
+                        --in training set. Not compatible with --add-test,
+                        --cv, or --gm-cv
+  --keep-order          Use same train-validation(-test) split for each call
+                        to train final model. Test split only if --add-test or
+                        --test-ids (default: False)
+  --plot-lc             Plot learning curves (training vs validation loss) for
+                        each tested hyperparameter combination (default:
+                        False)
+  --verbose-train       Enable verbose output during model training to show
+                        performance over epochs (default: False)
+  --force-cpu           Run on CPU regardless of CUDA available or not
+                        (default: False)
+  --epochs int          Number of training epochs (default: 200)
+  --patience int        Number of epochs to wait for further improvement on
+                        validation set before stopping (default: 30)
+  --batch-size int      Gradient descent batch size (default: 50)
+  --lr float            Learning rate of optimizer (default: 0.001)
+  --weight-decay float  Weight decay of optimizer (default: 0.0005)
+  --n-rnn-layers int    Number of RNN layers (default: 1)
+  --n-hidden-dim int    Number of RNN layer dimensions (default: 32)
+  --dr float            Rate of dropout applied after RNN layers (default:
+                        0.5)
+  --n-fc-layers {1,2}   Number of fully connected layers following RNN layers
+                        (default: 1)
+  --model-type {1,2,3,4}
+                        RNN model type to use. 1: GRU, 2: LSTM, 3: biGRU, 4:
+                        biLSTM (default: 1)
+  --embed               Use embedding layer for sequence feature, instead of
+                        one-hot encoding (default: False)
+  --embed-dim int       Dimension of embedding layer (default: 10)
+  --run-bohb            Use BOHB to run a hyperparameter optimization. NOTE
+                        that this will overwrite set hyperparameters, and
+                        trains the final model with the found best
+                        hyperparameter setting. ALSO NOTE that this will take
+                        some time (!) (default: False)
+  --bohb-n int          Number of BOHB iterations (default: 50)
+  --bohb-min-budget int
+                        BOHB minimum budget (default: 5)
+  --bohb-max-budget int
+                        BOHB maximum budget (default: 40)
+  --bohb-workers int    Number of BOHB worker threads for local multi-core
+                        parallel computing (default: 1)
+  --verbose-bohb        Enable verbose output for BOHB hyperparameter
+                        optimization. By default only warnings are print out
+                        (default: False)
+
+```
+
+
+
+
+#### Model evaluation
+
+The following command line arguments are available in `rnaprot eval` mode:
+
+```
+$ rnaprot eval -h 
+usage: rnaprot eval [-h] --train-in IN_TRAIN_FOLDER --gt-in IN_GT_FOLDER --out
+                    OUT_FOLDER [--nr-top-profiles int]
+                    [--lookup-profile LIST_LOOKUP_IDS [LIST_LOOKUP_IDS ...]]
+                    [--bottom-up]
+                    [--nr-top-sites LIST_NR_TOP_SITES [LIST_NR_TOP_SITES ...]]
+                    [--motif-size LIST_MOTIF_SIZES [LIST_MOTIF_SIZES ...]]
+                    [--report] [--add-train-in str] [--theme {1,2}]
+                    [--plot-format {1,2}]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --nr-top-profiles int
+                        Specify number of top predicted sites to plot profiles
+                        for (default: 25)
+  --lookup-profile LIST_LOOKUP_IDS [LIST_LOOKUP_IDS ...]
+                        Provide site ID(s) for which to plot the feature
+                        profile in addition to --nr-top-profiles (e.g.
+                        --lookup-profile site_id1 site_id2 ). Site ID needs to
+                        be in positive set from --gt-in
+  --bottom-up           Plot bottom profiles as well (default: False)
+  --nr-top-sites LIST_NR_TOP_SITES [LIST_NR_TOP_SITES ...]
+                        Specify number(s) of top predicted sites used for
+                        motif extraction. Provide multiple numbers (e.g. --nr-
+                        top-sites 100 200 500) to extract one motif plot from
+                        each site set (default: 200)
+  --motif-size LIST_MOTIF_SIZES [LIST_MOTIF_SIZES ...]
+                        Motif size(s) (widths) for extracting and plotting
+                        motifs. Provide multiple sizes (e.g. --motif-size 5 7
+                        9) to extract a motif for each size (default: 7)
+  --report              Generate an .html report containing various additional
+                        statistics and plots (default: False)
+  --add-train-in str    Second model training folder (output of rnaprot train)
+                        for comparing prediction scores of both models on
+                        --gt-in positive dataset. Note that if dataset
+                        features of the two models are not identical,
+                        comparison might be less informative
+  --theme {1,2}         Set theme for .html report (1: palm beach, 2: midnight
+                        sunset) (default: 1)
+  --plot-format {1,2}   Plotting format of motifs and profiles (does not
+                        affect plots generated for --report). 1: png, 2: pdf
+                        (default: 1)
+
+required arguments:
+  --train-in IN_TRAIN_FOLDER
+                        Input model training folder (output of rnaprot train)
+  --gt-in IN_GT_FOLDER  Input training data folder (output of rnaprot gt)
+  --out OUT_FOLDER      Evaluation results output folder
+
+```
 
 
 #### Prediction set generation
 
-The following command line arguments are available in `graphprot2 gp` mode:
+The following command line arguments are available in `rnaprot gp` mode:
 
 ```
-graphprot2 gp -h
-usage: graphprot2 gp [-h] --in str --out str [--gtf str] [--gen str]
-                     [--keep-ids] [--gene-filter] [--con-ext int] [--report]
-                     [--theme {1,2}] [--eia] [--eia-ib] [--eia-n]
-                     [--tr-list str] [--phastcons str] [--phylop str] [--tra]
-                     [--tra-codons] [--tra-borders] [--rra] [--str]
-                     [--bp-in str] [--plfold-u int] [--plfold-l int]
-                     [--plfold-w int]
+$ rnaprot gp -h
+usage: rnaprot gp [-h] --in str --train-in str --out str [--gtf str]
+                  [--gen str] [--mode {1,2,3}] [--seq-ext int] [--gene-filter]
+                  [--report] [--theme {1,2}] [--tr-list str] [--eia-all-ex]
+                  [--phastcons str] [--phylop str] [--feat-in str]
 
 optional arguments:
   -h, --help       show this help message and exit
   --gtf str        Genomic annotations GTF file (.gtf or .gtf.gz)
   --gen str        Genomic sequences .2bit file
-  --keep-ids       Keep --in BED column 4 site IDs. Note that site IDs have to
-                   be unique (default: False)
+  --mode {1,2,3}   Define mode for --in BED site extraction. (1) Take the
+                   center of each site, (2) Take the complete site, (3) Take
+                   the upstream end for each site. Use --seq-ext to extend
+                   center sites again (default: 2)
+  --seq-ext int    Up- and downstream sequence extension length of --in sites
+                   (if --in BED, site definition by --mode) (default: False)
   --gene-filter    Filter --in sites based on gene coverage (gene annotations
                    from --gtf) (default: False)
-  --con-ext int    Up- and downstream context sequence extension of --in sites
-                   with lowercase characters for whole site prediction
-                   (graphprot predict --mode 1). Best use same --con-ext
-                   values in gp+gt+train modes. Note that statistics
-                   (--report) are produced only for uppercase sequence parts
-                   (default: False)
   --report         Output an .html report providing various training set
                    statistics and plots (default: False)
-  --theme {1,2}    Set theme for .html report (1: default, 2: midnight blue)
-                   (default: 1)
+  --theme {1,2}    Set theme for .html report (1: palm beach, 2: midnight
+                   sunset) (default: 1)
 
 required arguments:
   --in str         Genomic or transcript RBP binding sites file in BED
                    (6-column format) or FASTA format. If --in FASTA, only
                    --str is supported as additional feature. If --in BED,
                    --gtf and --gen become mandatory
+  --train-in str   Training input folder (output folder of rnaprot train) to
+                   extract the same features for --in sites which were used to
+                   train the model (info stored in --train-in folder)
   --out str        Output prediction dataset folder (== input folder to
-                   graphprot2 predict)
+                   rnaprot predict)
 
 additional annotation arguments:
-  --eia            Add exon-intron annotations to genomic regions (default:
-                   False)
-  --eia-ib         Add intron border annotations to genomic regions (in
-                   combination with --exon-intron) (default: False)
-  --eia-n          Label regions not covered by intron or exon regions as N
-                   instead of labelling them as introns (I) (in combination
-                   with --exon-intron) (default: False)
-  --tr-list str    Supply file with transcript IDs (one ID per row) for exon
+  --tr-list str    Supply file with transcript IDs (one ID per row) for exon-
                    intron labeling (using the corresponding exon regions from
                    --gtf). By default, exon regions of the most prominent
                    transcripts (automatically selected from --gtf) are used
                    (default: False)
+  --eia-all-ex     Use all annotated exons in --gtf file, instead of exons of
+                   most prominent transcripts or exon defined by --tr-list.
+                   Set this and --tr-list will be effective only for --tra.
+                   NOTE that by default --eia-all-ex is disabled, even if
+                   --train-in model was trained with --eia-all-ex (default:
+                   False)
   --phastcons str  Genomic .bigWig file with phastCons conservation scores to
                    add as annotations
   --phylop str     Genomic .bigWig file with phyloP conservation scores to add
                    as annotations
-  --tra            Add transcript region annotations (5'UTR, CDS, 3'UTR, None)
-                   to genomic and transcript regions (default: False)
-  --tra-codons     Add start and stop codon annotations to genomic or
-                   transcript regions (in combination with --tra) (default:
-                   False)
-  --tra-borders    Add transcript and exon border annotations to transcript
-                   regions (in combination with --tra) (default: False)
-  --rra            Add repeat region annotations for genomic or transcript
-                   regions retrieved from --gen .2bit (default: False)
-  --str            Add base pairs and position-wise structural elements
-                   probabilities features (calculate with RNAplfold) (default:
-                   False)
-  --bp-in str      Supply a custom base pair annotation file for all --in
-                   sites, disabling base pair calculation with RNAplfold
-                   (default: False)
-  --plfold-u int   RNAplfold -u parameter value (default: 3)
-  --plfold-l int   RNAplfold -L parameter value (default: 100)
-  --plfold-w int   RNAplfold -W parameter value (default: 150)
+  --feat-in str    Provide tabular file with additional position-wise genomic
+                   region features (infos and paths to BED files) to add. BE
+                   SURE to use the same file as used for generating the
+                   training dataset (rnaprot gt --feat-in) for training the
+                   model from --train-in!
 
 ```
 
-
-#### Model training
-
-The following command line arguments are available in `graphprot2 train` mode:
-
-```
-graphprot2 train -h
-usage: graphprot2 train [-h] --in IN_FOLDER --out OUT_FOLDER [--only-seq]
-                        [--use-phastcons] [--use-phylop] [--use-eia]
-                        [--use-tra] [--use-rra] [--use-str-elem-p] [--use-bps]
-                        [--bps-mode {1,2}] [--bps-prob-cutoff float]
-                        [--uc-context] [--gen-cv] [--gen-cv-k {5,10}]
-                        [--gm-cv] [--train-cv] [--train-cv-k {5,10}]
-                        [--train-vs float] [--batch-size int [int ...]]
-                        [--epochs int] [--patience int] [--fc-hidden-dim int]
-                        [--list-lr float [float ...]]
-                        [--list-hidden-dim int [int ...]]
-                        [--list-weight-decay float [float ...]]
-
-optional arguments:
-  -h, --help            show this help message and exit
-
-required arguments:
-  --in IN_FOLDER        Input training data folder (output of graphprot2 gt)
-  --out OUT_FOLDER      Model training results output folder
-
-feature definition arguments:
-  --only-seq            Use only sequence feature. By default all features
-                        present in --in are used as node attributes (default:
-                        False)
-  --use-phastcons       Add phastCons conservation scores. Set --use-x to
-                        define which features to add on top of sequence
-                        feature (by default all --in features are used)
-  --use-phylop          Add phyloP conservation scores. Set --use-x to define
-                        which features to add on top of sequence feature (by
-                        default all --in features are used)
-  --use-eia             Add exon-intron annotations. Set --use-x to define
-                        which features to add on top of sequence feature (by
-                        default all --in features are used)
-  --use-tra             Add transcript region annotations. Set --use-x to
-                        define which features to add on top of sequence
-                        feature (by default all --in features are used)
-  --use-rra             Add repeat region annotations. Set --use-x to define
-                        which features to add on top of sequence feature (by
-                        default all --in features are used)
-  --use-str-elem-p      Add structural elements probabilities. Set --use-x to
-                        define which features to add on top of sequence
-                        feature (by default all --in features are used)
-  --use-bps             Add base pairs to graph. Set --use-x to define which
-                        features to add on top of sequence feature (by default
-                        all --in features are used)
-  --bps-mode {1,2}      Defines which base pairs are added to the graphs.
-                        --bpp-mode 1 : base pairs with start or end in
-                        viewpoint region. --bpp-mode 2 : only base pairs with
-                        start+end in viewpoint (default: 1)
-  --bps-prob-cutoff float
-                        Base pair probability cutoff for filtering base pairs
-                        added to the graph (default: 0.5)
-  --uc-context          Convert lowercase context (if present, added by
-                        graphprot2 gt --con-ext) to uppercase (default: False)
-
-model definition arguments:
-  --gen-cv              Run cross validation in combination with
-                        hyperparameter optimization to evaluate generalization
-                        performance (default: False)
-  --gen-cv-k {5,10}     Cross validation k for evaluating generalization
-                        performance (default: 10)
-  --gm-cv               Treat data as generic model data (positive IDs with
-                        specific format required). This turns on generic model
-                        data cross validation, with every fold leaving one RBP
-                        set out for testing (ignoring --gen-cv and --gen-cv-k)
-                        (default: False)
-  --train-cv            Run cross validation to train final model, with
-                        hyperparameter optimization in each split and
-                        selection of best parameters based their on average
-                        performance on validation sets. By default final model
-                        training is done for one split only (validation set
-                        size controlled by --train-vs). Note that --train-cv
-                        with many hyperparameter combinations considerably
-                        increases run time (default: False)
-  --train-cv-k {5,10}   Final model cross validation k. Use in combination
-                        with --train-cv (default: 5)
-  --train-vs float      Validation set size for training final model as
-                        percentage of all training sites. Only effective if
-                        --train-cv not set (with --train-cv validation set
-                        size controlled by --train-cv-k) (default: 0.2)
-  --batch-size int [int ...]
-                        List of gradient descent batch sizes (default: 50)
-  --epochs int          Number of training epochs (default: 200)
-  --patience int        Number of epochs to wait for further improvement on
-                        validation set before stopping (default: 30)
-  --fc-hidden-dim int   Number of dimensions for fully connected layers
-                        (default: 128)
-  --list-lr float [float ...]
-                        List of learning rates for hyperparameter optimization
-                        (default: 0.0001)
-  --list-hidden-dim int [int ...]
-                        List of node feature dimensions in hidden layers for
-                        hyperparameter optimization (default: 128)
-  --list-weight-decay float [float ...]
-                        List of weight decays for hyperparameter optimization
-                        (default: 0.0001)
-
-```
-
-#### Model evaluation
-
-The following command line arguments are available in `graphprot2 eval` mode:
-
-```
-graphprot2 eval -h
-usage: graphprot2 eval [-h] --in IN_FOLDER --out OUT_FOLDER
-                       [--nr-top-sites LIST_NR_TOP_SITES [LIST_NR_TOP_SITES ...]]
-                       [--nr-top-profiles int]
-                       [--motif-size LIST_MOTIF_SIZES [LIST_MOTIF_SIZES ...]]
-                       [--motif-sc-thr float]
-                       [--win-size LIST_WIN_SIZES [LIST_WIN_SIZES ...]]
-                       [--plot-format {1,2}]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --nr-top-sites LIST_NR_TOP_SITES [LIST_NR_TOP_SITES ...]
-                        Specify number(s) of top predicted sites used for
-                        motif extraction. Provide multiple numbers (e.g. --nr-
-                        top-sites 100 500 1000) to extract one motif plot from
-                        each site set (default: 500)
-  --nr-top-profiles int
-                        Specify number of top predicted sites to plot profiles
-                        for (default: 25)
-  --motif-size LIST_MOTIF_SIZES [LIST_MOTIF_SIZES ...]
-                        Motif size(s) (widths) for extracting and plotting
-                        motifs. Provide multiple sizes (e.g. --motif-size 5 7
-                        9) to extract a motif for each size (default: 7)
-  --motif-sc-thr float  Minimum profile score of position to be included in
-                        motif (default: 0.3)
-  --win-size LIST_WIN_SIZES [LIST_WIN_SIZES ...]
-                        Windows size(s) for calculating position-wise scoring
-                        profiles. Provide multiple sizes (e.g. --win-size 5 7
-                        9) to compute average profiles (default: 7)
-  --plot-format {1,2}   Plotting format. 1: png, 2: pdf (default: 1)
-
-required arguments:
-  --in IN_FOLDER        Input model training folder (output of graphprot2
-                        train)
-  --out OUT_FOLDER      Evaluation results output folder
-
-```
 
 #### Model prediction
 
-The following command line arguments are available in `graphprot2 predict` mode:
+The following command line arguments are available in `rnaprot predict` mode:
 
 ```
-graphprot2 predict -h
-usage: graphprot2 predict [-h] --in IN_FOLDER --model-in MODEL_IN_FOLDER --out
-                          str [--mode {1,2}]
-                          [--win-size LIST_WIN_SIZES [LIST_WIN_SIZES ...]]
-                          [--peak-ext int] [--con-ext int] [--thr float]
-                          [--max-merge-dist int]
+$ rnaprot predict -h
+usage: rnaprot predict [-h] --in IN_FOLDER --train-in IN_TRAIN_FOLDER --out
+                       str [--mode {1,2}] [--plot-top-profiles]
+                       [--plot-format {1,2}] [--thr {1,2,3}]
+                       [--site-id LIST_SITE_IDS [LIST_SITE_IDS ...]]
 
 optional arguments:
   -h, --help            show this help message and exit
   --mode {1,2}          Define prediction mode. (1) predict whole sites, (2)
-                        predict position-wise scoring profiles and extract
-                        top-scoring sites from profiles (default: 1)
-  --win-size LIST_WIN_SIZES [LIST_WIN_SIZES ...]
-                        Windows size(s) for calculating position-wise scoring
-                        profiles. Provide multiple sizes (e.g. --win-size 5 7
-                        9) to compute average profiles (default: 11)
-  --peak-ext int        Up- and downstream peak position extension for
-                        extracting top-scoring sites from fixed-window
-                        profiles (default: 30)
-  --con-ext int         Up- and downstream context extension for extracting
-                        top-scoring sites from fixed-window profiles. By
-                        default uses --con-ext info from --model-in (if set in
-                        graphprot2 train), but restricts it to a maximum of 50
-                        (default: False)
-  --thr float           Minimum profile position score for extracting peak
-                        regions and top-scoring sites. Further increase e.g.
-                        in case of too many or too broad peaks (default: 0.5)
-  --max-merge-dist int  Maximum distance between two peaks for merging. Two
-                        peakse get merged to one if they are <= --max-merge-
-                        dist away from each other (default: 0)
+                        predict binding sites on longer sequences using moving
+                        window predictions (default: 1)
+  --plot-top-profiles   Plot top window profiles (default: False)
+  --plot-format {1,2}   Plotting format of top window profiles. 1: png, 2: pdf
+                        (default: 1)
+  --thr {1,2,3}         Define site score threshold setting for reporting peak
+                        regions in --mode 2 (window prediction). 1: relaxed,
+                        2: standard, 3: strict (default: 2)
+  --site-id LIST_SITE_IDS [LIST_SITE_IDS ...]
+                        Provide site ID(s) on which to predict (e.g. --site-id
+                        site_id1 site_id2). By default predict on all --in
+                        sites
 
 required arguments:
-  --in IN_FOLDER        Input prediction data folder (output of graphprot2 gp)
-  --model-in MODEL_IN_FOLDER
+  --in IN_FOLDER        Input prediction data folder (output of rnaprot gp)
+  --train-in IN_TRAIN_FOLDER
                         Input model training folder containing model file and
-                        parameters (output of graphprot2 train)
+                        parameters (output of rnaprot train)
   --out str             Prediction results output folder
 
 ```
 
 ### Supported features
 
-GraphProt2 currently supports the following position-wise features which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (base pairs and structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, and repeat region annotation. The following table lists the features available for each of the three input types (sequences, genomic regions, transcript regions):
+RNAProt currently supports the following position-wise features which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, repeat region annotation, and user-defined region annotations. The following table lists the features available for each of the three input types (FASTA sequences, genomic regions BED, transcript regions BED):
 
 
 |   Feature       | Sequences | Genomic regions | Transcript regions |
@@ -801,6 +808,7 @@ GraphProt2 currently supports the following position-wise features which can be 
 | **exon-intron annotation**    | NO | YES | NO |
 | **transcript region annotation**    | NO | YES | YES |
 | **repeat region annotation**    | NO | YES | YES |
+| **user-defined regions**    | NO | YES | YES |
 
 
 #### Secondary structure information
