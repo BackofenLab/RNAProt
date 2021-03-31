@@ -178,7 +178,7 @@ rnaprot eval --gt-in PUM2_PARCLIP_gt_out --train-in PUM2_PARCLIP_train_out --out
 
 This will plot a sequence logo informing us about global preferences, as well as profiles for the top 25 scoring sites (default setting). The profiles contain the saliency map and single mutations track, giving us an idea what local information the model regards as important for each of the 25 sites. As with the other modes, more options are available (e.g. `--report` for additional statistics, comparing two models, or specifying motif sizes and which profiles to plot).
 
-Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. *NORAD* was shown to act as a [decoy for PUMILIO proteins](https://www.sciencedirect.com/science/article/pii/S0092867415016414) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
+Now that we have a model, we naturally want to use it for prediction. For this we first create a prediction dataset, choosing the lncRNA *NORAD* for window prediction. *NORAD* was shown to act as a [decoy for PUMILIO proteins](https://doi.org/10.1016/j.cell.2015.12.017) (PUM1/PUM2). We therefore use its provided FASTA sequence as input:
 
 ```
 rnaprot gp --in test/NORAD_lncRNA.fa --train-in PUM2_PARCLIP_train_out --out PUM2_PARCLIP_gp_out --report
@@ -258,8 +258,219 @@ rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out
 
 ### Test example with additional features
 
-RNAProt supports various additional position(nucleotide)-wise features to learn from, such as secondary structure, region annotations (including user-defined ones), or conservation scores (see [Documentation](#documentation) for details). For this we have to specify what features to include in `rnaprot gt` and `rnaprot gp`, and depending on the feature also provide additional files. For model training (`rnaprot train`) we can then specify what features to use for training, from the features included in `rnaprot gt`. This has the advantage that features need to be extracted or computed only once, and that various feature combinations can be tested in training. For this example, we want to include secondary structure.
+RNAProt supports various additional position(nucleotide)-wise features to learn from, such as secondary structure, region annotations (including user-defined ones), or conservation scores (see [Documentation](#documentation) for details). For this we have to specify what features to include in `rnaprot gt` and `rnaprot gp`, and depending on the feature also provide additional files. For model training (`rnaprot train`) we can then specify what features to use for training, from the features included in `rnaprot gt`. This has the advantage that features need to be extracted or computed only once, and that various feature combinations can be tested in training.
 
+For the test example, we want to include secondary structure on top of the sequence information. We will again use a provided dataset, containing 2,274 potential Roquin binding sites (also termed CDEs for constitutive decay elements) from [Braun et al. 2018](https://doi.org/10.1093/nar/gky908). 
+The CDEs were predicted using a biologically verified consensus structure consisting of a 6-8 bp long stem capped with a YRN (Y: C or U, R: A or G, N: any base) tri-nucleotide loop. We also note that the sequence conservation is rather low (specifically for the stem portion), making it an ideal test case for the benefits of including secondary structure information. We thus first generate a training set, by enabling structure calculation (`--str`) and using the CDE sites provided in the cloned repository folder:
+
+```
+rnaprot gt --in test/CDE_sites.bed --out CDE_sites_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --allow-overlaps --no-gene-filter --str --report
+
+
+rnaprot gt --in test/CDE_sites.bed --neg-in test/negatives.bed --out CDE_sites_gt2_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --allow-overlaps --no-gene-filter --str
+
+```
+
+Structure calculation can be further customized by changing the RNAplfold parameters (`--plfold-u 3 --plfold-l 50 --plfold-w 70` by default). Regarding the type of structure information, RNAplfold calculates the probabilities of structural elements for each site position, which are then used as feature channels for training and prediction. Whether to use the probabilities or a one-hot encoding can be further specified in training (`--str-mode`, four options). Note that we use `--allow-overlaps` and `--no-gene-filter`, disabling the filtering of sites based on no gene overlap or overlap with other sites. These two options guarantee that all `--in` sites will be part of the generated training set. Now we want to train a model on the generated dataset:
+
+```
+rnaprot train --in CDE_sites_gt_out --out CDE_sites_str_train_out --verbose-train --epochs 300
+
+rnaprot train --in CDE_sites_gt2_out --out CDE_sites_str_train2_out --verbose-train --epochs 300
+
+```
+
+Here we increased the maximum number of epochs to 300, since for smaller datasets model performance can sometimes still improve beyond the default 200 epochs (can be easily monitored with `--verbose-train` enabled). Also note that if we do not specify what features to use, RNAProt will use all features present in `CDE_sites_gt_out` for training. Thus, to train a sequence-only model, we would need to specify:
+
+```
+rnaprot train --in CDE_sites_gt_out --out CDE_sites_onlyseq_train_out --only-seq --verbose-train
+```
+
+To create a prediction set for the structure model, we use the UCP3 gene (transcript ID ENST00000314032), for which the authors validated two CDE sites in its 3'UTR (see [Fig.2A](https://doi.org/10.1093/nar/gky908) blue and red hairpin).
+
+```
+rnaprot gp --in test/ENST00000314032.fa --train-in CDE_sites_str_train_out --out CDE_sites_str_gp_out --report
+```
+
+Note that `rnaprot gp` automatically detects what features were used for training the model, enabling structure prediction with set parameters for the prediction set generation. Depending on the additional feature, we thus might have to supply additional input files for extracting the respective feature information. This would be the case for conservation scores (`--phastcons`, `--phylop`), or user-defined features (`--feat-in`). After creating the prediction set we do a window prediction on the transcript:
+
+
+```
+rnaprot predict --in CDE_sites_str_gp_out --train-in CDE_sites_str_train_out --out CDE_sites_str_predict_out --mode 2 --plot-top-profiles --thr 1
+
+```
+
+In our case we could successfully predict the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406 (see profile positions for comparison), with the second hairpin having a higher folding probability and score. The `test/` folder also includes the model we used to predict, which you can easily use yourself to compare:
+
+```
+unzip test/cde_sites_str_model_folder.zip
+
+rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_extlr40_w70l50_str_train_out --out CDE_sites_test_model_str_predict_out --mode 2 --plot-top-profiles --thr 1
+```
+
+This also shows how easy it is to share models. Once the model is trained, the `rnaprot train --out` folder can be copied and reused. 
+
+Note however that predictions can vary, since negative sites generation is random. Moreover, even models trained on the same positive and negative sites are slightly different from another and thus can lead to slightly different predictions. This is because we have stochastic processes during model training, like the random initialization of network weights, or the application of dropout. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+https://doi.org/10.1093/nar/gky908 Fig.2A blue and red hairpin)
+
+
+Pack this one:
+rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_ext40_thr015_w70l50_pred_check_train_out --out CDE_sites_str_predict2_out --mode 2 --plot-top-profiles --thr 1
+
+
+
+
+gunzip test/cde_sites_str_model_folder.zip
+
+unzip test/cde_sites_str_model_folder.zip
+
+
+
+zip test.zip cde_sites_hg38_extlr40_w70l50_str_train_out/*
+
+Pack this:
+
+cde_sites_hg38_extlr40_w70l50_str_train_out
+
+
+gzip cde_sites_hg38_ext40_thr015_w70l50_pred_check_train_out
+
+
+rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_ext40_thr015_w70l50_pred_check_train_out --out CDE_sites_str_predict2_out --mode 2 --plot-top-profiles --thr 1
+
+
+This is model from paper, reporting 4 sites when using --thr 1
+rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_ext40_thr015_w70l50_pred_check_train_out --out CDE_sites_str_predict2_out --mode 2 --plot-top-profiles --thr 1
+Since we get a very high .. we can also use a lower threshold 
+
+
+rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_ext40_thr015_w70l50_pred_check_onlyseq_train_out --out CDE_sites_seq_predict_out --mode 2 --plot-top-profiles --thr 1
+
+
+
+
+cde_sites_hg38_ext40_thr015_w70l50_pred_check_onlyseq_train_out
+
+```
+rnaprot gp --in test/ENST00000314032.fa --train-in CDE_sites_str_train_out --out CDE_sites_str_gp_out --report
+```
+
+
+
+Note that the input can be any number of sequences, genomic regions, or transcript regions (also see examples below).
+
+By default, RNAProt predicts whole sites, i.e., we would get one score returned for the whole lncRNA. To run the window prediction, we use `--mode 2`, and also plot the top window profiles containing the reported peak regions:
+
+
+
+
+When we trained a model 
+
+
+We thus included the model folder in the repository, Trying this gives us the 
+
+
+
+
+
+
+
+
+
+but of course predictions can vary 
+
+
+
+
+
+Use a trained model
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Note that we specify structure calculation by adding `--str`.
+
+
+
+
+
+
+
+We can then take a look at the `report.rnaprot_gt.html` inside `test_gt_out`, informing us about similarities and differences between the positive and negative set. The content of the HTML report depends on selected features (e.g. structure, conservation scores, region annotations), and the input type given to `rnaprot gt` (FASTA sequences, genomic sites BED, or transcript sites BED). Here for example we can compare k-mer statistics of the positive and negative set, observing that the positives tend to contain more AA, UU, and AU repeat sites. This likely also contributes to the lower sequence complexity of the postive set.
+
+
+Next we train a model on the created dataset, using default parameters. For this we simply run `rnaprot train` with the `rnaprot gt` output folder as input. We also enable `--verbose-train`, to see the learning progress over the number of epochs:
+
+```
+rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_train_out --verbose-train
+```
+
+
+
+
+```
+rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --train-in PUM2_K562_IDR_train_out
+
+rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_NORAD_predict_out --mode 2 --plot-top-profiles
+```
+
+
+
+
+A CDE consists of a short single hairpin with a tri-nucleotide loop, 
+
+computationally identified
+
+ and not much sequence conservation, making it an ideal test case for the benefits of including secondary structure information. We thus 
+
+
+
+
+
+The CDEs were predicted using a biologically verified consensus structure consisting of a 6-8 bp long stem capped with a YRN (Y: C or U, R: A or G, N: any base) tri-nucleotide loop, including all human 3'UTRs as potential target regions. 
+
+
+
+
+A CDE consists of a short single hairpin with a tri-nucleotide loop, 
+
+
+
+
+
+
+
+
+To further assess the impact of adding structure information on RNAProt's predictive performance, we downloaded a dataset consisting of genomic regions containing potential human CDEs (constitutive decay elements) identified by \cite{braun2018identification} (Supplementary Table 6, table "all"). A CDE consists of a short single hairpin with a tri-nucleotide loop that is preferably bound by the RBP Roquin. We then filtered the CDE containing sites by a minimum folding probability of 0.15, centered and extended them to 81 nt, and ran \mintinline{python}{rnaprot gt} with RNAplfold settings \mintinline{python}{--plfold-l 50}, \mintinline{python}{--plfold-w 70}, and \mintinline{python}{--plfold-u 3} to focus more on local hairpin structures. Finally we calculated the average model AUC with 10-fold cross validation, for both the sequence-only set and the sequence set with added structure information. We chose the most basic GRU model architecture (non-bidirectional GRU with one GRU layer, RNAProt default setting), using the following parameters for training (\mintinline{python}{rnaprot train}): 
 
 
 
