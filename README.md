@@ -201,6 +201,7 @@ Now we can take a look at the predicted peak regions (BED, TSV), or observe the 
 
 
 
+
 ### Test example with genomic regions as input
 
 To create datasets based on genomic or transcript regions, we first need to download two additional files. Specifically, we need a GTF file (containing genomic annotations), as well as a .2bit file (containing the genomic sequences). Note that we used Ensembl GTF files to test RNAProt, and therefore recommend using these. You can find them [here](http://www.ensembl.org/info/data/ftp/index.html) for many major model organisms. The .2bit genome file we will download from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips). For this example, we choose the human genome + annotations (hg38 assembly):
@@ -233,7 +234,7 @@ wget https://www.encodeproject.org/files/ENCFF880MWQ/@@download/ENCFF880MWQ.bed.
 gunzip -c ENCFF880MWQ.bed.gz | awk '{print $1"\t"$2"\t"$3"\t"$4"\t"$7"\t"$6}' > PUM2_K562_IDR_peaks.bed
 ```
 
-Note that we move the log2 fold change value from column 7 (original file) to column 5, which is used by RNAProt to filter and select sites in case of overlaps. By default, `rnaprot gt` removes overlapping sites by selecting only the highest-scoring site from a set of overlapping sites. To disable this, set `--allow-overlaps`. Also, all sites will be kept if there are no column 5 scores given (or all the same).
+Note that we move the log2 fold change value from column 7 (original file) to column 5, which is used by RNAProt to filter and select sites in case of overlaps. By default, `rnaprot gt` removes overlapping sites by selecting only the highest-scoring site from a set of overlapping sites. To disable this, set `--allow-overlaps`. If there are no column 5 scores given (or all the same), filtering of overlaps is disabled by default. Moreover, positive sites that do not overlap with gene regions by default are filtered. To disable this, set `--no-gene-filter`.
 
 Next we create a training dataset, by supplying the downloaded GTF and .2bit file:
 
@@ -276,7 +277,7 @@ rnaprot gp --in ENSG00000260032.bed --out NORAD_lncRNA_gene_gp_out --gtf Homo_sa
 rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_train_out --out PUM2_K562_NORAD_predict_out --mode 2 --plot-top-profiles
 ```
 
-Note that in this example we did not filter out sites that overlap with the NORAD gene region from `PUM2_K562_IDR_peaks.bed` prior to training. To filter out the overlapping sites, we can use intersectBed (from bedtools) for BED file intersection calculation, and again run `rnaprot gt`, `rnaprot train`, and `rnaprot predict`:
+Note that in this example we did not filter out sites from `PUM2_K562_IDR_peaks.bed` that overlap with the NORAD gene region prior to training. These sites indeed exist, as we can see in the `rnaprot gt` HTML report (Target region overlap statistics), so for an unbiased prediction we need remove them first. For this we use bedtools intersectBed, and again run `rnaprot gt`, `rnaprot train`, and `rnaprot predict`:
 
 ```
 intersectBed -a PUM2_K562_IDR_peaks.bed -b ENSG00000260032.bed -v -s > PUM2_K562_IDR_peaks_no2norad.bed 
@@ -284,6 +285,7 @@ rnaprot gt --in PUM2_K562_IDR_peaks_no2norad.bed --out PUM2_K562_IDR_no2norad_gt
 rnaprot train --in PUM2_K562_IDR_no2norad_gt_out --out PUM2_K562_IDR_no2norad_train_out --verbose-train
 rnaprot predict --in NORAD_lncRNA_gene_gp_out --train-in PUM2_K562_IDR_no2norad_train_out --out PUM2_K562_IDR_no2norad_predict_out --mode 2 --plot-top-profiles
 ```
+
 
 
 ### Test example with additional features
