@@ -297,13 +297,15 @@ The CDEs were predicted using a biologically verified consensus structure consis
 rnaprot gt --in test/CDE_sites.bed --out CDE_sites_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --allow-overlaps --no-gene-filter --str --report
 ```
 
-Structure calculation can be further customized by changing the RNAplfold parameters (`--plfold-u 3 --plfold-l 50 --plfold-w 70` by default). Regarding the type of structure information, RNAplfold calculates the probabilities of structural elements for each site position, which are then used as feature channels for training and prediction. Whether to use the probabilities or a one-hot encoding can be further specified in training (`--str-mode`, four options). Note that we use `--allow-overlaps` and `--no-gene-filter`, disabling the filtering of sites based on no gene overlap or overlap with other sites. These two options guarantee that all `--in` sites will be part of the generated training set. Now we want to train a model on the generated dataset:
+Structure calculation can be further customized by changing the RNAplfold parameters (`--plfold-u 3 --plfold-l 50 --plfold-w 70` by default). Regarding the type of structure information, RNAplfold calculates the probabilities of structural elements for each site position, which are then used as feature channels for training and prediction. For genomic or transcript `--in` sites, RNAProt automatically extends the sites by `--plfold-w` on both sides (or less at transcript ends) for a precise structure calculation.
+Whether to use the probabilities or a one-hot encoding can be further specified in training (`--str-mode`, four options). Note that we use `--allow-overlaps` and `--no-gene-filter`, disabling the filtering of sites based on no gene overlap or overlap with other sites. These two options guarantee that all `--in` sites will be part of the generated training set. Now we want to train a model on the generated dataset:
 
 ```
 rnaprot train --in CDE_sites_gt_out --out CDE_sites_str_train_out --verbose-train --epochs 300
 ```
 
-Here we increased the maximum number of epochs to 300, since for smaller datasets model performance can sometimes still improve beyond the default 200 epochs (can be easily monitored with `--verbose-train` enabled). Also note that if we do not specify what features to use, RNAProt will use all features present in `CDE_sites_gt_out` for training. Thus, to train a sequence-only model, we would need to specify:
+Here we increased the maximum number of epochs to 300, since for smaller datasets model performance can sometimes still improve beyond the default 200 epochs. This can be easily monitored with `--verbose-train` enabled). In addition, increasing `--patience` might sometimes be necessary, to prevent model training with the model stuck early on in the training process from stopping (although we experienced this only very rarely).
+Also note that if we do not specify what features to use, RNAProt will use all features present in `CDE_sites_gt_out` for training. Thus, to train a sequence-only model, we would need to specify:
 
 ```
 rnaprot train --in CDE_sites_gt_out --out CDE_sites_onlyseq_train_out --only-seq --verbose-train
@@ -320,10 +322,9 @@ Note that `rnaprot gp` automatically detects what features were used for trainin
 
 ```
 rnaprot predict --in CDE_sites_str_gp_out --train-in CDE_sites_str_train_out --out CDE_sites_str_predict_out --mode 2 --plot-top-profiles --thr 1
-
 ```
 
-In our case the model successfully predicted the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop 1,404 to 1,406, with the second hairpin having a higher folding probability and score. To check we take a look at the reported peak_regions.bed/tsv, or have a look at the plotted profiles, which conveniently includes the transcript coordinates (or genomic in case of genomic sites as input) to quickly identify regions of interest. 
+In our case the model successfully predicted the two verified binding sites (all together 4 sites predicted) on the transcript (using threshold level `--thr 1`). The first loop is at transcript position 1,371 to 1,373 (loop nucleotides), the second loop from 1,404 to 1,406, with the second hairpin having a higher folding probability and score. To check this, we take a look at the reported `peak_regions.bed` (or `peak_regions.tsv`), or have a look at the plotted profiles, which conveniently includes the transcript coordinates (or genomic coordinates in case of genomic sites as input) to quickly identify regions of interest. 
 The `test/` folder also includes the model we used to predict, which you can easily apply yourself to compare:
 
 ```
