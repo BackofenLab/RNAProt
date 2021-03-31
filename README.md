@@ -808,24 +808,24 @@ RNAProt currently supports the following position-wise features which can be uti
 | **exon-intron annotation**    | NO | YES | NO |
 | **transcript region annotation**    | NO | YES | YES |
 | **repeat region annotation**    | NO | YES | YES |
-| **user-defined regions**    | NO | YES | YES |
+| **user-defined**    | NO | YES | YES |
 
 
 #### Secondary structure information
 
-GraphProt2 can include two kinds of structure information for a given RNA sequence: 1) base pairs and 2) unpaired probabilities for different loop contexts (probabilities for the nucleotide being paired or inside external, hairpin, internal or multi loops). Both are calculated using the ViennaRNA Python 3 API (ViennaRNA 2.4.14) and RNAplfold with its sliding window approach, with user-definable parameters (by default these are window size = 150, maximum base pair span length = 100, and probabilities for regions of length u = 3). The base pairs with a probability \>= a set threshold (default = 0.5) are then added to the sequence graph as edges between the nodes that represent the end points of the base pair, and the unpaired probability values are added to the node feature vectors. Alternatively, the user can also provide custom base pair information (`--bp-in` option, for `graphprot2 gt` and `graphprot2 gp`), e.g. derived from experimental data. For more details see mode options `--str`, `--use-bps`, `--use-str-elem-p`, `--bps-mode`, and `--bps-prob-cutoff`.
+RNAProt can include structure information in the form of unpaired probabilities for different loop contexts (probabilities for the nucleotide being paired or inside external, hairpin, internal or multi loops). The probabilities are calculated using the ViennaRNA Python 3 API (ViennaRNA 2.4.17) and RNAplfold with its sliding window approach, with user-definable parameters (by default these are window size = 70, maximum base pair span length = 50, and probabilities for regions of length u = 3, `--plfold-u 3 --plfold-l 50 --plfold-w 70`). The unpaired probability values are added to the position-wise feature vectors on top of the sequence information (with other additional features). In order to include structure information, `--str` has to be set in `rnaprot gt`. For training, `rnaprot train` by default uses all features it can find in the training set folder. To specify specific features to use for training, one can add `--use-str` (for structure). `rnaprot train` also offers four different modes of including the structure information (`--str-mode` parameter). Here one can select between using all five context probabilities, using only paired and unpaired probabilities, or use the first two but encoded as one-hot.
 
 
 #### Conservation scores
 
-GraphProt2 supports two scores measuring evolutionary conservation (phastCons and phyloP). For the paper, conservation scores were downloaded from the UCSC website, using the phastCons and phyloP scores generated from multiple sequence alignments of 99 vertebrate genomes to the human genome (hg38, [phastCons100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phastCons100way/hg38.phastCons100way.bw) and [phyloP100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phyloP100way/hg38.phyloP100way.bw) datasets). GraphProt2 accepts scores in bigWig (.bw) format (modes `graphprot2 gt` and `graphprot2 gp`, options `--phastcons` and `--phylop`). To assign conservation scores to transcript regions, transcript regions are first mapped to the genome, using the provided GTF file.
+RNAProt supports two scores measuring evolutionary conservation (phastCons and phyloP). Conservation scores can be downloaded from the UCSC website, e.g. using the phastCons and phyloP scores generated from multiple sequence alignments of 99 vertebrate genomes to the human genome (hg38, [phastCons100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phastCons100way/hg38.phastCons100way.bw) and [phyloP100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phyloP100way/hg38.phyloP100way.bw) datasets). RNAProt accepts scores in bigWig (.bw) format (modes `rnaprot gt` and `rnaprot gp`, options `--phastcons` and `--phylop`). To assign conservation scores to transcript regions, RNAProt first maps the transcript regions to the genome, using the provided GTF file.
 
 
 #### Exon-intron annotation
 
 Exon-intron annotation in the form of one-hot encoded exon and intron labels can also be added to the node feature vectors.
-Labels are assigned to each binding site position by taking a set of genomic exon regions and overlapping it with the genomic binding sites using bedtools (v. 2.29.0). To unambiguously assign labels, GraphProt2 by default uses the most prominent isoform for each gene. The most prominent isoform for each gene gets selected through hierarchical filtering of the transcript information present in the input GTF file (tested with GTF files from [Ensembl](http://www.ensembl.org/info/data/ftp/index.html)): given that the transcript is part of the GENCODE basic gene set, GraphProt2 selects transcripts based on their transcript support level (highest priority), and by transcript length (longer isoform preferred). The extracted isoform exons are then used for region type assignment.
-Note that this feature is only available for genomic regions, as it is not informative for transcript regions, which would contain only exon labels. Optionally, a user-defined isoform list can be supplied (`--tr-list`), substituting the list of most prominent isoforms for annotation. Regions not overlapping with introns or exons can also be labelled separately (instead of labelled as intron). For more details see mode options `--eia`, `--eia-ib`, and `--eia-n`.
+Labels are assigned to each binding site position by taking a set of genomic exon regions and overlapping it with the genomic binding sites using bedtools. To unambiguously assign labels, RNAProt by default uses the most prominent isoform for each gene. The most prominent isoform for each gene gets selected through hierarchical filtering of the transcript information present in the input GTF file (tested with GTF files from [Ensembl](http://www.ensembl.org/info/data/ftp/index.html)): given that the transcript is part of the GENCODE basic gene set, RNAProt selects transcripts based on their transcript support level (highest priority), and by transcript length (longer isoform preferred). The extracted isoform exons are then used for region type assignment.
+Note that this feature is only available for genomic regions, as it is not informative for transcript regions, which would contain only exon labels. Optionally, a user-defined isoform list can be supplied (`--tr-list`), substituting the list of most prominent isoforms for annotation. Regions not overlapping with introns or exons can also be labelled separately (instead of labelled as intron). In addition, instead of using the most prominent transcripts, `--eia-all-ex` allows the use of all exon regions from the GTF file for exon-intron labelling. For more details see mode options `--eia`, `--eia-ib`, `--eia-n`, and `--eia-all-ex`. 
 
 
 #### Transcript region annotation
@@ -835,12 +835,18 @@ Similarly to the exon-intron annotation, binding regions can be labelled based o
 
 #### Repeat region annotation
 
-Repeat region annotation (`--rra` option) can also be added to the binding regions, analogously to other region type annotations. This information is derived directly from the 2bit formatted genomic sequence file, where repeat regions identified by RepeatMasker and Tandem Repeats Finder are stored in lowercase letters. 
+Repeat region annotation (`--rra` option) can also be added to the binding regions, analogously to other region type annotations. This information is derived directly from the 2bit formatted genomic sequence file supplied by `--gen`, where repeat regions identified by RepeatMasker and Tandem Repeats Finder are stored in lowercase letters. 
+
+
+#### User-defined region annotations
+
+User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, BED file path, feature type) provided via `--feat-in`. The table format is described in the [Inputs](#inputs) section below. `rnaprot gt` also offers two additional options for one-hot encoding and feature normalization (see mode options `--feat-in-1h` and `--feat-in-norm`).
+
 
 
 ### Inputs
 
-GraphProt2 requires at least three inputs: a set of RBP binding sites (BED or FASTA format), a genomic sequence file (.2bit format), and a genomic annotations file (GTF format). Additional input files include BED files (negative sites or regions for masking), conservation scores in bigWig format, transcript lists, or custom base pair information.
+RNAProt requires at least three inputs: a set of RBP binding sites (BED or FASTA format), a genomic sequence file (.2bit format), and a genomic annotations file (GTF format). Additional input files include BED files (negative sites or regions for masking), conservation scores in bigWig format, transcript lists, or custom base pair information.
 
 
 #### Binding sites
