@@ -904,7 +904,7 @@ RNAProt was tested with GTF files obtained from Ensembl. See Ensembl's [download
 
 #### User-defined region annotations
 
-To supply user-defined region annotations, `rnaprot gt` (`rnaprot gp`) accepts a table file via `--feat-in`. Inside this, each row stores the information of one single features to be added, beginning with a unique feature ID, the type of feature (C: categorical, N: numerical), the feature format (0: score, 1: probability, 2: p-value), and the path to the feature regions BED file. Assume we want to use the CDE sites from [above](#test-example-with-additional-features) as a region feature for annotation, we would create a text file with the following content:
+To supply user-defined region annotations, `rnaprot gt` (`rnaprot gp`) accepts a table file via `--feat-in`. Inside this, each row stores the information of one single feature to be added, beginning with a unique feature ID, the type of feature (C: categorical, N: numerical), the feature format (0: score, 1: probability, 2: p-value), and the path to the feature regions BED file. Assuming we want to use the CDE sites from [above](#test-example-with-additional-features) as a region feature for annotation, we would create a text file with the following content:
 
 
 ```
@@ -912,15 +912,14 @@ $ cat add_feat.in
 CDE	N	1	test/CDE_sites.bed
 ```
 
-Note that the columns have to be tab-separated. Here we put "CDE" as the feature ID, "N" as feature type for numerical (since `CDE_sites.bed` BED file column 5 contains probabilities which we want to use), and "1" to indicate it is a probability. Last but not least we specify the path to the BED file in column 4. Now all `--in` site positions  (`rnaprot gt`) which overlap with `CDE_sites.bed` get the numerical value (BED column 5 value) of the overlapping region inside `CDE_sites.bed` assigned. If we want a one-hot encoding instead, we need to specify:
+Note that the columns have to be tab-separated. Here we put "CDE" as the feature ID, "N" as feature type for numerical (since `CDE_sites.bed` BED file column 5 contains probabilities which we want to use for annotation), and "1" to indicate that the values are probabilities. Last but not least, we specify the path to the BED file in column 4. Now all `--in` site positions  (`rnaprot gt`) which overlap with `CDE_sites.bed` get the numerical value (BED column 5 value) of the overlapping region inside `CDE_sites.bed` assigned. If we want a one-hot encoding instead, we need to specify:
 
 ```
 $ cat add_feat.in
 CDE	C	0	test/CDE_sites.bed
 ```
 
-Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "p-value", RNAProt will automatically convert them to probabilities, by using 1-p_value for the respective regions. Using raw column 5 BED scores will likely be suboptimal for learning, as the values are not normalized.
-
+Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "N" and "3" (column 1 and 2, telling RNAProt that these are p-values), RNAProt will automatically convert them to probabilities, by using 1-p_value for the respective regions. As said we do not recommend using raw column 5 BED scores, since the values are not normalized, which likely will be suboptimal for learning, 
 
 
 #### Additional inputs
