@@ -969,7 +969,7 @@ In model evaluation mode (`rnaprot eval`), sequence and additional feature logos
 
 In model prediction mode (`rnaprot predict`), whole-site (`--mode 1`) or moving window peak region (`--mode 2`) predictions are output. Optionally, the top scoring windows can also be plotted as profiles just like for `rnaprot eval`.
 
-In `--mode 2`, `peak_regions.bed` contains the peak regions on the reference (depending on input sequence, transcript, or genomic coordinates), in 11-column BED format:
+In `--mode 2`, `peak_regions.bed` contains the predicted peak regions on the reference (depending on input sequence, transcript, or genomic coordinates), in 11-column BED format:
 
 
 ```
@@ -981,7 +981,7 @@ chr20	36049711	36049724	peak_3	4.0312123	-	36049646	36049725	0.09738955823293183
 
 Here the columns are: reference ID, reference peak region start position (0-based), reference peak region end position (1-based), peak ID, window score, strand (for transcript or sequence input always "+"), reference window start position (0-based), reference window end position (1-based), top saliency peak score (saliency), reference top saliency peak position (1-based), window score p-value (calculated from the positive training set scores distribution).
 
-The same information can also be found in the `peak_regions.tsv` file (all 1-based coordinates), which in addition contains the top saliency peak sequence and the window sequence:
+The same information can also be found in the `peak_regions.tsv` file (there all coordinates 1-based), which in addition contains the top saliency peak sequence and the window sequence:
 
 ```
 $ head -3 pum2_test_predict_out/peak_regions.tsv
