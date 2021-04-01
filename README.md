@@ -799,7 +799,7 @@ required arguments:
 
 ### Supported features
 
-RNAProt supports the following position-wise features, which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, repeat region annotation, and user-defined region annotations. The following table lists the features available for each of the three input types (FASTA sequences, genomic regions BED, transcript regions BED):
+RNAProt supports the following position-wise features, which can be utilized for training and prediction in addition to the sequence feature: secondary structure information (structural element probabilities), conservation scores (phastCons and phyloP), exon-intron annotation, transcript region annotation, repeat region annotation, and also user-defined region annotations. The following table lists the features available for each of the three input types (FASTA sequences, genomic regions BED, transcript regions BED):
 
 
 |   Feature       | Sequences | Genomic regions | Transcript regions |
@@ -814,14 +814,14 @@ RNAProt supports the following position-wise features, which can be utilized for
 
 #### Secondary structure information
 
-RNAProt can include structure information in the form of unpaired probabilities for different loop contexts (probabilities for the nucleotide being paired or inside external, hairpin, internal or multi loops). The probabilities are calculated using the ViennaRNA Python 3 API (ViennaRNA 2.4.17) and RNAplfold with its sliding window approach, with user-definable parameters (by default these are window size = 70, maximum base pair span length = 50, and probabilities for regions of length u = 3, `--plfold-u 3 --plfold-l 50 --plfold-w 70`). In order to include structure information, `--str` has to be set in `rnaprot gt`. For training, `rnaprot train` by default uses all features it can find in the training set folder. To specify specific features to use for training, one can add `--use-str` (or in general --use-xxx). `rnaprot train` also offers four different modes for including the structure information (`--str-mode` parameter). Here one can select between using all five context probabilities, using only paired and unpaired probabilities, or use the first two but encoded as one-hot.
+RNAProt can include structure information in the form of unpaired probabilities for different loop contexts (probabilities for the nucleotide being paired or inside external, hairpin, internal or multi loops). The probabilities are calculated using the ViennaRNA Python 3 API (ViennaRNA 2.4.17) and RNAplfold with its sliding window approach, with user-definable parameters (by default these are window size = 70, maximum base pair span length = 50, and probabilities for regions of length u = 3, `--plfold-u 3 --plfold-l 50 --plfold-w 70`). In order to include structure information, `--str` has to be set when calling `rnaprot gt`. For training, `rnaprot train` by default uses all features it can find in the training set folder. To specify specific features for training, one can add `--use-str` (or in general --use-xxx). `rnaprot train` also offers four different modes for including the structure information (`--str-mode`). Here one can select between using all five context probabilities, using only paired and unpaired probabilities, or use the first two but encoded as one-hot.
 
 
 #### Conservation scores
 
 RNAProt supports two scores measuring evolutionary conservation (phastCons and phyloP). Conservation scores can be downloaded from the UCSC website, e.g. using the phastCons and phyloP scores generated from multiple sequence alignments of 99 vertebrate genomes to the human genome (hg38, [phastCons100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phastCons100way/hg38.phastCons100way.bw) and [phyloP100way](http://hgdownload.cse.ucsc.edu/goldenpath/hg38/phyloP100way/hg38.phyloP100way.bw) datasets). RNAProt accepts scores in bigWig (.bw) format (modes `rnaprot gt` and `rnaprot gp`, options `--phastcons` and `--phylop`). 
 Note that `rnaprot gp` reuses the set file paths used for training (`rnaprot train`), as long as the file paths are still valid. If not, it will complain, or you can just overwrite the paths by setting `--phastcons` and `--phylop`.
-To assign conservation scores to transcript regions, RNAProt first maps the transcript regions to the genome, using the provided GTF file. To use the conservation features for `rnaprot train`, set `--use-phastcons` or `--use-phylop`. Otherwise, if no other feature is specified, `rnaprot train` will use all present features.
+To assign conservation scores to transcript regions, RNAProt first maps the transcript regions to the genome, using the provided GTF file. To use the conservation features for `rnaprot train`, set `--use-phastcons` or `--use-phylop`. Otherwise, if no other feature is specified, `rnaprot train` will train on all present features.
 
 
 
@@ -835,7 +835,7 @@ Note that this feature is only available for genomic regions, as it is not infor
 
 #### Transcript region annotation
 
-Similarly to the exon-intron annotation, binding regions can be labelled based on their overlap with transcript regions. Labels are assigned based on UTR or CDS region overlap (5'UTR, CDS, 3'UTR, None), by taking the isoform information in the input GTF file. Again the list of most prominent isoforms is used for annotation, or alternatively a list of user-defined isoforms (`--tr-list`). Additional annotation options include start and stop codon or transcript and exon border labelling. For more details see mode options `--tra`, `--tra-codons`, and `--tra-borders`.
+Similarly to exon-intron annotations, binding regions can be labelled based on their overlap with transcript regions. Labels are assigned based on UTR or CDS region overlap (5'UTR, CDS, 3'UTR, None), by taking the isoform information in the input GTF file. Again the list of most prominent isoforms is used for annotation, or alternatively a list of user-defined isoforms (`--tr-list`). Additional annotation options include start and stop codon or transcript and exon border labelling. For more details see mode options `--tra`, `--tra-codons`, and `--tra-borders`.
 To use transcript region annotations for `rnaprot train`, set `--use-tra`. Otherwise, if no other feature is specified, `rnaprot train` will train a model with all present features.
 
 
@@ -847,7 +847,7 @@ To use repeat region annotations for `rnaprot train`, set `--use-rra`. Otherwise
 
 #### User-defined region annotations
 
-User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, BED file path, feature type) provided via `--feat-in`. The table format is described in the [Inputs](#inputs) section below. `rnaprot gt` also offers two more options for one-hot encoding and feature normalization (see mode options `--feat-in-1h` and `--feat-in-norm`).
+User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, feature type, feature format, BED file path) provided via `--feat-in`. The table format is defined in the [Inputs](#inputs) section below. `rnaprot gt` also offers an option to force one-hot-encoding of all user-defined features (see mode option `--feat-in-1h`).
 To utilize user-defined region annotations for `rnaprot train`, set `--use-add-feat`. Otherwise, if no other feature is specified, `rnaprot train` will train a model with all present features.
 
 
@@ -888,13 +888,13 @@ ENST00000325888	3092	3153	tr_site_4	3.05759538270791	+
 
 ```
 
-Note that RNAProt by default creates unique site IDs. Optionally, the original sequence or site IDs (BED column 4) can be kept (`--keep-ids` in `rnaprot gt`). Also note that BED column 5 contains the site score, which can be used for filtering (`--thr`). In case of p-values, reverse filtering can be enabled with `--rev-filter` (smaller value == better). Filtering by site length is also possible (`--max-len`, `--min-len`). Note that by default, `--in` sites in `rnaprot gt` are filtered based gene coverage and overlaps with other `--in` sites. To disable these filters, set `--no-gene-filter` and `--allow-overlaps` (see mode options for more details).
-BED files with genomic RBP binding regions can for example be downloaded from [ENCODE](https://www.encodeproject.org/) (eCLIP CLIPper peak regions).
+Note that RNAProt by default creates unique site IDs. Optionally, the original sequence or site IDs (BED column 4) can be kept (`--keep-ids` in `rnaprot gt`). Also note that BED column 5 contains the site score, which can be used for filtering (`--thr`). In case of p-values, reverse filtering can be enabled with `--rev-filter` (smaller value == better). Filtering by site length is also possible (`--max-len`, `--min-len`). Note that by default, `--in` sites in `rnaprot gt` are filtered based on gene coverage and overlaps with other `--in` sites! To disable these filters, set `--no-gene-filter` and `--allow-overlaps` (see mode options for more details).
+BED files with genomic RBP binding regions for example can be downloaded from [ENCODE](https://www.encodeproject.org/) (eCLIP CLIPper peak regions).
 
 
 #### Genome sequence
 
-The human genome .2bit formatted genomic sequence file can be downloaded [here](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit). This file is used to extract genomic and transcript region sequences, as well as repeat region annotations.
+The human genome .2bit formatted genomic sequence file can be downloaded [here](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.2bit). This file is used to extract genomic and transcript region sequences, as well as repeat region annotations. For other organisms, have a look [here](https://hgdownload.soe.ucsc.edu/downloads.html). Note that it is easy to generate your own .2bit files from any given FASTA file.
 
 
 #### Genome annotations
