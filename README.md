@@ -336,7 +336,7 @@ unzip test/cde_sites_str_model_folder.zip
 rnaprot predict --in CDE_sites_str_gp_out --train-in cde_sites_hg38_extlr40_w70l50_str_train_out --out CDE_sites_test_model_str_predict_out --mode 2 --plot-top-profiles --thr 1
 ```
 
-This also shows how easy it is to share models. Once the model is trained, the `rnaprot train --out` folder can be copied and reused. To zip the train folder you can use:
+This also shows how easy it is to share models. Once the model is trained, the `rnaprot train --out` folder can be copied and reused. To zip the train folder you can run:
 
 ```
 zip my_cde_model.zip CDE_sites_str_train_out/*
@@ -506,10 +506,6 @@ additional annotation arguments:
   --feat-in-1h          Use one-hot encoding for all additional position-wise
                         features from --feat-in table, ignoring type
                         definitions in --feat-in table (default: False)
-  --feat-in-norm        Normalize feature values (min-max normalization (0..1)
-                        of --feat-in features. --feat-in table column 3
-                        information further controls feature normalization
-                        (default: False)
 
 ```
 
@@ -641,8 +637,6 @@ model definition arguments:
 ```
 
 
-
-
 #### Model evaluation
 
 The following command line arguments are available in `rnaprot eval` mode:
@@ -762,6 +756,9 @@ additional annotation arguments:
                    model from --train-in!
 
 ```
+
+Note that `rnaprot gp` will try to reuse file paths used for training the `--train-in` model. This includes `--tr-list`, `--phastcons`, `--phylop`, and `--feat-in`. These can be overwritten by setting providing the paths on the command line.
+
 
 
 #### Model prediction
