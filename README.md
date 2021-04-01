@@ -919,7 +919,7 @@ $ cat add_feat.in
 CDE	C	0	test/CDE_sites.bed
 ```
 
-Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "N" and "3" (column 1 and 2, telling RNAProt that these are p-values), RNAProt will automatically convert them to probabilities, by using 1-p_value for the respective regions. As said we do not recommend using raw column 5 BED scores, since the values are not normalized, which likely will be suboptimal for learning, 
+Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "N" and "2" (column 1 and 2, telling RNAProt that these are p-values), RNAProt will automatically convert them to probabilities, by using 1-p-value for the respective regions. As said we do not recommend using raw column 5 BED scores, since the values are not normalized, which likely will be suboptimal for learning.
 
 
 #### Additional inputs
@@ -969,7 +969,7 @@ In model evaluation mode (`rnaprot eval`), sequence and additional feature logos
 
 In model prediction mode (`rnaprot predict`), whole-site (`--mode 1`) or moving window peak region (`--mode 2`) predictions are output. Optionally, the top scoring windows can also be plotted as profiles just like for `rnaprot eval`.
 
-In `--mode 2`, The `peak_regions.bed` contains the peak regions on the reference (depending on input sequence, transcript, or genomic coordinates), in 11-column BED format:
+In `--mode 2`, `peak_regions.bed` contains the peak regions on the reference (depending on input sequence, transcript, or genomic coordinates), in 11-column BED format:
 
 
 ```
@@ -979,7 +979,7 @@ chr20	36049801	36049822	peak_2	4.028928	-	36049743	36049822	0.09839357429718887	
 chr20	36049711	36049724	peak_3	4.0312123	-	36049646	36049725	0.09738955823293183	36049718	0.0796903
 ```
 
-Here the columns are: reference ID, peak region start position (0-based), peak region end position (1-based), peak ID, window score, strand (for transcript or sequence input always "+"), window start position (0-based), window end position (1-based), top saliency peak score (saliency), top saliency peak position (1-based), window score p-value (calculated from the positive training set scores distribution).
+Here the columns are: reference ID, reference peak region start position (0-based), reference peak region end position (1-based), peak ID, window score, strand (for transcript or sequence input always "+"), reference window start position (0-based), reference window end position (1-based), top saliency peak score (saliency), reference top saliency peak position (1-based), window score p-value (calculated from the positive training set scores distribution).
 
 The same information can also be found in the `peak_regions.tsv` file (all 1-based coordinates), which in addition contains the top saliency peak sequence and the window sequence:
 
