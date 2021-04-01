@@ -118,7 +118,7 @@ conda install -c bioconda ucsc-twobittofa
 conda install -c bioconda ucsc-bigwigaverageoverbed
 ```
 
-If you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU libraries. To install pyTorch without GPU support, simply exchange the above call with:
+If you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above call with:
 
 ```
 conda install -c conda-forge pytorch=1.7.1 cudatoolkit=10.2
