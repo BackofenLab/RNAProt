@@ -243,7 +243,7 @@ Next we create a training dataset, by supplying the downloaded GTF and .2bit fil
 rnaprot gt --in PUM2_K562_IDR_peaks.bed --out PUM2_K562_IDR_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --report
 ```
 
-Thanks to the given GTF file, the HTML report will now also include information on target gene regions and biotypes. Note that by default, `rnaprot gt` centers the input BED regions, and extends them on both sides by the set `--seq-ext` (by default 40). If you want to keep the original site lengths, set `--mode 2 --seq-ext 0`. If you want to keep original site lengths, you might also want to filter `--in` sites by `--max-len` or `--min-len`, e.g. `--max-len 100`. Of course you can also make the original sites larger, e.g. by setting `--mode 2 --seq-ext 10`. Alternatively, you can set `--mode 3` to use the region upstream ends and extend by `--seq-ext`.
+Thanks to the given GTF file, the HTML report will now also include information on target gene regions and biotypes. Note that by default, `rnaprot gt` centers the input BED regions, and extends them on both sides by the set `--seq-ext` (by default 40). If you want to keep the original site lengths, set `--mode 2 --seq-ext 0`. In this case, you might also want to filter `--in` sites by `--max-len` or `--min-len`, e.g. `--max-len 100`. Of course you can also make the original sites larger, e.g. by setting `--mode 2 --seq-ext 10`. Alternatively, you can set `--mode 3` to use the region upstream ends and extend by `--seq-ext`.
 
 Now we can train a model and evaluate it just like in the example above:
 
