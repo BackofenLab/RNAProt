@@ -904,7 +904,7 @@ RNAProt was tested with GTF files obtained from Ensembl. See Ensembl's [download
 
 #### User-defined region annotations
 
-To supply user-defined region annotations, `rnaprot gt` accepts a table file via `--feat-in`. Inside this, each row stores the information of one single features to be added, beginning with a unique feature ID, the type of feature (C: categorical, N: numerical), the feature format (0: score, 1: probability, 2: p-value), and the path to the feature regions BED file. Assume we want to use the CDE sites from [above](#test-example-with-additional-features) as a region feature for annotation, we would create a text file with the following content:
+To supply user-defined region annotations, `rnaprot gt` (`rnaprot gp`) accepts a table file via `--feat-in`. Inside this, each row stores the information of one single features to be added, beginning with a unique feature ID, the type of feature (C: categorical, N: numerical), the feature format (0: score, 1: probability, 2: p-value), and the path to the feature regions BED file. Assume we want to use the CDE sites from [above](#test-example-with-additional-features) as a region feature for annotation, we would create a text file with the following content:
 
 
 ```
