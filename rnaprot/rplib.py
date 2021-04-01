@@ -4163,6 +4163,30 @@ def check_dic1_keys_in_dic2(dic1, dic2):
 
 ################################################################################
 
+def get_nr_dic1_keys_in_dic2(dic1, dic2):
+    """
+    Return number of dic1 keys found in dic2.
+
+    >>> d1 = {'hallo': 1, 'hello' : 1}
+    >>> d2 = {'hallo': 1, 'hello' : 1, "bonjour" : 1}
+    >>> get_nr_dic1_keys_in_dic2(d1, d2)
+    2
+    >>> d1 = {'hollo': 1, 'ciao' : 1}
+    >>> get_nr_dic1_keys_in_dic2(d1, d2)
+    0
+
+    """
+    assert dic1, "dic1 empty"
+    assert dic2, "dic2 empty"
+    dic1_keys_found = 0
+    for key in dic1:
+        if key in dic2:
+            dic1_keys_found += 1
+    return dic1_keys_found
+
+
+################################################################################
+
 def bed_get_chromosome_ids(bed_file,
                            std_chr_filter=False,
                            ids_dic=False):
@@ -8083,8 +8107,6 @@ def create_rank_vs_sc_plotly(seqs_dic, id2wssc_dic,
         data[rank_df].append(ws_rank)
 
     df = pd.DataFrame(data, columns = [ws_sc_df, sal_peak_pos_df, sal_peak_sc_df, sal_win_coords_df, sal_win_seq_df, seq_df, seq_id_df, rank_df])
-
-    # alamo
 
     # Color of dots.
     dot_col = "#69e9f6"
@@ -13094,15 +13116,11 @@ def make_feature_attribution_plot(seq, feat_list, ch_info_dic,
                 if feat_encoding == "-":
                     add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
                                               disable_y_labels=True,
-                                              ylabel=fid,
+                                              y_label=fid,
                                               y_label_size=4)
                 elif feat_encoding == "prob": # 0..1
                     add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
-                                              ylabel=fid,
-                                              y_label_size=4)
-                elif feat_encoding == "minmax_norm": # 0..1
-                    add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
-                                              ylabel=fid,
+                                              y_label=fid,
                                               y_label_size=4)
                 else:
                     assert False, "invalid feature normalization string given for additional numerical %s feature (got: %s)" %(fid, feat_encoding)
@@ -13297,17 +13315,12 @@ def make_motif_plot(motif_matrix, ch_info_dic, motif_out_file,
                     add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
                                               stdev=stdev,
                                               disable_y_labels=True,
-                                              ylabel=fid,
+                                              y_label=fid,
                                               y_label_size=4)
                 elif feat_encoding == "prob": # 0..1
                     add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
                                               stdev=stdev,
-                                              ylabel=fid,
-                                              y_label_size=4)
-                elif feat_encoding == "minmax_norm": # 0..1
-                    add_phastcons_scores_plot(add_n_df, fig, gs, i_plot,
-                                              stdev=stdev,
-                                              ylabel=fid,
+                                              y_label=fid,
                                               y_label_size=4)
                 else:
                     assert False, "invalid feature normalization string given for additional numerical %s feature (got: %s)" %(fid, feat_encoding)

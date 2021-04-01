@@ -652,11 +652,6 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Use one-hot encoding for all additional position-wise features from --feat-in table, ignoring type definitions in --feat-in table (default: False)")
-    p_gta.add_argument("--feat-in-norm",
-                   dest="feat_in_norm",
-                   default = False,
-                   action = "store_true",
-                   help = "Normalize feature values (min-max normalization (0..1) of --feat-in features. --feat-in table column 3 information further controls feature normalization (default: False)")
 
     """
     Test / prediction set generation mode.
@@ -818,7 +813,6 @@ def main_train(args):
     assert "pp_bw" in gt_settings_dic, "pp_bw info missing in --in settings file %s" %(gt_settings_file)
     assert "feat_in" in gt_settings_dic, "feat_in info missing in --in settings file %s" %(gt_settings_file)
     assert "feat_in_1h" in gt_settings_dic, "feat_in_1h info missing in --in settings file %s" %(gt_settings_file)
-    assert "feat_in_norm" in gt_settings_dic, "feat_in_norm info missing in --in settings file %s" %(gt_settings_file)
     assert "plfold_u" in gt_settings_dic, "plfold_u info missing in --in settings file %s" %(gt_settings_file)
     assert "plfold_l" in gt_settings_dic, "plfold_l info missing in --in settings file %s" %(gt_settings_file)
     assert "plfold_w" in gt_settings_dic, "plfold_w info missing in --in settings file %s" %(gt_settings_file)
@@ -836,7 +830,6 @@ def main_train(args):
     args.pp_bw = gt_settings_dic["pp_bw"]
     args.feat_in = gt_settings_dic["feat_in"]
     args.feat_in_1h = gt_settings_dic["feat_in_1h"]
-    args.feat_in_norm = gt_settings_dic["feat_in_norm"]
     args.plfold_u = gt_settings_dic["plfold_u"]
     args.plfold_l = gt_settings_dic["plfold_l"]
     args.plfold_w = gt_settings_dic["plfold_w"]
@@ -2649,13 +2642,13 @@ def main_predict(args):
         plot_format = "pdf"
 
     """
-    Make sure --model-in and --in features.out are compatible.
+    Make sure --train-in and --in features.out are compatible.
     Features model was trained on need to be available / the same
     as in --in folder.
 
     """
 
-    # Get model feature infos from --model-in.
+    # Get model feature infos from --train-in.
     rp_train_features_file = args.in_train_folder + "/features.out"
     train_fid_dic = {}
     with open(rp_train_features_file) as f:
@@ -2680,10 +2673,10 @@ def main_predict(args):
 
     # Pairwise feature comparison (note that --gp can have more features, but should have the same!).
     for fid in train_fid_dic:
-        assert fid in gp_fid_dic, "feature ID %s found in --train-in but missing in --in features.out file. --in and --model need to be compatible with each other regarding used features" %(fid)
+        assert fid in gp_fid_dic, "feature ID %s found in --train-in but missing in --in features.out file. --in and --train-in need to be compatible with each other regarding used features" %(fid)
         # Structure can differ between gp/gt and train features.out (depending on set --str-mode in train).
         if fid != "str":
-            assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --model-in features.out (\"%s\" vs \"%s\"). --in and --model need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
+            assert train_fid_dic[fid] == gp_fid_dic[fid], "feature ID %s annotation varies in --in and --train-in features.out (\"%s\" vs \"%s\"). --in and --train-in need to be compatible with each other regarding used features" %(fid, gp_fid_dic[fid], train_fid_dic[fid])
 
     # Generate results output folder.
     out_folder = args.out_folder
@@ -3488,8 +3481,6 @@ def main_gt(args):
     # Additional feature checks.
     if args.feat_in_1h and not args.feat_in:
         assert False, "--feat-in-1h requires --feat-in"
-    if args.feat_in_norm and not args.feat_in:
-        assert False, "--feat-in-norm requires --feat-in"
     if args.feat_in:
         assert rplib.bed_check_six_col_format(args.feat_in, nr_cols=4), "--feat-in table file: 4 columns (data ID, data type, BED path) expected"
         # Check feature ID lengths and BED file paths.
@@ -4435,9 +4426,9 @@ def main_gt(args):
     Feature type (column 2):
     C (categorical), N (numerical)
     Feature format (column 3):
-        0 (treat feature as categorical == no normalization, do not change values)
-        1 (col5 value == score), meaning apply min-max normalization
-        2 (col5 value == p-value)
+        0 : score
+        1 : probability (for N features)
+        2 : p-value (will be converted to probability, for N features)
     Feature BED file path (column 4):
     Path to BED file to annotate feature regions.
 
@@ -4491,13 +4482,12 @@ def main_gt(args):
             if feat_type == "C":
                 FEATOUT.write("%s\tC\t0,1\tone_hot\n" %(feat_id))
             else:
-                if feat_format:
-                    if p_values:
-                        FEATOUT.write("%s\tN\tbed_score\tprob\n" %(feat_id))
-                    else:
-                        FEATOUT.write("%s\tN\tbed_score\tminmax_norm\n" %(feat_id))
-                else:
+                if feat_format == 0:
                     FEATOUT.write("%s\tN\tbed_score\t-\n" %(feat_id))
+                elif feat_format == 1 or feat_format == 2:
+                    FEATOUT.write("%s\tN\tbed_score\tprob\n" %(feat_id))
+                else:
+                    assert False, "invalid feature format set for feature ID %s inside --feat-in file %s. Please set 0, 1, or 2" %(feat_id, feat_in_file)
 
             # Stats dictionaries.
             pos_stats_dic = None
@@ -4522,7 +4512,7 @@ def main_gt(args):
                     if rplib.check_dic1_keys_in_dic2(bed_ids_dic, gen_chr_len_dic):
                         need_to_map = True
                     else:
-                        assert False, "Regions not exclusively genomic in in \"%s\" feature BED. Supply either solely transcript or solely genomic regions (no mixed regions allowed so far)" %(feat_id)
+                        assert False, "Regions not exclusively genomic in \"%s\" feature BED. Supply either solely transcript or solely genomic regions (no mixed regions allowed so far)" %(feat_id)
                 if need_to_map:
                     # Temp mapping folder.
                     map_out_folder = args.out_folder + "/" + "tmp_map_out"
@@ -4552,7 +4542,7 @@ def main_gt(args):
 
             else:
                 # Check if IDs are genomic IDs.
-                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in in \"%s\" feature BED. Please provide genomic regions matching --gtf and --gen files" %(feat_id)
+                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in \"%s\" feature BED. Please provide genomic regions matching the --gtf and --gen files" %(feat_id)
 
 
             print("Annotating \"%s\" feature ... " %(feat_id))
@@ -4579,8 +4569,8 @@ def main_gt(args):
                 neg_stats_dic["feat_id"] = feat_id
                 add_feat_dic_list.append(neg_stats_dic)
             # Normalize feature values.
-            if args.feat_in_norm and feat_format and feat_type == "N":
-                print("Min-max normalizing \"%s\" feature values ... " %(feat_id))
+            if p_values:
+                print("Convert \"%s\" feature p-values into probabilities ... " %(feat_id))
                 rplib.feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
                                                      p_values=p_values,
                                                      int_whole_nr=True)
@@ -4827,7 +4817,6 @@ def main_gp(args):
                 feat_in_file = train_settings_dic["feat_in"]
     # Get additional feature IDs.
     add_fid_dic = {}
-    args.feat_in_norm = False
     args.feat_in_1h = False
     if feat_in_file:
         with open(feat_in_file) as f:
@@ -4838,8 +4827,6 @@ def main_gp(args):
                 add_fid_dic[feat_id] = 1
                 assert feat_id in train_fid_dic, "--feat-in \"%s\" ID not a feature of --train-in model" %(feat_id)
         f.closed
-        if train_settings_dic["feat_in_norm"] == "True":
-            args.feat_in_norm = True
         if train_settings_dic["feat_in_1h"] == "True":
             args.feat_in_1h = True
         assert add_fid_dic, "no additional features read in from specified --feat-in %s" %(feat_in_file)
@@ -5668,9 +5655,10 @@ def main_gp(args):
     Feature type (column 2):
     C (categorical), N (numerical)
     Feature format (column 3):
-        0 (treat feature as categorical == no normalization, do not change values)
-        1 (col5 value == score), meaning apply min-max normalization
-        2 (col5 value == p-value)
+        0 (treat feature as categorical, no normalization, do not change values)
+        1 (col5 value == probability, no normalization, do not change values)
+        2 (col5 value == score), meaning apply min-max normalization
+        3 (col5 value == p-value)
     Feature BED file path (column 4):
     Path to BED file to annotate feature regions.
 
@@ -5724,13 +5712,12 @@ def main_gp(args):
             if feat_type == "C":
                 FEATOUT.write("%s\tC\t0,1\tone_hot\n" %(feat_id))
             else:
-                if feat_format:
-                    if p_values:
-                        FEATOUT.write("%s\tN\tbed_score\tprob\n" %(feat_id))
-                    else:
-                        FEATOUT.write("%s\tN\tbed_score\tminmax_norm\n" %(feat_id))
-                else:
+                if feat_format == 0:
                     FEATOUT.write("%s\tN\tbed_score\t-\n" %(feat_id))
+                elif feat_format == 1 or feat_format == 2:
+                    FEATOUT.write("%s\tN\tbed_score\tprob\n" %(feat_id))
+                else:
+                    assert False, "invalid feature format set for feature ID %s inside --feat-in file %s. Please set 0, 1, or 2" %(feat_id, feat_in_file)
 
             # Stats dictionaries.
             test_stats_dic = None
@@ -5744,16 +5731,20 @@ def main_gp(args):
 
             bed_ids_dic = rplib.bed_get_chromosome_ids(bed_path)
             if transcript_regions:
-                print("Check whether \"%s\" feature BED contains exclusively genomic or transcript regions ..." %(feat_id))
-                # Check if IDs are transcript IDs.
+                print("Check whether \"%s\" feature BED contains genomic or transcript regions ..." %(feat_id))
+                c_all_ids = len(bed_ids_dic)
+                c_d1_ids_in_d2 = rplib.get_nr_dic1_keys_in_dic2(bed_ids_dic, tr_len_dic)
                 need_to_map = False
-                if not rplib.check_dic1_keys_in_dic2(bed_ids_dic, tr_len_dic):
-                    print("Regions not exclusively transcript in \"%s\" feature BED, check for genomic regions ... " %(feat_id))
-                    # Check if IDs are genomic IDs.
+                if c_d1_ids_in_d2:
+                    if c_d1_ids_in_d2 != c_all_ids:
+                        c_diff = c_all_ids - c_d1_ids_in_d2
+                        print("WARNING: \"%s\" feature BED contains transcript IDs (%i out of %i) not found in --gtf!" %(feat_id, c_diff, c_all_ids))
+                        print("         These regions will not be used for annotating ... ")
+                else:
                     if rplib.check_dic1_keys_in_dic2(bed_ids_dic, gen_chr_len_dic):
                         need_to_map = True
                     else:
-                        assert False, "Regions not exclusively genomic in in \"%s\" feature BED. Supply either solely transcript or solely genomic regions (no mixed regions allowed so far)" %(feat_id)
+                        assert False, "\"%s\" feature BED does not contain any transcript IDs from --gtf and no standard chromosome IDs either"
                 if need_to_map:
                     # Temp mapping folder.
                     map_out_folder = args.out_folder + "/" + "tmp_map_out"
@@ -5783,7 +5774,7 @@ def main_gp(args):
 
             else:
                 # Check if IDs are genomic IDs.
-                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in in \"%s\" feature BED. Please provide genomic regions matching --gtf and --gen files" %(feat_id)
+                assert rplib.check_dic1_keys_in_dic2(bed_ids_dic, chr_len_dic), "Regions not exclusively genomic in \"%s\" feature BED. Please provide genomic regions matching the --gtf and --gen files" %(feat_id)
 
 
             print("Annotating \"%s\" feature ... " %(feat_id))
@@ -5800,9 +5791,10 @@ def main_gp(args):
                 test_stats_dic["feat_id"] = feat_id
                 add_feat_dic_list.append(test_stats_dic)
             neg_feat_out = args.out_folder + "/" + "negatives." + feat_id
-            # Normalize feature values.
-            if args.feat_in_norm and feat_format and feat_type == "N":
-                print("Min-max normalizing \"%s\" feature values ... " %(feat_id))
+
+            # Normalize p-value features.
+            if p_values:
+                print("Convert \"%s\" feature p-values into probabilities ... " %(feat_id))
                 rplib.feat_min_max_norm_test_scores(test_feat_out,
                                                     p_values=p_values,
                                                     int_whole_nr=True)
