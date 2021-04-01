@@ -6,7 +6,7 @@ from setuptools import setup
 """
 Setup RNAProt
 
-NOTE that additional libraries are needed to run GraphProt2. For full 
+NOTE that additional libraries are needed to run RNAProt. For full 
 installation instructions see the README.md at:
 https://github.com/BackofenLab/RNAProt
 
