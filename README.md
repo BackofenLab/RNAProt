@@ -5,8 +5,8 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
 
 ## Table of contents
 
-- [RNAProt framework introduction](#the-rnaprot-framework)
-- [RNAProt installation](#installation)
+- [The RNAProt framework](#the-rnaprot-framework)
+- [Installation](#installation)
     - [Conda](#conda)
     - [Conda package installation](#conda-package-installation)
     - [Manual installation](#manual-installation)
