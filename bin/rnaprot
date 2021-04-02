@@ -923,7 +923,7 @@ def main_train(args):
             device = torch.device('cuda')
             print("CUDA: I'm available. Using GPU ... ")
         else:
-            print("CUDA: I'm NOT (!) available. Using CPU ... ")
+            print("CUDA: I'm NOT available. Using CPU ... ")
 
     print("# dataset features:  %i" %(n_feat))
     print("Dataset size:        %i" %(len(all_features)))
@@ -1904,7 +1904,13 @@ def main_eval(args):
     print("Load --train-in model ... ")
     model = rnn_util.define_model(args, device,
                                       opt_dic=False)
-    model.load_state_dict(torch.load(model_file))
+
+    # Load a model (check whether trained on CPU or GPU).
+    if torch.cuda.is_available():
+        map_location=lambda storage, loc: storage.cuda()
+    else:
+        map_location='cpu'
+    model.load_state_dict(torch.load(model_file, map_location=map_location))
 
     # Predict.
     print("Predict whole sites ... ")
@@ -2773,7 +2779,13 @@ def main_predict(args):
     print("Load --train-in model ... ")
     model = rnn_util.define_model(args, device,
                                   opt_dic=False)
-    model.load_state_dict(torch.load(model_file))
+
+    # Load a model (check whether trained on CPU or GPU).
+    if torch.cuda.is_available():
+        map_location=lambda storage, loc: storage.cuda()
+    else:
+        map_location='cpu'
+    model.load_state_dict(torch.load(model_file, map_location=map_location))
 
     print("25th percentile score: ", pos_ws_sc_perc25)
     print("50th percentile score: ", pos_ws_sc_perc50)
