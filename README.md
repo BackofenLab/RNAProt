@@ -119,7 +119,7 @@ conda install -c bioconda ucsc-bigwigaverageoverbed
 ```
 
 Specifically, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1.
-If you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above call with:
+NOTE that if you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above call with:
 
 ```
 conda install -c conda-forge pytorch-cpu=1.8
