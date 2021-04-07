@@ -57,7 +57,7 @@ RNAProt is available as Conda package [here](https://anaconda.org/bioconda/rnapr
 We recommend to create a Conda environment inside which we will then install RNAProt:
 
 ```
-conda create -n rnaprotenv python=3.8 -c conda-forge bioconda
+conda create -n rnaprotenv python=3.8 -c conda-forge -c bioconda
 conda activate rnaprotenv
 conda install -c bioconda rnaprot
 ```
