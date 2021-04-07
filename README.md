@@ -103,25 +103,26 @@ This is great news, meaning that we can RNAProt with GPU support.
 To manually install RNAProt, we first create a Conda environment (as described [above](#conda)). Once inside the environment, we need to install the following dependencies:
 
 ```
-conda install -c conda-forge pytorch-gpu=1.7.1 cudatoolkit=10.2
-conda install -c conda-forge seaborn=0.11.1
-conda install -c bioconda viennarna=2.4.17
-conda install -c bioconda bedtools=2.29.2
-conda install -c bioconda logomaker=0.8
-conda install -c conda-forge hpbandster=0.7.4
+conda install -c conda-forge pytorch-gpu=1.8
+conda install -c conda-forge seaborn
+conda install -c bioconda viennarna
+conda install -c bioconda bedtools
+conda install -c bioconda logomaker
+conda install -c conda-forge hpbandster
 conda install -c conda-forge markdown=3.2.2
-conda install -c conda-forge plotly=4.14.3
-conda install -c conda-forge scikit-learn=0.24.1
-conda install -c bioconda ushuffle=1.2.2
+conda install -c conda-forge plotly
+conda install -c conda-forge scikit-learn
+conda install -c bioconda ushuffle
 conda install -c bioconda ucsc-twobitinfo
 conda install -c bioconda ucsc-twobittofa
 conda install -c bioconda ucsc-bigwigaverageoverbed
 ```
 
+Specifically, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1.
 If you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above call with:
 
 ```
-conda install -c conda-forge pytorch-cpu=1.7.1 cudatoolkit=10.2
+conda install -c conda-forge pytorch-cpu=1.8
 ```
 
 
