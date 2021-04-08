@@ -75,7 +75,7 @@ Now RNAProt should be available inside the environment:
 rnaprot -h
 ```
 
-Finally, if you have a compatible GPU, we want to check whether the GPU (CUDA and Nvidia CUDA Compiler nvcc) is available for RNAProt:
+Finally, if you have a compatible GPU, we want to check whether the GPU (CUDA) is available for RNAProt:
 
 ```
 python -c "import torch; print(torch.__version__)"
