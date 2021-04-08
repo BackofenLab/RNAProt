@@ -3367,6 +3367,9 @@ def gtf_extract_exon_bed(in_gtf, out_bed,
         transcript_id = m.group(1)
         # Extract exon number.
         m = re.search('exon_number "(\d+?)"', infos)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('exon_number (\d+?);', infos)
         assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         exon_nr = int(m.group(1))
 
@@ -4322,6 +4325,9 @@ def gtf_extract_exon_numbers(in_gtf,
         transcript_id = m.group(1)
         # Extract exon number.
         m = re.search('exon_number "(\d+?)"', infos)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('exon_number (\d+?);', infos)
         assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         exon_nr = int(m.group(1))
 
@@ -4602,11 +4608,17 @@ def gtf_extract_most_prominent_transcripts(in_gtf, out_file,
         gene_name = m.group(1)
         # Extract gene biotype.
         m = re.search('gene_biotype "(.+?)"', infos)
-        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('gene_type "(.+?)"', infos)
+        assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
         # Extract transcript biotype.
         m = re.search('transcript_biotype "(.+?)"', infos)
-        assert m, "transcript_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('transcript_type "(.+?)"', infos)
+        assert m, "transcript_biotype or transcript_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         tr_biotype = m.group(1)
 
         # Transcript length.
@@ -5264,8 +5276,12 @@ def gtf_get_gene_biotypes_from_transcript_ids(tr_ids_dic, in_gtf,
             gene_id = m.group(1)
             # Extract gene biotype.
             m = re.search('gene_biotype "(.+?)"', infos)
-            assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+            # Try Gencode encoding.
+            if not m:
+                m = re.search('gene_type "(.+?)"', infos)
+            assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
             gene_biotype = m.group(1)
+
             # Store infos.
             g2bt_dic[gene_id] = gene_biotype
             if all_gbtc_dic is not None:
@@ -5349,14 +5365,23 @@ def gtf_get_transcript_infos(tr_ids_dic, in_gtf):
         m = re.search('gene_id "(.+?)"', infos)
         assert m, "gene_id entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_id = m.group(1)
+
         # Extract gene biotype.
         m = re.search('gene_biotype "(.+?)"', infos)
-        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('gene_type "(.+?)"', infos)
+        assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
+
         # Extract transcript biotype.
         m = re.search('transcript_biotype "(.+?)"', infos)
-        assert m, "transcript_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('transcript_type "(.+?)"', infos)
+        assert m, "transcript_biotype or transcript_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         tr_biotype = m.group(1)
+
         m = re.search('gene_name "(.+?)"', infos)
         assert m, "gene_name entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_name = m.group(1)
@@ -5414,8 +5439,12 @@ def gtf_get_gene_infos(gene_ids_dic, in_gtf):
 
         # Extract gene biotype.
         m = re.search('gene_biotype "(.+?)"', infos)
-        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('gene_type "(.+?)"', infos)
+        assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
+
         m = re.search('gene_name "(.+?)"', infos)
         assert m, "gene_name entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_name = m.group(1)
@@ -5471,7 +5500,10 @@ def gtf_get_transcript_biotypes(tr_ids_dic, in_gtf):
 
         # Extract transcript biotype.
         m = re.search('transcript_biotype "(.+?)"', infos)
-        assert m, "transcript_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('transcript_type "(.+?)"', infos)
+        assert m, "transcript_biotype or transcript_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         tr_biotype = m.group(1)
 
         # Store biotype info.
@@ -5571,7 +5603,10 @@ def gtf_get_gene_biotypes(gene_ids_dic, in_gtf,
 
         # Extract gene biotype.
         m = re.search('gene_biotype "(.+?)"', infos)
-        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('gene_type "(.+?)"', infos)
+        assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
 
         if all_gbtc_dic is not None:
@@ -5798,6 +5833,9 @@ def convert_genome_positions_to_transcriptome(in_bed, out_folder,
         transcript_id = m.group(1)
         # Extract exon number.
         m = re.search('exon_number "(\d+?)"', infos)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('exon_number (\d+?);', infos)
         assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         exon_nr = int(m.group(1))
         # Extract gene name.
@@ -5806,7 +5844,10 @@ def convert_genome_positions_to_transcriptome(in_bed, out_folder,
         gene_name = m.group(1)
         # Extract gene biotype.
         m = re.search('gene_biotype "(.+?)"', infos)
-        assert m, "gene_biotype entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # Try Gencode encoding.
+        if not m:
+            m = re.search('gene_type "(.+?)"', infos)
+        assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
 
         # Check if transcript ID is in transcript dic.
@@ -6475,9 +6516,14 @@ def get_transcript_border_annotations(tr_ids_dic, in_gtf, out_bed,
             # For single exon transcripts, no exon borders between A + Z.
             if exc == 1:
                 continue
+            # Extract exon number.
             m = re.search('exon_number "(\d+?)"', infos)
+            # Try Gencode encoding.
+            if not m:
+                m = re.search('exon_number (\d+?);', infos)
             assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
             exon_nr = int(m.group(1))
+
             # Get infos based on exon number.
             if exon_nr == 1:
                 # First exon.
@@ -6671,9 +6717,14 @@ def gtf_write_transcript_annotations_to_bed(tr_ids_dic, in_gtf, out_bed,
                 # For single exon transcripts, no exon borders between A + Z.
                 if exc == 1:
                     continue
+                # Extract exon number.
                 m = re.search('exon_number "(\d+?)"', infos)
+                # Try Gencode encoding.
+                if not m:
+                    m = re.search('exon_number (\d+?);', infos)
                 assert m, "exon_number entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
                 exon_nr = int(m.group(1))
+
                 # Get infos based on exon number.
                 if exon_nr == 1:
                     # First exon.

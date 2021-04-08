@@ -62,6 +62,12 @@ conda activate rnaprotenv
 conda install -c bioconda rnaprot
 ```
 
+NOTE that the bioconda installation only includes the CPU version of RNAProt (no GPU support). If you have a GPU supporting CUDA and want to take advantage of it (very much recommended for fast model training!), just install in addition:
+
+```
+conda install -c conda-forge pytorch-gpu=1.8
+```
+
 Now RNAProt should be available inside the environment:
 
 
@@ -100,7 +106,7 @@ This is great news, meaning that we can RNAProt with GPU support.
 
 ### Manual installation
 
-To manually install RNAProt, we first create a Conda environment (as described [above](#conda)). Once inside the environment, we need to install the following dependencies:
+To manually install RNAProt, we first create a Conda environment (as described [above](#conda)). Once inside the environment, we need to install the following dependencies for the GPU version (GPU with CUDA support required):
 
 ```
 conda install -c conda-forge pytorch-gpu=1.8
@@ -118,12 +124,13 @@ conda install -c bioconda ucsc-twobittofa
 conda install -c bioconda ucsc-bigwigaverageoverbed
 ```
 
-Specifically, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1.
-NOTE that if you don't have a dedicated GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above call with:
+If you don't have a CUDA supporting GPU (and you're not planning on getting one any time soon either), you don't need to install the additional GPU dependencies. To install pyTorch without GPU support, simply exchange the above pytorch call with:
 
 ```
 conda install -c conda-forge pytorch-cpu=1.8
 ```
+
+Concerning version numbers, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1.
 
 
 Finally, to install RNAProt, we simply clone the repository and execute the installation script inside the folder:
