@@ -47,7 +47,7 @@ If you do not have Conda yet, you can e.g. install miniconda, a free + lightweig
 
 ```
 $ conda --version
-conda 4.9.2
+conda 4.10.0
 ```
 
 ### Conda package installation
@@ -88,16 +88,11 @@ In our test case this delivers:
 
 ```
 $ python -c "import torch; print(torch.__version__)"
-1.7.1
+1.8.0
 $ python -c "import torch; print(torch.cuda.is_available())"
 True
 $ python -c "import torch; print(torch.version.cuda)"
-10.2
-$ nvcc --version
-nvcc: NVIDIA (R) Cuda compiler driver
-Copyright (c) 2005-2018 NVIDIA Corporation
-Built on Sat_Aug_25_21:08:01_CDT_2018
-Cuda compilation tools, release 10.0, V10.0.130
+11.0
 ```
 
 This is great news, meaning that we can RNAProt with GPU support.
