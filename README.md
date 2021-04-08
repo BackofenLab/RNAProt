@@ -81,7 +81,6 @@ Finally, if you have a compatible GPU, we want to check whether the GPU (CUDA) i
 python -c "import torch; print(torch.__version__)"
 python -c "import torch; print(torch.cuda.is_available())"
 python -c "import torch; print(torch.version.cuda)"
-nvcc --version
 ```
 
 In our test case this delivers:
