@@ -65,8 +65,8 @@ conda install -c bioconda rnaprot
 If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. complaints about conflicting dependencies), the following commands should do the trick:
 
 ```
-conda config --add bioconda
-conda config --add conda-forge
+conda config --add channels bioconda
+conda config --add channels conda-forge
 ```
 
 This tells conda to explicitly look for packages in the specified channels, stored in the `.condarc` [conda configuration file](https://conda.io/projects/conda/en/latest/user-guide/configuration/use-condarc.html).
