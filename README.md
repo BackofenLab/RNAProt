@@ -62,14 +62,14 @@ conda activate rnaprotenv
 conda install -c bioconda rnaprot
 ```
 
-If you are experiencing problems while running the last command (e.g. conda complaining about conflicting dependencies), the following commands can help:
+If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. conda complaining about conflicting dependencies), the following commands should do the trick:
 
 ```
 conda config --add bioconda
 conda config --add conda-forge
 ```
 
-This tells conda to explicitly look for packages in the specified channels, stored in the [`.condarc` conda configuration file](https://conda.io/projects/conda/en/latest/user-guide/configuration/use-condarc.html).
+This tells conda to explicitly look for packages in the specified channels, stored in the `.condarc` [conda configuration file](https://conda.io/projects/conda/en/latest/user-guide/configuration/use-condarc.html).
 
 
 NOTE that the bioconda installation only includes the CPU version of RNAProt (no GPU support). If you have a GPU supporting CUDA and want to take advantage of it (very much recommended for fast model training!), just install in addition:
