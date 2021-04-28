@@ -62,7 +62,7 @@ conda activate rnaprotenv
 conda install -c bioconda rnaprot
 ```
 
-If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. conda complaining about conflicting dependencies), the following commands should do the trick:
+If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. complaints about conflicting dependencies), the following commands should do the trick:
 
 ```
 conda config --add bioconda
