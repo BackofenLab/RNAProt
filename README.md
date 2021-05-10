@@ -955,7 +955,7 @@ id2	0.2,-0.1,0,1
 id3	0.1,-0.2,0
 ```
 
-We see that the first column contains the sequence IDs, which need to be identical to the ones supplied via `--in` and `--neg-in`. The second column contains the position-wise numerical feature values, which need to be comma-separated. The number of numerical feature values needs to be equal to the respective sequence length. This way, each sequence nucleotide can get one numerical feature value assigned.
+We see that the first column contains the sequence IDs, which need to be identical to the ones supplied via `--in` and `--neg-in`. The second column contains the position-wise numerical feature values, which need to be comma-separated. The number of numerical feature values needs to be equal to the respective sequence length. This way, each sequence nucleotide can get one numerical feature value assigned. Note that the values will be used for training as they are, meaning that there is no further normalization applied to the values.
 
 
 #### Additional inputs
