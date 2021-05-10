@@ -10103,6 +10103,131 @@ def feat_min_max_norm_test_scores(test_feat_out,
 
 ################################################################################
 
+def gp_seq_only_generate_feat_annot(feat_file, test_out, seq_len_dic):
+
+    """
+    Generate --feat-in annotation files for rnaprot gp and sequences-only
+    input.
+    --feat-in files need to have following format:
+
+    Input format:
+    test_id1<tab>-1,0.3,0.2,...,0.1
+    ...
+
+    seq_len_dic:
+        Sequence lengths dictionary for checking.
+
+    >>> seq_len_dic = {'t1': 4, 't2': 3}
+    >>> feat_file = "test_data/test_seq_feat_gp.in"
+    >>> test_exp_out = "test_data/test_seq_feat_gp.exp.out"
+    >>> test_tmp_out = "test_data/test_seq_feat_gp.tmp.out"
+    >>> gp_seq_only_generate_feat_annot(feat_file, test_tmp_out, seq_len_dic)
+    >>> diff_two_files_identical(test_tmp_out, test_exp_out)
+    True
+
+    """
+
+    feat_dic = {}
+
+    with open(feat_file) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            assert len(cols) == 2, "# columns != 2 for --feat-in file  \"%s\", line \"%s\"" %(feat_file, line)
+            seq_id = cols[0]
+            assert seq_id not in feat_dic, "non-unique header \"%s\" in \"%s\"" % (seq_id, feat_file)
+            assert seq_id in seq_len_dic, "sequence ID \"%s\" from --feat-in file \"%s\" not part of training sequences set" %(seq_id, feat_file)
+            fl = cols[1].strip().split(",")
+            assert fl, "no feat_list extracted from file \"%s\", line \"%s\"" %(feat_file, line)
+            assert len(fl) == seq_len_dic[seq_id], "length of feature vector for sequence ID %s != sequence length (%i != %i)" %(seq_id, len(fl), seq_len_dic[seq_id])
+            #flf = [float(v) for v in fl]
+            feat_dic[seq_id] = fl
+    f.closed
+    assert feat_dic, "no feature values read in (input file \"%s\" empty or mal-formatted?)" %(feat_file)
+    assert len(seq_len_dic) == len(feat_dic), "len(seq_len_dic) != len(feat_dic) (%i != %i)" %(len(seq_len_dic), len(feat_dic))
+
+    # Output positives and negatives feature files.
+    OUTF = open(test_out,"w")
+
+    for seq_id in feat_dic:
+        OUTF.write(">%s\n" %(seq_id))
+        for v in feat_dic[seq_id]:
+            OUTF.write("%s\n" %(v))
+    OUTF.close()
+
+
+################################################################################
+
+def gt_seq_only_generate_feat_annot(feat_file, pos_out, neg_out,
+                                    seq_len_dic, seq_label_dic):
+    """
+    Generate --feat-in annotation files for rnaprot gt and sequences-only
+    input.
+    --feat-in files need to have following format:
+
+    Input format:
+    pos_id1<tab>-1,0.3,0.2,...,0.1
+    ...
+    neg_id1<tab>-1,0.3,0.2,...,0.1
+
+    seq_len_dic:
+        Sequence lengths dictionary for checking.
+    seq_label_dic:
+        Sequence ID -> class label dictionary (1: positives, 2: negatives).
+
+    >>> seq_len_dic = {'p1': 4, 'p2': 4, 'n1': 4, 'n2': 3}
+    >>> seq_label_dic = {'p1': 1, 'p2': 1, 'n1': 0, 'n2': 0}
+    >>> feat_file = "test_data/test_seq_feat.in"
+    >>> pos_exp_out = "test_data/test_seq_feat_pos.exp.out"
+    >>> neg_exp_out = "test_data/test_seq_feat_neg.exp.out"
+    >>> pos_tmp_out = "test_data/test_seq_feat_pos.tmp.out"
+    >>> neg_tmp_out = "test_data/test_seq_feat_neg.tmp.out"
+    >>> gt_seq_only_generate_feat_annot(feat_file, pos_tmp_out, neg_tmp_out, seq_len_dic, seq_label_dic)
+    >>> diff_two_files_identical(pos_tmp_out, pos_exp_out)
+    True
+    >>> diff_two_files_identical(neg_tmp_out, neg_exp_out)
+    True
+
+    """
+
+    feat_dic = {}
+
+    with open(feat_file) as f:
+        for line in f:
+            cols = line.strip().split("\t")
+            assert len(cols) == 2, "# columns != 2 for --feat-in file  \"%s\", line \"%s\"" %(feat_file, line)
+            seq_id = cols[0]
+            assert seq_id not in feat_dic, "non-unique header \"%s\" in \"%s\"" % (seq_id, feat_file)
+            assert seq_id in seq_len_dic, "sequence ID \"%s\" from --feat-in file \"%s\" not part of training sequences set" %(seq_id, feat_file)
+            fl = cols[1].strip().split(",")
+            assert fl, "no feat_list extracted from file \"%s\", line \"%s\"" %(feat_file, line)
+            assert len(fl) == seq_len_dic[seq_id], "length of feature vector for sequence ID %s != sequence length (%i != %i)" %(seq_id, len(fl), seq_len_dic[seq_id])
+            #flf = [float(v) for v in fl]
+            feat_dic[seq_id] = fl
+    f.closed
+    assert feat_dic, "no feature values read in (input file \"%s\" empty or mal-formatted?)" %(feat_file)
+    assert len(seq_len_dic) == len(feat_dic), "len(seq_len_dic) != len(feat_dic) (%i != %i)" %(len(seq_len_dic), len(feat_dic))
+
+    # Output positives and negatives feature files.
+    OUTP = open(pos_out,"w")
+    OUTN = open(neg_out,"w")
+
+    for seq_id in feat_dic:
+        if seq_label_dic[seq_id] == 1:
+            # Positives.
+            OUTP.write(">%s\n" %(seq_id))
+            for v in feat_dic[seq_id]:
+                OUTP.write("%s\n" %(v))
+        else:
+            # Negatives.
+            OUTN.write(">%s\n" %(seq_id))
+            for v in feat_dic[seq_id]:
+                OUTN.write("%s\n" %(v))
+    OUTP.close()
+    OUTN.close()
+
+
+################################################################################
+
 def feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
                                    p_values=False,
                                    dec_round=4,

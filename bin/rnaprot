@@ -38,11 +38,23 @@ Check out available modes
 rnaprot -h
 
 
+    fa	C	A,C,G,U	-
+    bpp.str	N	bp_prob	prob
+    elem_p.str	N	p_e,p_h,p_i,p_m,p_s	prob
+    pc.con	N	phastcons_score	prob
+    pp.con	N	phylop_score	minmax2
+    tra	C	C,F,N,T	-
+    eia	C	E,I	-
+    rra	C	N,R	-
+
 """
 
 
 # Loss criterion.
 criterion = BCEWithLogitsLoss()
+# Standard feature IDs dictionary.
+std_feat_dic = {'fa': 1, 'str': 1, 'pc.con': 1, 'pp.con': 1, 'eia': 1, 'tra': 1, 'rra': 1}
+
 
 
 ################################################################################
@@ -3344,6 +3356,85 @@ def main_gt(args):
         # Sequence set stats.
         c_pos_out = len(pos_seqs_dic)
         c_neg_out = len(neg_seqs_dic)
+
+
+        """
+        Additional features --feat-in for sequences only input.
+
+        Only numerical features imported so far (no one-hot encoding),
+        so values in linked files read in / treated as numerical.
+        Also, no normalization is applied to values.
+
+        Input format:
+        pos_id1<tab>-1,0.3,0.2,...,0.1
+        ...
+        neg_id1<tab>-1,0.3,0.2,...,0.1
+
+        """
+
+        feat_id_list = []
+
+        if args.feat_in:
+
+            print("Extracting additional sequence features from --feat-in ... ")
+
+            seq_len_dic = {}
+            seq_label_dic = {}
+            for seq_id in pos_seqs_dic:
+                seq_l = len(pos_seqs_dic[seq_id])
+                seq_len_dic[seq_id] = seq_l
+                seq_label_dic[seq_id] = 1
+            for seq_id in neg_seqs_dic:
+                seq_l = len(neg_seqs_dic[seq_id])
+                seq_len_dic[seq_id] = seq_l
+                seq_label_dic[seq_id] = 0
+            assert seq_len_dic, "seq_len_dic empty"
+            assert seq_label_dic, "seq_label_dic empty"
+
+            fids_dic = {}
+            fid2type_dic = {} # C,N (only N supported here)
+            fid2format_dic = {} # 0,1,2 (only 0 supported here)
+            fid2path_dic = {}
+            with open(args.feat_in) as f:
+                for line in f:
+                    row = line.strip()
+                    cols = line.strip().split("\t")
+                    feat_id = cols[0]
+                    feat_type = cols[1]
+                    feat_format = int(cols[2])
+                    file_path = cols[3]
+                    # Convert to valid file ending.
+                    new_feat_id = rplib.get_valid_file_ending(feat_id)
+                    if feat_id != new_feat_id:
+                        print("Converted feature ID \"%s\" to \"%s\" to have valid file ending" %(feat_id, new_feat_id))
+                    assert new_feat_id not in fids_dic, "non-unique feature ID \"%s\" in --feat-in table file" %(new_feat_id)
+                    assert new_feat_id not in std_feat_dic, "feature ID \"%s\" in --feat-in table file conflicts with standard feature ID \"%s\". Please use a different ID" %(new_feat_id, std_feat_dic[new_feat_id])
+                    assert os.path.exists(file_path), "--feat-in file path \"%s\" does not exist" %(file_path)
+                    fids_dic[new_feat_id] = 1
+                    fid2type_dic[new_feat_id] = feat_type
+                    fid2format_dic[new_feat_id] = feat_format
+                    fid2path_dic[new_feat_id] = file_path
+            f.closed
+            assert fids_dic, "no features read in from --feat-in table"
+
+            for feat_id in fids_dic:
+                file_path = fid2path_dic[feat_id]
+                feat_type = fid2type_dic[feat_id]
+                feat_format = fid2format_dic[feat_id]
+                assert feat_type == "N", "--feat-in: only numerical features (\"N\") supported so far"
+
+                FEATOUT.write("%s\tN\tscore\t-\n" %(feat_id))
+
+                print("Annotating \"%s\" feature ... " %(feat_id))
+
+                pos_feat_out = args.out_folder + "/" + "positives." + feat_id
+                neg_feat_out = args.out_folder + "/" + "negatives." + feat_id
+
+                rplib.gt_seq_only_generate_feat_annot(file_path,
+                                            pos_feat_out, neg_feat_out,
+                                            seq_len_dic, seq_label_dic)
+                feat_id_list.append(feat_id)
+
         if args.report:
             # HTML report output file.
             html_report_out = args.out_folder + "/" + "report.rnaprot_gt.html"
@@ -3378,6 +3469,12 @@ def main_gt(args):
         if args.add_str:
             print("Positives position-wise structural elements probabilities .str:\n%s" %(pos_str_out))
             print("Negatives position-wise structural elements probabilities .str:\n%s" %(neg_str_out))
+        if feat_id_list:
+            for add_fid in feat_id_list:
+                pos_feat_out = args.out_folder + "/" + "positives." + add_fid
+                neg_feat_out = args.out_folder + "/" + "negatives." + add_fid
+                print("Positives --feat-in annotations .%s:\n%s" %(add_fid, pos_feat_out))
+                print("Positives --feat-in annotations .%s:\n%s" %(add_fid, neg_feat_out))
         if args.report:
             print("Training set generation report .html:\n%s" %(html_report_out))
         print("")
@@ -4470,6 +4567,7 @@ def main_gt(args):
                 if feat_id != new_feat_id:
                     print("Converted feature ID \"%s\" to \"%s\" to have valid file ending" %(feat_id, new_feat_id))
                 assert new_feat_id not in fids_dic, "non-unique feature ID \"%s\" in --feat-in table file" %(new_feat_id)
+                assert new_feat_id not in std_feat_dic, "feature ID \"%s\" in --feat-in table file conflicts with standard feature ID \"%s\". Please use a different ID" %(new_feat_id, std_feat_dic[new_feat_id])
                 fids_dic[new_feat_id] = 1
                 fid2type_dic[new_feat_id] = feat_type
                 fid2format_dic[new_feat_id] = feat_format
@@ -5027,6 +5125,77 @@ def main_gp(args):
 
         # Sequence set stats.
         c_test_out = len(test_seqs_dic)
+
+
+        """
+        Additional features --feat-in for sequences only input.
+
+        Only numerical features imported so far (no one-hot encoding),
+        so values in linked files read in / treated as numerical.
+        Also, no normalization is applied to values.
+
+        Input format:
+        test_id1<tab>-1,0.3,0.2,...,0.1
+        ...
+
+        alamo
+
+        """
+
+        feat_id_list = []
+
+        if args.feat_in:
+
+            print("Extracting additional sequence features from --feat-in ... ")
+
+            seq_len_dic = {}
+            for seq_id in test_seqs_dic:
+                seq_l = len(test_seqs_dic[seq_id])
+                seq_len_dic[seq_id] = seq_l
+            assert seq_len_dic, "seq_len_dic empty"
+
+            fids_dic = {}
+            fid2type_dic = {} # C,N (only N supported here)
+            fid2format_dic = {} # 0,1,2 (only 0 supported here)
+            fid2path_dic = {}
+            with open(args.feat_in) as f:
+                for line in f:
+                    row = line.strip()
+                    cols = line.strip().split("\t")
+                    feat_id = cols[0]
+                    feat_type = cols[1]
+                    feat_format = int(cols[2])
+                    file_path = cols[3]
+                    # Convert to valid file ending.
+                    new_feat_id = rplib.get_valid_file_ending(feat_id)
+                    if feat_id != new_feat_id:
+                        print("Converted feature ID \"%s\" to \"%s\" to have valid file ending" %(feat_id, new_feat_id))
+                    assert new_feat_id not in fids_dic, "non-unique feature ID \"%s\" in --feat-in table file" %(new_feat_id)
+                    assert new_feat_id not in std_feat_dic, "feature ID \"%s\" in --feat-in table file conflicts with standard feature ID \"%s\". Please use a different ID" %(new_feat_id, std_feat_dic[new_feat_id])
+                    assert os.path.exists(file_path), "--feat-in file path \"%s\" does not exist" %(file_path)
+                    fids_dic[new_feat_id] = 1
+                    fid2type_dic[new_feat_id] = feat_type
+                    fid2format_dic[new_feat_id] = feat_format
+                    fid2path_dic[new_feat_id] = file_path
+            f.closed
+            assert fids_dic, "no features read in from --feat-in table"
+
+            for feat_id in fids_dic:
+                file_path = fid2path_dic[feat_id]
+                feat_type = fid2type_dic[feat_id]
+                feat_format = fid2format_dic[feat_id]
+                assert feat_type == "N", "--feat-in: only numerical features (\"N\") supported so far"
+
+                FEATOUT.write("%s\tN\tscore\t-\n" %(feat_id))
+
+                print("Annotating \"%s\" feature ... " %(feat_id))
+
+                test_feat_out = args.out_folder + "/" + "test." + feat_id
+
+                rplib.gp_seq_only_generate_feat_annot(file_path,
+                                            test_feat_out, seq_len_dic)
+                feat_id_list.append(feat_id)
+
         if args.report:
             # HTML report output file.
             html_report_out = args.out_folder + "/" + "report.rnaprot_gp.html"
@@ -5057,6 +5226,10 @@ def main_gp(args):
         print("Sequences .fa:\n%s" %(test_fasta_out))
         if args.add_str:
             print("Structural elements probabilities .elem_p.str:\n%s" %(test_str_out))
+        if feat_id_list:
+            for add_fid in feat_id_list:
+                test_feat_out = args.out_folder + "/" + "test." + add_fid
+                print("Additional --feat-in annotations .%s:\n%s" %(add_fid, test_feat_out))
         if args.report:
             print("Prediction set generation report .html:\n%s" %(html_report_out))
         print("")
@@ -5956,7 +6129,7 @@ if __name__ == '__main__':
      / __ \/ | / /   |  / __ \/ __ \/ __ \/_  __/
     / /_/ /  |/ / /| | / /_/ / /_/ / / / / / /
    / _, _/ /|  / ___ |/ ____/ _, _/ /_/ / / /
-  /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/ 
+  /_/ |_/_/ |_/_/  |_/_/   /_/ |_|\____/ /_/
 """
     print(banner)
 
