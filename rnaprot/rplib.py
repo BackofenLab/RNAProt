@@ -10084,7 +10084,10 @@ def feat_min_max_norm_test_scores(test_feat_out,
         OUTF.write(">%s\n" %(site_id))
         for sc in sc_dic[site_id]:
             if sc == 0:
-                OUTF.write("0\n")
+                if p_values:
+                    OUTF.write("1\n")
+                else:
+                    OUTF.write("0\n")
             else:
                 if p_values:
                     sc_norm = 1 - sc
@@ -10162,7 +10165,10 @@ def feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
         OUTP.write(">%s\n" %(site_id))
         for sc in pos_sc_dic[site_id]:
             if sc == 0:
-                OUTP.write("0\n")
+                if p_values:
+                    OUTP.write("1\n")
+                else:
+                    OUTP.write("0\n")
             else:
                 if p_values:
                     sc_norm = 1 - sc
@@ -10181,7 +10187,10 @@ def feat_min_max_norm_train_scores(pos_feat_out, neg_feat_out,
         OUTN.write(">%s\n" %(site_id))
         for sc in neg_sc_dic[site_id]:
             if sc == 0:
-                OUTN.write("0\n")
+                if p_values:
+                    OUTN.write("1\n")
+                else:
+                    OUTN.write("0\n")
             else:
                 if p_values:
                     sc_norm = 1 - sc
