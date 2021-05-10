@@ -414,7 +414,6 @@ usage: rnaprot gt [-h] --in str --out str [--gtf str] [--gen str]
                   [--phylop str] [--tra] [--tra-codons] [--tra-borders]
                   [--rra] [--str] [--plfold-u int] [--plfold-l int]
                   [--plfold-w int] [--feat-in str] [--feat-in-1h]
-                  [--feat-in-norm]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -483,9 +482,9 @@ additional annotation arguments:
                         N instead of labelling them as introns (I) (in
                         combination with --eia) (default: False)
   --eia-all-ex          Use all annotated exons in --gtf file, instead of
-                        exons of most prominent transcripts or exon defined by
-                        --tr-list. Set this and --tr-list will be effective
-                        only for --tra (default: False)
+                        exons of most prominent transcripts defined by --tr-
+                        list. Set this and --tr-list will be effective only
+                        for --tra (default: False)
   --tr-list str         Supply file with transcript IDs (one ID per row) for
                         exon-intron labeling (using the corresponding exon
                         regions from --gtf). By default, exon regions of the
@@ -514,7 +513,9 @@ additional annotation arguments:
   --plfold-w int        RNAplfold -W parameter value (default: 70)
   --feat-in str         Provide tabular file with additional position-wise
                         genomic region features (infos and paths to BED files)
-                        to add
+                        to add. NOTE that if --in == FASTA sequences, input
+                        file format changes from BED to tabular (see
+                        documentation)
   --feat-in-1h          Use one-hot encoding for all additional position-wise
                         features from --feat-in table, ignoring type
                         definitions in --feat-in table (default: False)
@@ -752,7 +753,7 @@ additional annotation arguments:
                    transcripts (automatically selected from --gtf) are used
                    (default: False)
   --eia-all-ex     Use all annotated exons in --gtf file, instead of exons of
-                   most prominent transcripts defined by --tr-list.
+                   most prominent transcripts or exon defined by --tr-list.
                    Set this and --tr-list will be effective only for --tra.
                    NOTE that by default --eia-all-ex is disabled, even if
                    --train-in model was trained with --eia-all-ex (default:
@@ -762,10 +763,12 @@ additional annotation arguments:
   --phylop str     Genomic .bigWig file with phyloP conservation scores to add
                    as annotations
   --feat-in str    Provide tabular file with additional position-wise genomic
-                   region features (infos and paths to BED files) to add. BE
-                   SURE to use the same file as used for generating the
-                   training dataset (rnaprot gt --feat-in) for training the
-                   model from --train-in!
+                   region features (infos and paths to BED files) to add. NOTE
+                   that if --in == FASTA sequences, input file format changes
+                   from BED to tabular (see documentation). BE SURE to use the
+                   same file as used for generating the training dataset
+                   (rnaprot gt --feat-in) for training the model from --train-
+                   in!
 
 ```
 
@@ -932,6 +935,27 @@ CDE	C	0	test/CDE_sites.bed
 ```
 
 Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "N" and "2" (column 1 and 2, telling RNAProt that these are p-values), RNAProt will automatically convert them to probabilities, by using 1-p-value for the respective regions. As said we do not recommend using raw column 5 BED scores, since the values are not normalized, which likely will be suboptimal for learning.
+
+
+#### User-defined features for sequences
+
+In case FASTA sequences are provided via `--in` (`rnaprot gt` and `rnaprot gp`), the format of input files specified in the `--feat-in` changes from BED to tabular. In order for this to work, we also need to supply the negative sequences through `--neg-in`, since the additional feature information has to be given for both positive and negative sequences. Currently only numerical features are supported. A valid `--feat-in` table file would thus look like this:
+
+```
+$ cat add_feat.in
+featx	N	0	test/another_feat.in
+```
+
+Moreover, the format of the feature file should look like this:
+
+```
+$ cat test/another_feat.in
+id1	-0.2,0.1,0,-1
+id2	0.2,-0.1,0,1
+id3	0.1,-0.2,0
+```
+
+We see that the first column contains the sequence IDs, which need to be identical to the ones supplied via `--in` and `--neg-in`. The second column contains the position-wise numerical feature values, which need to be comma-separated. The number of numerical feature values needs to be equal to the sequence length. This way, each sequence nucleotide can get one numerical feature value assigned.
 
 
 #### Additional inputs

@@ -658,7 +658,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. NOTE that if --in == FASTA sequences, input file format changes from BED to tabular (see documentation)")
     p_gta.add_argument("--feat-in-1h",
                    dest="feat_in_1h",
                    default = False,
@@ -759,7 +759,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. NOTE that if --in == FASTA sequences, input file format changes from BED to tabular (see documentation). BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
     return p
 
 
