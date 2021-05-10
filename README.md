@@ -361,7 +361,7 @@ Note however that predictions between two models can vary, since negative sites 
 ## Documentation
 
 
-This documentation provides details on all the RNAProt (version 0.3) framework parts:
+This documentation provides details on all the RNAProt (version 0.4) framework parts:
 [program modes](#program-modes), [supported features](#supported-features), [inputs](#inputs), and [outputs](#outputs).
 
 
