@@ -658,7 +658,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. NOTE that if --in == FASTA sequences, input file format changes from BED to tabular (see documentation)")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add")
     p_gta.add_argument("--feat-in-1h",
                    dest="feat_in_1h",
                    default = False,
@@ -759,7 +759,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. NOTE that if --in == FASTA sequences, input file format changes from BED to tabular (see documentation). BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
     return p
 
 
@@ -3357,21 +3357,6 @@ def main_gt(args):
         c_pos_out = len(pos_seqs_dic)
         c_neg_out = len(neg_seqs_dic)
 
-
-        """
-        Additional features --feat-in for sequences only input.
-
-        Only numerical features imported so far (no one-hot encoding),
-        so values in linked files read in / treated as numerical.
-        Also, no normalization is applied to values.
-
-        Input format:
-        pos_id1<tab>-1,0.3,0.2,...,0.1
-        ...
-        neg_id1<tab>-1,0.3,0.2,...,0.1
-
-        """
-
         feat_id_list = []
 
         if args.feat_in:
@@ -5125,22 +5110,6 @@ def main_gp(args):
 
         # Sequence set stats.
         c_test_out = len(test_seqs_dic)
-
-
-        """
-        Additional features --feat-in for sequences only input.
-
-        Only numerical features imported so far (no one-hot encoding),
-        so values in linked files read in / treated as numerical.
-        Also, no normalization is applied to values.
-
-        Input format:
-        test_id1<tab>-1,0.3,0.2,...,0.1
-        ...
-
-        alamo
-
-        """
 
         feat_id_list = []
 
