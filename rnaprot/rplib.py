@@ -15130,9 +15130,10 @@ def seq_get_vp_region(seq):
     """
     Get viewpoint (uppercase region) from a sequence.
 
-    >>> seq = "acguAACCGGacgu"
-    >>> seq_get_vp_region(seq)
+    >>> seq_get_vp_region("acguAACCGGacgu")
     'AACCGG'
+    >>> seq_get_vp_region("ACGU")
+    'ACGU'
 
     """
     assert seq, "seq empty"
