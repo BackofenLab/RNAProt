@@ -180,7 +180,7 @@ def setup_argument_parser():
                    dest="test_ids",
                    type=str,
                    metavar='str',
-                   help = "Provide file with test IDs to be used as a test set for testing final model. Test IDs need to be part of --in training set. Not compatible with --add-test, --cv, or --gm-cv")
+                   help = "Provide file with test IDs to be used as a test set for testing final model. Test IDs need to be part of --in training set. Not compatible with --add-test or --cv")
     p_tra.add_argument("--keep-order",
                    dest="keep_order",
                    default = False,
