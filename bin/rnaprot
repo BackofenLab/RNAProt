@@ -56,7 +56,6 @@ criterion = BCEWithLogitsLoss()
 std_feat_dic = {'fa': 1, 'str': 1, 'pc.con': 1, 'pp.con': 1, 'eia': 1, 'tra': 1, 'rra': 1}
 
 
-
 ################################################################################
 
 def setup_argument_parser():
