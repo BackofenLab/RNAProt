@@ -12056,6 +12056,7 @@ def shuffle_idx_feat_labels(labels, features,
         idx2id_dic = idx2id_dic_new
     return new_labels, features
 
+
 ################################################################################
 
 def read_settings_into_dic(settings_file,
