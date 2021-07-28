@@ -657,7 +657,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. NOTE that if --in == FASTA sequences, input file format changes from BED to tabular (see documentation)")
     p_gta.add_argument("--feat-in-1h",
                    dest="feat_in_1h",
                    default = False,
@@ -758,7 +758,7 @@ def setup_argument_parser():
                    dest="feat_in",
                    type=str,
                    metavar='str',
-                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in!")
+                   help = "Provide tabular file with additional position-wise genomic region features (infos and paths to BED files) to add. BE SURE to use the same file as used for generating the training dataset (rnaprot gt --feat-in) for training the model from --train-in! NOTE that this does not apply if --in == FASTA sequences. Here input file format changes from BED to tabular (see documentation), and files need to contain values for --in sequences")
     return p
 
 
@@ -3356,6 +3356,21 @@ def main_gt(args):
         c_pos_out = len(pos_seqs_dic)
         c_neg_out = len(neg_seqs_dic)
 
+
+        """
+        Additional features --feat-in for sequence-only input.
+
+        Only numerical features imported so far (no one-hot encoding),
+        so values in linked files read in / treated as numerical.
+        Also, no normalization is applied to values.
+
+        Input format:
+        pos_id1<tab>-1,0.3,0.2,...,0.1
+        ...
+        neg_id1<tab>-1,0.3,0.2,...,0.1
+
+        """
+
         feat_id_list = []
 
         if args.feat_in:
@@ -4896,16 +4911,22 @@ def main_gp(args):
                                                  val_col2=True)
     assert "fa" in train_fid_dic, "sequence feature \"fa\" missing in %s" %(rp_train_features_file)
 
+    # Check if --in is FASTA.
+    in_file_fasta = False
+    if rplib.fasta_check_fasta_file(args.in_sites):
+        in_file_fasta = True
+
     # Additional feature file.
     feat_in_file = False
     if args.feat_in:
         assert os.path.exists(args.feat_in), "provided --feat-in file not found"
-        if train_settings_dic["feat_in"] != "None":
+        if train_settings_dic["feat_in"] != "None" and not in_file_fasta:
             if os.path.exists(train_settings_dic["feat_in"]):
                 print("WARNING: previous --feat-in file path found in --train-in, but will be overwritten by set --feat-in")
         feat_in_file = args.feat_in
     else:
         if train_settings_dic["feat_in"] != "None":
+            assert not in_file_fasta, "model was trained on sequences with additional features, but no --feat-in was given"
             if os.path.exists(train_settings_dic["feat_in"]):
                 print("Using --feat-in file specified in --train-in ... ")
                 feat_in_file = train_settings_dic["feat_in"]
@@ -4938,10 +4959,6 @@ def main_gp(args):
     args.plfold_l = None
     args.plfold_w = None
     args.add_str = False
-
-    in_file_fasta = False
-    if rplib.fasta_check_fasta_file(args.in_sites):
-        in_file_fasta = True
 
     onlyseq = False
     if len(train_fid_dic) == 1:
@@ -5065,7 +5082,7 @@ def main_gp(args):
     --in FASTA given.
 
     If --in FASTA is set, possible features beside sequence:
-    --str and optionally --bp-in (custom base pairs)
+    --str and optionally --feat-in (if --train-in model trained on same features)
 
     """
 

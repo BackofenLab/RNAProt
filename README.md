@@ -859,7 +859,7 @@ To use repeat region annotations for `rnaprot train`, set `--use-rra`. Otherwise
 #### User-defined region annotations
 
 User-defined features in the form of region information (BED) for annotating transcript or genomic input regions can also be supplied. For this `rnaprot gt` and `rnaprot gp` require a table file with a specific format (feature ID, feature type, feature format, BED file path) provided via `--feat-in`. The table format is defined in the [Inputs](#inputs) section below. `rnaprot gt` also offers an option to force one-hot-encoding of all user-defined features (see mode option `--feat-in-1h`).
-To utilize user-defined region annotations for `rnaprot train`, set `--use-add-feat`. Otherwise, if no other feature is specified, `rnaprot train` will train a model with all present features.
+To utilize user-defined region annotations for `rnaprot train`, set `--use-add-feat`. Otherwise, if no other feature is specified, `rnaprot train` will train a model with all present features. User-defined features for sequences are also supported, where the input format of the feature files changes from BED to tabular (see description [below](#user-defined-features-for-sequences)).
 
 
 ### Inputs
@@ -931,6 +931,27 @@ CDE	C	0	test/CDE_sites.bed
 ```
 
 Alternatively, we can also run `rnaprot gt` with `--feat-in-1h`, to turn all `add_feat.in` features into one-hot encoding. This means that overlapping site positions get a "1" assigned, and non-overlapping a "0", just like for the standard region annotations (exon-intron regions, transcript regions, repeat regions). Note that `rnaprot gp` reuses the set `add_feat.in` file used for training (`rnaprot train`), as long as the file path is valid. In general, we suggest to use either one-hot encoding (C) or normalized BED column 5 values (e.g. probabilities from 0 to 1). If you set "N" and "2" (column 1 and 2, telling RNAProt that these are p-values), RNAProt will automatically convert them to probabilities, by using 1-p-value for the respective regions. As said we do not recommend using raw column 5 BED scores, since the values are not normalized, which likely will be suboptimal for learning.
+
+
+#### User-defined features for sequences
+
+In case FASTA sequences are provided via `--in` (`rnaprot gt` and `rnaprot gp`), the format of input files specified in the `--feat-in` changes from BED to tabular. In order for this to work, we also need to supply the respective negative sequences via `--neg-in`, since the additional feature information has to be given for both positive and negative sequences. Currently only numerical features are supported. A valid `--feat-in` table file would thus look like this:
+
+```
+$ cat add_feat.in
+featx	N	0	test/another_feat.in
+```
+
+Moreover, the format of the feature file should look like this:
+
+```
+$ cat test/another_feat.in
+id1	-0.2,0.1,0,-1
+id2	0.2,-0.1,0,1
+id3	0.1,-0.2,0
+```
+
+We see that the first column contains the sequence IDs, which need to be identical to the ones supplied via `--in` and `--neg-in`. The second column contains the position-wise numerical feature values, which need to be comma-separated. The number of numerical feature values needs to be equal to the respective sequence length. This way, each sequence nucleotide can get one numerical feature value assigned. Note that the values will be used for training as they are, meaning that there is no further normalization applied to the values.
 
 
 #### Additional inputs
