@@ -5089,7 +5089,8 @@ def main_gp(args):
     # Check if --in file is FASTA file.
     if in_file_fasta:
         if std_feat_found or add_feat_found:
-            assert False, "FASTA sequences supplied via --in, but --train-in model was trained on additional features. Please provide BED regions ... "
+            if not args.feat_in:
+                assert False, "FASTA sequences supplied via --in, but --train-in model was trained on additional features which were not supplied via --feat-in. Please provide BED regions ... "
         # Delete old BED files.
         if os.path.exists(test_bed_out):
             os.remove(test_bed_out)
