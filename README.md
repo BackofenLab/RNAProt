@@ -1,7 +1,7 @@
 # RNAProt
 
-[![GitHub](https://img.shields.io/github/tag/BackofenLab/Peakhood.svg)](https://github.com/BackofenLab/RNAProt)
-[![Bioconda](https://anaconda.org/bioconda/peakhood/badges/version.svg)](https://anaconda.org/bioconda/rnaprot)
+[![GitHub](https://img.shields.io/github/tag/BackofenLab/RNAProt.svg)](https://github.com/BackofenLab/RNAProt)
+[![Bioconda](https://anaconda.org/bioconda/rnaprot/badges/version.svg)](https://anaconda.org/bioconda/rnaprot)
 
 RNAProt is a computational RBP binding site prediction framework based on recurrent neural networks (RNNs). Conceived as an end-to-end method, RNAProt includes all necessary functionalities, from dataset generation over model training to the evaluation of binding preferences and binding site prediction. Various input types and features are supported, accompanied by comprehensive statistics and visualizations to inform the user about datatset characteristics and learned model properties.
 
