@@ -5,6 +5,10 @@
 
 RNAProt is a computational RBP binding site prediction framework based on recurrent neural networks (RNNs). Conceived as an end-to-end method, RNAProt includes all necessary functionalities, from dataset generation over model training to the evaluation of binding preferences and binding site prediction. Various input types and features are supported, accompanied by comprehensive statistics and visualizations to inform the user about datatset characteristics and learned model properties.
 
+## Citation
+
+The RNAPRot paper is available at [GigaScience](https://doi.org/10.1093/gigascience/giab054).
+Supplementary data including benchmark and training data sets can be downloaded from [Zenodo](http://doi.org/10.5281/zenodo.4647254).
 
 ## Table of contents
 
