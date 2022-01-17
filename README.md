@@ -7,7 +7,7 @@ RNAProt is a computational RBP binding site prediction framework based on recurr
 
 ## Citation
 
-The RNAPRot paper is available at [GigaScience](https://doi.org/10.1093/gigascience/giab054).
+The RNAProt paper is available at [GigaScience](https://doi.org/10.1093/gigascience/giab054).
 Supplementary data including benchmark and training data sets can be downloaded from [Zenodo](http://doi.org/10.5281/zenodo.4647254).
 
 ## Table of contents
