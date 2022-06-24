@@ -5448,7 +5448,7 @@ def gtf_get_gene_infos(gene_ids_dic, in_gtf):
         # Extract gene name.
         m = re.search('gene_name "(.+?)"', infos)
         if not m:
-            print("WARNING: gene_name entry missing for gene_id \"%s\". Using gene_id instead ... " %(gene_id))
+            print("WARNING: gene_name entry missing for gene_id \"%s\" in --gtf file. Using gene_id instead ... " %(gene_id))
             gene_name = gene_id
         else:
             gene_name = m.group(1)
