@@ -382,7 +382,7 @@ An overview of the modes can be obtained by:
 
 ```
 $ rnaprot -h
-usage: rnaprot [-h] [-v] {train,eval,predict,gt,gp} ...
+usage: rnaprot [-h] [-v] [--seed SEED] {train,eval,predict,gt,gp} ...
 
 Modelling RBP binding preferences to predict RPB binding sites.
 
@@ -398,7 +398,8 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   -v, --version         show program's version number and exit
-
+  --seed SEED           Random number seed for all random operations (default:
+                        None)
 ```
 
 The following sections describe each mode in more detail.

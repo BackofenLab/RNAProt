@@ -75,6 +75,7 @@ def setup_argument_parser():
     # Tool version.
     p.add_argument("-v", "--version", action="version",
                    version="rnaprot v" + __version__)
+    p.add_argument("--seed", type=int, help="Random number seed for all random operations (default: None)", default=None)
 
     # Add subparsers.
     subparsers = p.add_subparsers(help='Program modes')
@@ -6108,6 +6109,10 @@ if __name__ == '__main__':
         sys.exit()
     # Read in command line arguments.
     args = parser.parse_args()
+    if args.seed:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
 
     # Show some banner.
     banner = """
