@@ -3865,7 +3865,9 @@ def main_gt(args):
         print("Extract random negative regions ... ")
         check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
                                                     incl_bed=regions_with_positives_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                    excl_bed=mask_negatives_bed,
+                                                    seed=random.randint(0, 7353)
+                                                    )
         if not check:
             print("# random negatives extracted < # requested. Expand extraction space ... ")
             round_two = True
@@ -3883,8 +3885,10 @@ def main_gt(args):
                 # Rerun.
                 print("Extract random negatives from most prominent transcripts ... ")
                 check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
-                                                    incl_bed=most_prominent_transcripts_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                            incl_bed=most_prominent_transcripts_bed,
+                                                            excl_bed=mask_negatives_bed,
+                                                            seed=random.randint(0, 7353)
+                                                            )
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent transcripts (try with lower --neg-factor)"
                 # Get list of transcript IDs with negative sites.
@@ -3903,7 +3907,8 @@ def main_gt(args):
                 print("Extract random negatives from gene regions with TSL transcript support ... ")
                 check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
                                                     incl_bed=most_prominent_genes_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                    excl_bed=mask_negatives_bed,
+                                                    seed=random.randint(0, 7353))
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent genes (try with lower --neg-factor)"
 

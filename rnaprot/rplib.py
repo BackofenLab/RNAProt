@@ -2978,7 +2978,7 @@ def check_random_negatives(in_bed, incl_bed, excl_bed, chr_lengths_file,
 def bed_generate_random_negatives(in_bed, chr_sizes_file, out_bed,
                                   incl_bed=False,
                                   excl_bed=False,
-                                  allow_overlaps=False):
+                                  allow_overlaps=False, seed: int = 0):
     """
     Shuffle given in_bed, generating random negative regions. Optionally,
     the regions to extract negatives from can be controlled by incl_bed
@@ -3075,7 +3075,7 @@ def bed_generate_random_negatives(in_bed, chr_sizes_file, out_bed,
         check_cmd = check_cmd + "-incl " + incl_bed + " "
     if not allow_overlaps:
         check_cmd = check_cmd + "-noOverlapping "
-    check_cmd = check_cmd + "-i " + in_bed + " -g " + chr_sizes_file + " > " + out_bed
+    check_cmd = check_cmd + "-i " + in_bed + " -g " + chr_sizes_file + f" -seed {seed}" + " > " + out_bed
     output = subprocess.getoutput(check_cmd)
     error = False
     if output:
