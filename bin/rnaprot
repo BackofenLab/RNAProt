@@ -75,7 +75,6 @@ def setup_argument_parser():
     # Tool version.
     p.add_argument("-v", "--version", action="version",
                    version="rnaprot v" + __version__)
-    p.add_argument("--seed", type=int, help="Random number seed for all random operations (default: None)", default=None)
 
     # Add subparsers.
     subparsers = p.add_subparsers(help='Program modes')
@@ -186,6 +185,12 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Use same train-validation(-test) split for each call to train final model. Test split only if --add-test or --test-ids (default: False)")
+    p_tra.add_argument("--seed",
+                   dest="seed",
+                   type=int,
+                   metavar='int',
+                   default = None,
+                   help="Set a fixed random seed number (e.g. --seed 1) to obtain identical model results for identical rnaprot train runs")
     p_tra.add_argument("--plot-lc",
                    dest = "plot_lc",
                    default = False,
@@ -562,6 +567,12 @@ def setup_argument_parser():
                    default = 2,
                    choices = [1,2,3],
                    help = "Supply k for k-nucleotide shuffling of --in sequences to generate negative sequences (if no --neg-in supplied) (default: 2)")
+    p_gt.add_argument("--seed",
+                   dest="seed",
+                   type=int,
+                   metavar='int',
+                   default = None,
+                   help="Set a fixed random seed number (e.g. --seed 1) to obtain the same random negative set for identical rnaprot gt runs")
     p_gt.add_argument("--report",
                    dest="report",
                    default = False,
@@ -782,6 +793,12 @@ def main_train(args):
     # Disable generic model CV for now.
     args.gm_cv = False
 
+    # Random seed for random operations.
+    if args.seed is not None:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
     indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
@@ -961,8 +978,9 @@ def main_train(args):
             os.remove(cv_results_file)
 
         # Shuffle.
-        random.seed(1)
+        # random.seed(1)
         labels, all_features = rplib.shuffle_idx_feat_labels(labels, all_features,
+                                                             random_seed=args.seed,
                                                              idx2id_dic=idx2id_dic)
 
         # Split datasets into folds.
@@ -3192,6 +3210,11 @@ def main_gt(args):
     # Generate results output folder.
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
+
+    # Random seed for random operations.
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
 
     """
     Output files.
@@ -6114,10 +6137,6 @@ if __name__ == '__main__':
         sys.exit()
     # Read in command line arguments.
     args = parser.parse_args()
-    if args.seed:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
 
     # Show some banner.
     banner = """

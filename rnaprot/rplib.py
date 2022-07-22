@@ -2978,7 +2978,8 @@ def check_random_negatives(in_bed, incl_bed, excl_bed, chr_lengths_file,
 def bed_generate_random_negatives(in_bed, chr_sizes_file, out_bed,
                                   incl_bed=False,
                                   excl_bed=False,
-                                  allow_overlaps=False, seed: int = 0):
+                                  allow_overlaps=False,
+                                  seed: int = 0):
     """
     Shuffle given in_bed, generating random negative regions. Optionally,
     the regions to extract negatives from can be controlled by incl_bed
@@ -12022,7 +12023,7 @@ def load_training_data(args,
 ################################################################################
 
 def shuffle_idx_feat_labels(labels, features,
-                            random_seed=False,
+                            random_seed=None,
                             idx2id_dic=False):
     """
     Shuffle features list and return shuffled list, together with
@@ -12039,7 +12040,7 @@ def shuffle_idx_feat_labels(labels, features,
     """
     assert labels, "given labels empty"
     assert features, "given features empty"
-    if random_seed:
+    if random_seed is not None:
         random.seed(random_seed)
     labels_add = []
     for idx,label in enumerate(labels):
