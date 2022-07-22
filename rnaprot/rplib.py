@@ -2978,7 +2978,8 @@ def check_random_negatives(in_bed, incl_bed, excl_bed, chr_lengths_file,
 def bed_generate_random_negatives(in_bed, chr_sizes_file, out_bed,
                                   incl_bed=False,
                                   excl_bed=False,
-                                  allow_overlaps=False):
+                                  allow_overlaps=False,
+                                  seed: int = 0):
     """
     Shuffle given in_bed, generating random negative regions. Optionally,
     the regions to extract negatives from can be controlled by incl_bed
@@ -3075,7 +3076,7 @@ def bed_generate_random_negatives(in_bed, chr_sizes_file, out_bed,
         check_cmd = check_cmd + "-incl " + incl_bed + " "
     if not allow_overlaps:
         check_cmd = check_cmd + "-noOverlapping "
-    check_cmd = check_cmd + "-i " + in_bed + " -g " + chr_sizes_file + " > " + out_bed
+    check_cmd = check_cmd + "-i " + in_bed + " -g " + chr_sizes_file + f" -seed {seed}" + " > " + out_bed
     output = subprocess.getoutput(check_cmd)
     error = False
     if output:
@@ -5445,9 +5446,15 @@ def gtf_get_gene_infos(gene_ids_dic, in_gtf):
         assert m, "gene_biotype or gene_type entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
         gene_biotype = m.group(1)
 
+        # Extract gene name.
         m = re.search('gene_name "(.+?)"', infos)
-        assert m, "gene_name entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
-        gene_name = m.group(1)
+        if not m:
+            print("WARNING: gene_name entry missing for gene_id \"%s\" in --gtf file. Using gene_id instead ... " %(gene_id))
+            gene_name = gene_id
+        else:
+            gene_name = m.group(1)
+        # assert m, "gene_name entry missing in GTF file \"%s\", line \"%s\"" %(in_gtf, line)
+        # gene_name = m.group(1)
 
         g2i_dic[gene_id] = [gene_name, gene_biotype]
 
@@ -12016,7 +12023,7 @@ def load_training_data(args,
 ################################################################################
 
 def shuffle_idx_feat_labels(labels, features,
-                            random_seed=False,
+                            random_seed=None,
                             idx2id_dic=False):
     """
     Shuffle features list and return shuffled list, together with
@@ -12033,7 +12040,7 @@ def shuffle_idx_feat_labels(labels, features,
     """
     assert labels, "given labels empty"
     assert features, "given features empty"
-    if random_seed:
+    if random_seed is not None:
         random.seed(random_seed)
     labels_add = []
     for idx,label in enumerate(labels):

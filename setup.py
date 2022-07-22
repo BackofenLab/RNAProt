@@ -14,7 +14,7 @@ https://github.com/BackofenLab/RNAProt
 
 setup(
     name='rnaprot',
-    version='0.4',
+    version='0.5',
     description='Modelling RBP binding preferences to predict RPB binding sites',
     long_description=open('README.md').read(),
     author='Michael Uhl',

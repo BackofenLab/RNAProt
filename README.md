@@ -190,7 +190,8 @@ Next we train a model on the created dataset, using the default hyperparameters.
 rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_train_out --verbose-train
 ```
 
-In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. Note that if you want to obtain the generalization peformance of the model on the given dataset, you need to run `rnaprot train` in cross validation mode (10-fold by default) by adding `--cv`:
+In the end we get a summary for the trained model, e.g. reporting the model validation AUC, the training runtime, and set hyperparameters. To obtain identical models from identical calls, you have to set a fixed random seed number (e.g. `--seed 1`). This guarantees that the same initial random weights are set when training the network, as well as the same train-validation-test splits are used.
+Note that if you want to obtain the generalization peformance of the model on the given dataset, you need to run `rnaprot train` in cross validation mode (10-fold by default) by adding `--cv`:
 
 ```
 rnaprot train --in PUM2_PARCLIP_gt_out --out PUM2_PARCLIP_cv_train_out --cv --verbose-train
@@ -262,7 +263,8 @@ Next we create a training dataset, by supplying the downloaded GTF and .2bit fil
 rnaprot gt --in PUM2_K562_IDR_peaks.bed --out PUM2_K562_IDR_gt_out --gtf Homo_sapiens.GRCh38.103.gtf.gz --gen hg38.2bit --report
 ```
 
-Thanks to the given GTF file, the HTML report will now also include information on target gene regions and biotypes. Note that by default, `rnaprot gt` centers the input BED regions, and extends them on both sides by the set `--seq-ext` (by default 40). If you want to keep the original site lengths, set `--mode 2 --seq-ext 0`. In this case, you might also want to filter the `--in` sites by `--max-len` or `--min-len`, e.g. `--max-len 100`. Of course you can also extend the original sites, e.g. by setting `--mode 2 --seq-ext 10`. Alternatively, you can set `--mode 3` to use the region upstream ends and extend by `--seq-ext`.
+Thanks to the given GTF file, the HTML report will now also include information on target gene regions and biotypes. Note that by default, `rnaprot gt` centers the input BED regions, and extends them on both sides by the set `--seq-ext` (by default 40). If you want to keep the original site lengths, set `--mode 2 --seq-ext 0`. In this case, you might also want to filter the `--in` sites by `--max-len` or `--min-len`, e.g. `--max-len 100`. Of course you can also extend the original sites, e.g. by setting `--mode 2 --seq-ext 10`. Alternatively, you can set `--mode 3` to use the region upstream ends and extend by `--seq-ext`. Note that the negatives are generated randomly, so the same `rnaprot gt` call will produce a different set of random negative sites (unless negatives are supplied). To obtain the same random negatives repeatedly from identical calls, you have to set a fixed random seed number (e.g. `--seed 1`).
+
 
 Now we can train a model and evaluate it just like in the example above:
 
@@ -368,7 +370,7 @@ Note however that predictions between two models can vary, since negative sites 
 ## Documentation
 
 
-This documentation provides details on all the RNAProt (version 0.4) framework parts:
+This documentation provides details on all the RNAProt (version 0.5) framework parts:
 [program modes](#program-modes), [supported features](#supported-features), [inputs](#inputs), and [outputs](#outputs).
 
 
@@ -398,7 +400,6 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   -v, --version         show program's version number and exit
-
 ```
 
 The following sections describe each mode in more detail.
@@ -416,8 +417,8 @@ usage: rnaprot gt [-h] --in str --out str [--gtf str] [--gen str]
                   [--keep-ids] [--allow-overlaps] [--no-gene-filter]
                   [--neg-comp-thr float] [--neg-factor {2,3,4,5}]
                   [--keep-add-neg] [--neg-in str] [--shuffle-k {1,2,3}]
-                  [--report] [--theme {1,2}] [--eia] [--eia-ib] [--eia-n]
-                  [--eia-all-ex] [--tr-list str] [--phastcons str]
+                  [--seed int] [--report] [--theme {1,2}] [--eia] [--eia-ib]
+                  [--eia-n] [--eia-all-ex] [--tr-list str] [--phastcons str]
                   [--phylop str] [--tra] [--tra-codons] [--tra-borders]
                   [--rra] [--str] [--plfold-u int] [--plfold-l int]
                   [--plfold-w int] [--feat-in str] [--feat-in-1h]
@@ -467,6 +468,9 @@ optional arguments:
   --shuffle-k {1,2,3}   Supply k for k-nucleotide shuffling of --in sequences
                         to generate negative sequences (if no --neg-in
                         supplied) (default: 2)
+  --seed int            Set a fixed random seed number (e.g. --seed 1) to
+                        obtain the same random negative set for identical
+                        rnaprot gt runs
   --report              Output an .html report providing various training set
                         statistics and plots (default: False)
   --theme {1,2}         Set theme for .html report (1: palm beach, 2: midnight
@@ -542,7 +546,7 @@ usage: rnaprot train [-h] --in IN_FOLDER --out OUT_FOLDER [--only-seq]
                      [--use-rra] [--use-str] [--str-mode {1,2,3,4}]
                      [--use-add-feat] [--cv] [--cv-k {5,10}]
                      [--val-size float] [--add-test] [--test-ids str]
-                     [--keep-order] [--plot-lc] [--verbose-train]
+                     [--keep-order] [--seed int] [--plot-lc] [--verbose-train]
                      [--force-cpu] [--epochs int] [--patience int]
                      [--batch-size int] [--lr float] [--weight-decay float]
                      [--n-rnn-layers int] [--n-hidden-dim int] [--dr float]
@@ -611,6 +615,9 @@ model definition arguments:
   --keep-order          Use same train-validation(-test) split for each call
                         to train final model. Test split only if --add-test or
                         --test-ids (default: False)
+  --seed int            Set a fixed random seed number (e.g. --seed 1) to
+                        obtain identical model results for identical rnaprot
+                        train runs
   --plot-lc             Plot learning curves (training vs validation loss) for
                         each tested hyperparameter combination (default:
                         False)

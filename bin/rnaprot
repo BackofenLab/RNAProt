@@ -19,7 +19,7 @@ import os
 import re
 
 
-__version__ = "0.4"
+__version__ = "0.5"
 
 """
 
@@ -185,6 +185,12 @@ def setup_argument_parser():
                    default = False,
                    action = "store_true",
                    help = "Use same train-validation(-test) split for each call to train final model. Test split only if --add-test or --test-ids (default: False)")
+    p_tra.add_argument("--seed",
+                   dest="seed",
+                   type=int,
+                   metavar='int',
+                   default = None,
+                   help="Set a fixed random seed number (e.g. --seed 1) to obtain identical model results for identical rnaprot train runs")
     p_tra.add_argument("--plot-lc",
                    dest = "plot_lc",
                    default = False,
@@ -561,6 +567,12 @@ def setup_argument_parser():
                    default = 2,
                    choices = [1,2,3],
                    help = "Supply k for k-nucleotide shuffling of --in sequences to generate negative sequences (if no --neg-in supplied) (default: 2)")
+    p_gt.add_argument("--seed",
+                   dest="seed",
+                   type=int,
+                   metavar='int',
+                   default = None,
+                   help="Set a fixed random seed number (e.g. --seed 1) to obtain the same random negative set for identical rnaprot gt runs")
     p_gt.add_argument("--report",
                    dest="report",
                    default = False,
@@ -781,6 +793,12 @@ def main_train(args):
     # Disable generic model CV for now.
     args.gm_cv = False
 
+    # Random seed for random operations.
+    if args.seed is not None:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
     # Checks.
     assert os.path.exists(args.in_folder), "--in folder does not exist"
     indiv_feat_check = args.use_pc_con + args.use_pp_con + args.use_eia + args.use_tra + args.use_rra + args.use_str + args.use_add_feat
@@ -960,8 +978,9 @@ def main_train(args):
             os.remove(cv_results_file)
 
         # Shuffle.
-        random.seed(1)
+        # random.seed(1)
         labels, all_features = rplib.shuffle_idx_feat_labels(labels, all_features,
+                                                             random_seed=args.seed,
                                                              idx2id_dic=idx2id_dic)
 
         # Split datasets into folds.
@@ -3192,6 +3211,11 @@ def main_gt(args):
     if not os.path.exists(args.out_folder):
         os.makedirs(args.out_folder)
 
+    # Random seed for random operations.
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+
     """
     Output files.
 
@@ -3864,7 +3888,9 @@ def main_gt(args):
         print("Extract random negative regions ... ")
         check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
                                                     incl_bed=regions_with_positives_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                    excl_bed=mask_negatives_bed,
+                                                    seed=random.randint(0, 7353)
+                                                    )
         if not check:
             print("# random negatives extracted < # requested. Expand extraction space ... ")
             round_two = True
@@ -3882,8 +3908,10 @@ def main_gt(args):
                 # Rerun.
                 print("Extract random negatives from most prominent transcripts ... ")
                 check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
-                                                    incl_bed=most_prominent_transcripts_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                            incl_bed=most_prominent_transcripts_bed,
+                                                            excl_bed=mask_negatives_bed,
+                                                            seed=random.randint(0, 7353)
+                                                            )
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent transcripts (try with lower --neg-factor)"
                 # Get list of transcript IDs with negative sites.
@@ -3902,7 +3930,8 @@ def main_gt(args):
                 print("Extract random negatives from gene regions with TSL transcript support ... ")
                 check = rplib.bed_generate_random_negatives(shuffle_in_bed, chr_lengths_file, random_negatives_bed,
                                                     incl_bed=most_prominent_genes_bed,
-                                                    excl_bed=mask_negatives_bed)
+                                                    excl_bed=mask_negatives_bed,
+                                                    seed=random.randint(0, 7353))
                 # If still not enough, terminate.
                 assert check, "still not enough random negatives after second round with most prominent genes (try with lower --neg-factor)"
 
