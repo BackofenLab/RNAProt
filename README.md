@@ -69,7 +69,7 @@ conda activate rnaprotenv
 conda install -c bioconda rnaprot
 ```
 
-If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. complaints about conflicting dependencies), the following commands should do the trick:
+Note that Python 3.8 is not a necessity (higher versions should work just as fine). If you are experiencing problems while running `conda install -c bioconda rnaprot` (e.g. complaints about conflicting dependencies), the following commands should do the trick:
 
 ```
 conda config --add channels bioconda
@@ -85,7 +85,7 @@ NOTE that the bioconda installation only includes the CPU version of RNAProt (no
 conda install -c conda-forge pytorch-gpu=1.8
 ```
 
-Now RNAProt should be available inside the environment:
+Higher version numbers should work as well (i.e., you can simply discard the version number). Now RNAProt should be available inside the environment:
 
 
 ```
@@ -141,7 +141,7 @@ If you don't have a CUDA supporting GPU (and you're not planning on getting one 
 conda install -c conda-forge pytorch-cpu=1.8
 ```
 
-Concerning version numbers, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1.
+Concerning version numbers, RNAProt was tested with the following versions: pytorch=1.8.0, seaborn=0.11.1, viennarna=2.4.17, bedtools=2.30.0, logomaker=0.8, hpbandster=0.7.4, markdown=3.2.2, plotly=4.14.3, and scikit-learn=0.24.1. Note that so far we have not experienced problems with higher pytorch version numbers (i.e., simply discarding the version number should work just as well).
 
 
 Finally, to install RNAProt, we simply clone the repository and execute the installation script inside the folder:
