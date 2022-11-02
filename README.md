@@ -85,7 +85,7 @@ NOTE that the bioconda installation only includes the CPU version of RNAProt (no
 conda install -c conda-forge pytorch-gpu=1.8
 ```
 
-Higher version numbers should work as well (i.e., you can simply discard the version number). Now RNAProt should be available inside the environment:
+RNAProt was initially written and tested with pytorch 1.8. However, higher version numbers should work as well (i.e., you can simply discard the version number). Now RNAProt should be available inside the environment:
 
 
 ```
