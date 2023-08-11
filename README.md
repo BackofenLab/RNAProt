@@ -1025,7 +1025,7 @@ chr20	36049801	36049822	peak_2	4.028928	-	36049743	36049822	0.09839357429718887	
 chr20	36049711	36049724	peak_3	4.0312123	-	36049646	36049725	0.09738955823293183	36049718	0.0796903
 ```
 
-Here the columns are: reference ID, reference peak region start position (0-based), reference peak region end position (1-based), peak ID, window score, strand (for transcript or sequence input always "+"), reference window start position (0-based), reference window end position (1-based), top saliency peak score (saliency), reference top saliency peak position (1-based), window score p-value (calculated from the positive training set scores distribution).
+Here the columns are: reference ID, reference peak region start position (0-based), reference peak region end position (1-based), peak ID, window score, strand (for transcript or sequence input always "+"), reference window start position (0-based), reference window end position (1-based), window score p-value (calculated from the positive training set scores distribution), reference top saliency peak position (1-based), top saliency peak score (saliency).
 
 The same information can also be found in the `peak_regions.tsv` file (there all coordinates 1-based), which in addition contains the top saliency peak sequence and the window sequence:
 
